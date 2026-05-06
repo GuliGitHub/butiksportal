@@ -334,6 +334,10 @@ async function loadAllFromSupabase() {
     const periods = await sbGet('periods');
     PERIODS = periods.map(p => ({id:p.id, name:p.name, year:p.year, weekFrom:p.week_from, weekTo:p.week_to}));
 
+    // PINs
+    const pins = await sbGet('pins');
+    pins.forEach(row => { PINS[row.store_id] = row.pin; });
+
   } catch(e) {
     console.error('loadAllFromSupabase', e);
     toast('⚠ Kunde inte hämta data från databasen');
@@ -420,6 +424,11 @@ function hideLoadingOverlay() {
   if(el) el.style.display = 'none';
 }
 
+// Spara PIN för en butik / admin
+async function savePIN(id, pin) {
+  await sbUpsert('pins', {store_id: id, pin, updated_at: new Date().toISOString()});
+}
+
 // ── STATIC ────────────────────────────────────────────
 const STORES={
   '4730':'Hemköp Motala Verkstan','4732':'Hemköp Motala Väster',
@@ -459,7 +468,7 @@ const STORE_KPI_DEFS=[
 const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','14'];
 
 // ── STATE ─────────────────────────────────────────────
-let DB={}, REPORT_DB={}, SVINN_DB={}, PERIODS=[];
+let DB={}, REPORT_DB={}, SVINN_DB={}, PERIODS=[], PINS={};
 let role=null, sid=null, viewMode='week', selPeriodId=null;
 
 function defaultSD() {
@@ -523,15 +532,27 @@ function roleChange(){document.getElementById('store-fld').style.display=documen
 async function login(){
   const r=document.getElementById('role-sel').value,pin=document.getElementById('pin-in').value,s=document.getElementById('store-sel').value;
   if(!r){toast('Välj en roll');return;}
-  if(r==='admin'&&pin!=='9999'){toast('Fel PIN-kod');return;}
-  if(r==='store'&&pin!=='1234'){toast('Fel PIN-kod');return;}
   if(r==='store'&&!s){toast('Välj butik');return;}
-  role=r;sid=r==='admin'?null:s;
+
+  // Hämta PINs från Supabase för verifiering
+  showLoadingOverlay('Kontrollerar...');
+  const pins = await sbGet('pins');
+  pins.forEach(row => { PINS[row.store_id] = row.pin; });
+  hideLoadingOverlay();
+
+  // Verifiera PIN — Supabase-PIN har företräde, fallback till standard
+  const adminPin  = PINS['admin']  || '9999';
+  const storePin  = PINS[s]        || '1234';
+
+  if(r==='admin' && pin !== adminPin){ toast('Fel PIN-kod'); return; }
+  if(r==='store' && pin !== storePin){ toast('Fel PIN-kod'); return; }
+
+  role=r; sid=r==='admin'?null:s;
   document.getElementById('store-lbl').textContent=r==='admin'?'Admin / Central':STORES[s];
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='flex';
   await loadAllFromSupabase();
-  buildNav();renderPanel('overview');
+  buildNav(); renderPanel('overview');
 }
 function logout(){role=null;sid=null;document.getElementById('login').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('pin-in').value='';document.getElementById('role-sel').value='';document.getElementById('store-sel').value='';document.getElementById('store-fld').style.display='none';}
 
@@ -1127,24 +1148,68 @@ function generatePDF(storeId,pdfMode,pdfPeriodId){
 // ── ADMIN ─────────────────────────────────────────────
 function renderAdmin(){
   document.getElementById('panel-admin').innerHTML=`
-    <div class="ph"><div><div class="pt">Butiksinställningar</div><div class="ps">Mailadresser — rapporten skickas till alla angivna adresser per butik</div></div></div>
-    <div class="card">${Object.entries(STORES).map(([id,name])=>{
-      const sd=getSD(id),ad=Object.values(sd.deptGoals).filter(d=>d.active).length,ta=Object.values(sd.actions).flat().length;
-      return`<div style="padding:.875rem 1rem;border-bottom:0.5px solid #e8e8e5">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;flex-wrap:wrap;gap:.5rem">
-          <div><div style="font-size:13px;font-weight:500">${name.replace('Hemköp ','')}</div><div style="font-size:11px;color:#aaa">${id} · ${ad} aktiva avd. · ${ta} actions</div></div>
-          <button class="btn-sm" onclick="adminViewStore('${id}')">Redigera →</button>
+    <div class="ph"><div><div class="pt">Butiksinställningar</div><div class="ps">PIN-koder och mailadresser per butik</div></div></div>
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">PIN-koder</div><div class="cs">Unik inloggningskod per butik — ändras direkt i databasen</div></div></div>
+
+      <div style="padding:.75rem 1rem;border-bottom:1px solid var(--ö-border);display:flex;align-items:center;gap:1rem;flex-wrap:wrap;background:#f9f7f2">
+        <div style="font-size:13px;font-weight:600;color:var(--ö-green);min-width:180px">Admin</div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex:1">
+          <input type="password" id="pin-admin" placeholder="Ny PIN-kod" maxlength="10"
+            style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:6px 9px;font-family:'SF Mono',monospace;font-size:13px;outline:none;width:140px;transition:border-color .15s"
+            onfocus="this.type='text'" onblur="this.type='password'">
+          <button class="btn-sm green" onclick="updatePIN('admin')">Spara</button>
+          <span style="font-size:11px;color:var(--ö-muted)">${PINS['admin']?'●●●●●● (satt)':'Standard (ej satt)'}</span>
         </div>
-        <div id="etags-${id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">
-          ${(sd.emails||[]).length?(sd.emails.map(e=>`<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${id}','${e}')">×</button></span>`).join('')):`<span style="font-size:12px;color:#aaa">Inga mottagare angivna</span>`}
+      </div>
+
+      ${Object.entries(STORES).map(([id,name])=>`
+      <div style="padding:.75rem 1rem;border-bottom:1px solid var(--ö-border);display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <div style="min-width:180px">
+          <div style="font-size:13px;font-weight:500">${name.replace('Hemköp ','')}</div>
+          <div style="font-size:11px;color:var(--ö-muted)">${id}</div>
         </div>
-        <div class="email-add-wrap">
-          <input class="email-add-inp" type="email" id="ne-${id}" placeholder="Lägg till e-postadress..." onkeydown="if(event.key==='Enter')addEmail('${id}')">
-          <button class="btn-sm green" onclick="addEmail('${id}')">+ Lägg till</button>
+        <div style="display:flex;align-items:center;gap:.5rem;flex:1">
+          <input type="password" id="pin-${id}" placeholder="Ny PIN-kod" maxlength="10"
+            style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:6px 9px;font-family:'SF Mono',monospace;font-size:13px;outline:none;width:140px;transition:border-color .15s"
+            onfocus="this.type='text'" onblur="this.type='password'"
+            onkeydown="if(event.key==='Enter')updatePIN('${id}')">
+          <button class="btn-sm green" onclick="updatePIN('${id}')">Spara</button>
+          <span style="font-size:11px;color:var(--ö-muted)">${PINS[id]?'●●●●●● (satt)':'Standard (ej satt)'}</span>
         </div>
-      </div>`;}).join('')}
+      </div>`).join('')}
     </div>
-    <div style="font-size:12px;color:#aaa;margin-top:.5rem">Rapporten skickas automatiskt varje måndag kl 07:00 till alla angivna adresser per butik.</div>`;
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">Mailadresser</div><div class="cs">Rapporten skickas till alla angivna adresser per butik</div></div></div>
+      ${Object.entries(STORES).map(([id,name])=>{
+        const sd=getSD(id),ad=Object.values(sd.deptGoals).filter(d=>d.active).length,ta=Object.values(sd.actions).flat().length;
+        return`<div style="padding:.875rem 1rem;border-bottom:1px solid var(--ö-border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;flex-wrap:wrap;gap:.5rem">
+            <div><div style="font-size:13px;font-weight:500">${name.replace('Hemköp ','')}</div><div style="font-size:11px;color:var(--ö-muted)">${id} · ${ad} aktiva avd. · ${ta} actions</div></div>
+            <button class="btn-sm" onclick="adminViewStore('${id}')">Redigera →</button>
+          </div>
+          <div id="etags-${id}" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">
+            ${(sd.emails||[]).length?(sd.emails.map(e=>`<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${id}','${e}')">×</button></span>`).join('')):`<span style="font-size:12px;color:var(--ö-muted)">Inga mottagare angivna</span>`}
+          </div>
+          <div class="email-add-wrap">
+            <input class="email-add-inp" type="email" id="ne-${id}" placeholder="Lägg till e-postadress..." onkeydown="if(event.key==='Enter')addEmail('${id}')">
+            <button class="btn-sm green" onclick="addEmail('${id}')">+ Lägg till</button>
+          </div>
+        </div>`;}).join('')}
+    </div>`;
+}
+
+async function updatePIN(id) {
+  const inp = document.getElementById(`pin-${id}`);
+  const pin = inp?.value?.trim();
+  if(!pin || pin.length < 4){ toast('PIN-koden måste vara minst 4 tecken'); return; }
+  await savePIN(id, pin);
+  PINS[id] = pin;
+  inp.value = '';
+  toast(`PIN uppdaterad för ${id==='admin'?'Admin':STORES[id]?.replace('Hemköp ','')||id} ✓`);
+  renderAdmin();
 }
 async function addEmail(id){
   const inp=document.getElementById(`ne-${id}`);const email=inp?.value?.trim();
