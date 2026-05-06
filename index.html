@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:33</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:38</div>
 </div>
 </div>
 
@@ -258,7 +258,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:33</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:38</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1351,7 +1351,7 @@ async function confirmBIBUpload() {
   if(REPORT_DB[pk]) {
     if(conflict) {
       conflict.style.display = 'block';
-      conflict.innerHTML = `⚠ ${pk} finns redan. <button class="btn-sm" onclick="doBIBUpload(true)" style="margin-left:8px">Ersätt ändå</button> <button class="btn-sm" onclick="document.getElementById('bib-conflict').style.display='none'" style="margin-left:4px">Avbryt</button>`;
+      conflict.innerHTML = `⚠ ${pk} finns redan. <button class="btn-sm green" onclick="doBIBUpload(true)" style="margin-left:8px">Ersätt med ny data</button> <button class="btn-sm" onclick="document.getElementById('bib-conflict').style.display='none';document.getElementById('fp').style.display='none';_pendingBIBWorkbook=null" style="margin-left:4px">Avbryt</button>`;
     }
     return;
   }
@@ -1417,7 +1417,8 @@ async function doBIBUpload(force) {
   document.getElementById('fp').style.display = 'none';
   const sc = Object.keys(pd).length;
   const dc = Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
-  toast(`${pk} inläst — ${sc} butiker, ${dc} avdelningar ✓`);
+  const eanCount = Object.keys(EAN_DEPT_MAP).length;
+  toast(`${pk} inläst — ${sc} butiker, ${dc} avd, ${eanCount} EAN-koder ✓`);
   renderUploadFörsäljning();
 }
 
