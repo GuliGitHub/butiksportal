@@ -267,6 +267,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <div class="panel" id="panel-pdf"></div>
     <div class="panel" id="panel-upload-försäljning"></div>
     <div class="panel" id="panel-upload-svinn"></div>
+    <div class="panel" id="panel-kpi-admin"></div>
     <div class="panel" id="panel-perioder"></div>
     <div class="panel" id="panel-admin"></div>
   </div>
@@ -305,47 +306,60 @@ async function sbDelete(table, match) {
 // Ladda ALL data från Supabase vid inloggning
 async function loadAllFromSupabase() {
   showLoadingOverlay('Hämtar data...');
-  try {
-    // Store settings
-    const settings = await sbGet('store_settings');
-    settings.forEach(row => {
+
+  async function tryLoad(label, fn) {
+    try { await fn(); }
+    catch(e) { console.warn(`loadAllFromSupabase: ${label} misslyckades`, e.message); }
+  }
+
+  await tryLoad('store_settings', async () => {
+    const rows = await sbGet('store_settings');
+    rows.forEach(row => {
       if(!DB[row.store_id]) DB[row.store_id] = defaultSD();
       DB[row.store_id].storeGoals = row.store_goals || DB[row.store_id].storeGoals;
       DB[row.store_id].deptGoals  = row.dept_goals  || DB[row.store_id].deptGoals;
       DB[row.store_id].emails     = row.emails       || [];
     });
+  });
 
-    // Actions
-    const actions = await sbGet('actions');
-    actions.forEach(row => {
+  await tryLoad('actions', async () => {
+    const rows = await sbGet('actions');
+    rows.forEach(row => {
       if(!DB[row.store_id]) DB[row.store_id] = defaultSD();
       DB[row.store_id].actions[row.dept_code] = row.data || [];
     });
+  });
 
-    // Försäljning
-    const reports = await sbGet('report_data');
-    reports.forEach(row => { REPORT_DB[row.period_key] = row.data; });
+  await tryLoad('report_data', async () => {
+    const rows = await sbGet('report_data');
+    rows.forEach(row => { REPORT_DB[row.period_key] = row.data; });
+  });
 
-    // Svinn
-    const svinn = await sbGet('svinn_data');
-    svinn.forEach(row => { SVINN_DB[row.period_key] = row.data; });
+  await tryLoad('svinn_data', async () => {
+    const rows = await sbGet('svinn_data');
+    rows.forEach(row => { SVINN_DB[row.period_key] = row.data; });
+  });
 
-    // Perioder
-    const periods = await sbGet('periods');
-    PERIODS = periods.map(p => ({id:p.id, name:p.name, year:p.year, weekFrom:p.week_from, weekTo:p.week_to}));
+  await tryLoad('periods', async () => {
+    const rows = await sbGet('periods');
+    PERIODS = rows.map(p => ({id:p.id, name:p.name, year:p.year, weekFrom:p.week_from, weekTo:p.week_to}));
+  });
 
-    // OS20 data
-    const os20 = await sbGet('os20_data');
-    os20.forEach(row => { OS20_DB[row.period_key] = row.data; });
+  await tryLoad('kpi_config', async () => {
+    const rows = await sbGet('kpi_config');
+    if(rows.length) KPI_CONFIG = {...DEFAULT_KPI_CONFIG, ...rows[0].config};
+  });
 
-    // PINs
-    const pins = await sbGet('pins');
-    pins.forEach(row => { PINS[row.store_id] = row.pin; });
+  await tryLoad('os20_data', async () => {
+    const rows = await sbGet('os20_data');
+    rows.forEach(row => { OS20_DB[row.period_key] = row.data; });
+  });
 
-  } catch(e) {
-    console.error('loadAllFromSupabase', e);
-    toast('⚠ Kunde inte hämta data från databasen');
-  }
+  await tryLoad('pins', async () => {
+    const rows = await sbGet('pins');
+    rows.forEach(row => { PINS[row.store_id] = row.pin; });
+  });
+
   hideLoadingOverlay();
 }
 
@@ -461,14 +475,49 @@ const DEPTS=[
   {code:'95',name:'Pantinlösen'},{code:'96',name:'Pantförsäljning'},
   {code:'98',name:'Övrig Försäljning 12% Moms'},
 ];
-const STORE_KPI_DEFS=[
-  {key:'oms',      label:'Omsättning',   unit:'% vs fg år', lb:false, fmt:'delta'},
-  {key:'marginal', label:'Marginal NBP', unit:'%',          lb:false, fmt:'pct'},
-  {key:'svinn_k',  label:'Känt Svinn',   unit:'%',          lb:true,  fmt:'pct'},
-  {key:'antal',    label:'Antal Sålda',  unit:'% vs fg år', lb:false, fmt:'delta'},
-  {key:'kvitton',  label:'Kvitton',      unit:'% vs fg år', lb:false, fmt:'delta'},
+// ── KOMPLETT KPI-BIBLIOTEK ────────────────────────────
+// källa: 'bib'=BIB_HEM06, 'svinn'=svinnfil, 'os20'=9A ÖS20
+// tier: 'primary'=stor tile, 'secondary'=kompakt rad
+// lb: lower-is-better (svinn, driftläckage)
+const KPI_LIBRARY = [
+  {key:'oms',          label:'Omsättning',        unit:'% vs fg år', lb:false, fmt:'delta', källa:'bib'},
+  {key:'marginal',     label:'Marginal BV%',       unit:'%',          lb:false, fmt:'pct',   källa:'bib'},
+  {key:'svinn_k',      label:'Känt Svinn',         unit:'%',          lb:true,  fmt:'pct',   källa:'svinn'},
+  {key:'antal',        label:'Antal Sålda',        unit:'% vs fg år', lb:false, fmt:'delta', källa:'bib'},
+  {key:'kvitton',      label:'Antal Kvitton',      unit:'% vs fg år', lb:false, fmt:'delta', källa:'os20'},
+  {key:'snittKop',     label:'Snittköp',           unit:'kr',         lb:false, fmt:'kr',    källa:'os20'},
+  {key:'driftlackage', label:'Driftläckage',       unit:'%',          lb:true,  fmt:'pct',   källa:'os20'},
+  {key:'kundkorg',     label:'Kundkorgsstorlek',   unit:'artiklar',   lb:false, fmt:'num',   källa:'os20'},
+  {key:'medlems',      label:'Medlemsandel',       unit:'%',          lb:false, fmt:'pct',   källa:'os20'},
+  {key:'emv',          label:'EMV-andel',          unit:'%',          lb:false, fmt:'pct',   källa:'os20'},
+  {key:'eko',          label:'EKO-andel',          unit:'%',          lb:false, fmt:'pct',   källa:'os20'},
 ];
+
+// Standard-konfiguration (sparas i Supabase)
+const DEFAULT_KPI_CONFIG = {
+  oms:          {visible:true,  tier:'primary'},
+  marginal:     {visible:true,  tier:'primary'},
+  svinn_k:      {visible:true,  tier:'primary'},
+  antal:        {visible:true,  tier:'primary'},
+  kvitton:      {visible:true,  tier:'secondary'},
+  snittKop:     {visible:true,  tier:'secondary'},
+  driftlackage: {visible:true,  tier:'secondary'},
+  kundkorg:     {visible:false, tier:'secondary'},
+  medlems:      {visible:false, tier:'secondary'},
+  emv:          {visible:false, tier:'secondary'},
+  eko:          {visible:false, tier:'secondary'},
+};
+
+// Global KPI-config (laddas från Supabase, samma för alla butiker)
+let KPI_CONFIG = JSON.parse(JSON.stringify(DEFAULT_KPI_CONFIG));
+
+// Hjälp: hämta aktiva KPI:er per tier
+function kpisFor(tier) {
+  return KPI_LIBRARY.filter(k => KPI_CONFIG[k.key]?.visible && KPI_CONFIG[k.key]?.tier === tier);
+}
+
 const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','14'];
+
 
 // ── STATE ─────────────────────────────────────────────
 let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, PERIODS=[], PINS={};
@@ -566,6 +615,7 @@ function buildNav(){
       <div class="ni" onclick="showTab('upload-försäljning',this)">📊 Försäljning</div>
       <div class="ni" onclick="showTab('upload-svinn',this)">🗑 Svinn</div>
       <div class="ni" onclick="showTab('perioder',this)">📅 Perioder</div>
+      <div class="ni" onclick="showTab('kpi-admin',this)">KPI-inställningar</div>
       <div class="ni" onclick="showTab('admin',this)">Butiksinställningar</div>`
     :`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
@@ -583,7 +633,7 @@ function showTab(tab,el){
 function renderPanel(tab){
   ({overview:renderOverview,storemål:renderStoreMål,deptmål:renderDeptMål,actions:renderActions,
     pdf:renderPdfPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,
-    perioder:renderPerioder,admin:renderAdmin})[tab]?.();
+    perioder:renderPerioder,'kpi-admin':renderKPIAdmin,admin:renderAdmin})[tab]?.();
 }
 
 // ── VIEW TOGGLE ───────────────────────────────────────
@@ -729,59 +779,98 @@ function renderOverview(){
     </div>`;
 }
 
-function getSvinnPct(storeId, weeks) {
-  // Beräkna känt svinn% = svinnKr / omsättning för valda veckor
-  let totSvinnKr=0, totForsaljning=0;
-  const wks = weeks && weeks.size>0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
-  wks.forEach(pk => {
-    const svinnRows = SVINN_DB[pk]?.[storeId];
-    const repData   = REPORT_DB[pk]?.[storeId];
-    if(svinnRows) totSvinnKr   += svinnRows.reduce((s,r)=>s+(r.svinnKr||0),0);
-    if(repData)   totForsaljning += repData.forsaljning||0;
-  });
-  return totForsaljning>0 ? totSvinnKr/totForsaljning : null;
+function getKPIVal(key, storeId, weeks) {
+  const curSid = storeId || sid;
+  const wks = weeks && weeks.size > 0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  const latestPK = [...Object.keys(REPORT_DB).sort()].pop();
+  const latestOS20PK = [...Object.keys(OS20_DB).sort()].pop();
+  const latestBIB = REPORT_DB[latestPK]?.[curSid];
+  const latestOS20 = OS20_DB[latestOS20PK]?.[curSid];
+  const isAcc = viewMode === 'period' && weeks && weeks.size > 0;
+
+  function accBIBMean(getter) {
+    const vals = [...wks].map(pk => getter(REPORT_DB[pk]?.[curSid])).filter(v => v != null);
+    return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+  }
+  function accOS20Mean(getter) {
+    const vals = [...wks].map(pk => getter(OS20_DB[pk]?.[curSid])).filter(v => v != null);
+    return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+  }
+  function svinnVal() {
+    let totS=0, totF=0;
+    wks.forEach(pk => {
+      const sv = SVINN_DB[pk]?.[curSid];
+      const rd = REPORT_DB[pk]?.[curSid];
+      if(sv) totS += sv.reduce((s,r)=>s+(r.svinnKr||0),0);
+      if(rd) totF += rd.forsaljning||0;
+    });
+    return totF > 0 ? totS/totF : null;
+  }
+
+  switch(key) {
+    case 'oms':          return isAcc ? accBIBMean(d=>d?.forsaljningDelta) : (latestBIB?.forsaljningDelta ?? null);
+    case 'marginal':     return isAcc ? accBIBMean(d=>d?.bvPct)            : (latestBIB?.bvPct ?? null);
+    case 'antal':        return isAcc ? accBIBMean(d=>d?.antalDelta)        : (latestBIB?.antalDelta ?? null);
+    case 'svinn_k':      return svinnVal();
+    case 'kvitton':      return isAcc ? accOS20Mean(d=>d?.kvittonDelta)     : (latestOS20?.kvittonDelta ?? null);
+    case 'snittKop':     return isAcc ? accOS20Mean(d=>d?.snittKop)         : (latestOS20?.snittKop ?? null);
+    case 'driftlackage': return isAcc ? accOS20Mean(d=>d?.driftlackagePct)  : (latestOS20?.driftlackagePct ?? null);
+    case 'kundkorg':     return isAcc ? accOS20Mean(d=>d?.kundkorg)         : (latestOS20?.kundkorg ?? null);
+    case 'medlems':      return isAcc ? accOS20Mean(d=>d?.medlemsandel)     : (latestOS20?.medlemsandel ?? null);
+    case 'emv':          return isAcc ? accOS20Mean(d=>d?.emvAndel)         : (latestOS20?.emvAndel ?? null);
+    case 'eko':          return isAcc ? accOS20Mean(d=>d?.ekoAndel)         : (latestOS20?.ekoAndel ?? null);
+    default: return null;
+  }
+}
+
+function fmtKPIVal(k, val) {
+  if(val == null) return '\u2014';
+  switch(k.fmt) {
+    case 'delta': return fmtDelta(val);
+    case 'pct':   return fmtPct(val);
+    case 'kr':    return Math.round(val).toLocaleString('sv-SE') + ' kr';
+    case 'num':   return val.toFixed(1);
+    default:      return val.toFixed(1);
+  }
 }
 
 function renderKPIGrid(sd, data, storeId) {
   const curSid = storeId || sid;
-  const svinnPct = getSvinnPct(curSid, viewMode==='period'?selWeeks:null);
+  const primaries   = kpisFor('primary');
+  const secondaries = kpisFor('secondary');
 
-  return`<div class="kgrid">${STORE_KPI_DEFS.map(k=>{
-    const goal = sd.storeGoals[k.key];
-    let val = null;
-    if(data) {
-      if(k.key==='oms')      val = data.forsaljningDelta;
-      else if(k.key==='marginal') val = data.bvPct;
-      else if(k.key==='antal')    val = data.antalDelta;
-    }
-    if(k.key==='svinn_k') val = svinnPct;
+  function tile(k, large) {
+    const val     = getKPIVal(k.key, curSid, viewMode==='period'?selWeeks:null);
+    const goal    = sd?.storeGoals?.[k.key];
+    const goalDec = goal != null ? goal/100 : null;
+    const color   = (val != null && goalDec != null) ? pctColor(val, goalDec, k.lb) : 'var(--ö-muted)';
+    const display = fmtKPIVal(k, val);
+    const barW    = (val != null && goalDec) ? Math.min(Math.abs(val/goalDec)*100, 100) : 0;
 
-    // Färgjämförelse: goal är i % (t.ex. 7), val är decimal (t.ex. 0.07) för delta/pct från rapport
-    // svinn_k: goal är i % (0.7), val är decimal
-    const goalDec = goal/100;
-    const color = pctColor(val, goalDec, k.lb);
-
-    // Formatera utfall
-    let display = '—';
-    if(val!=null) {
-      if(k.fmt==='delta') display = fmtDelta(val);
-      else display = fmtPct(val);
-    }
-
-    // Progressbar: hur nära målet (0–100%)
-    let barWidth = 50;
-    if(val!=null && goalDec!==0) {
-      barWidth = Math.min(Math.abs(val/goalDec)*100, 100);
-    }
-
-    return`<div class="ktile">
+    if(large) return `<div class="ktile">
       <div class="kl">${k.label}</div>
-      <div class="kv" style="color:${val!=null?color:'var(--ö-text)'}">${val!=null?display:`${goal}%`}</div>
-      <div class="kt">Mål: ${goal}%${val!=null?` · Utfall: ${display}`:' · Ingen data'}</div>
-      <div class="kbar"><div class="kfill" style="width:${barWidth}%;background:${val!=null?color:'var(--ö-border)'}"></div></div>
+      <div class="kv" style="color:${val!=null?color:'var(--ö-text)'}">${val!=null?display:(goal!=null?goal+'%':'\u2014')}</div>
+      <div class="kt">${goal!=null?'M\u00e5l: '+goal+'%':'Inget m\u00e5l'}${val!=null?' \u00b7 '+display:' \u00b7 Ingen data'}</div>
+      <div class="kbar"><div class="kfill" style="width:${barW}%;background:${val!=null?color:'var(--ö-border)'}"></div></div>
     </div>`;
-  }).join('')}</div>`;
+
+    return `<div style="background:var(--\u00f6-card);border:1px solid var(--\u00f6-border);border-radius:10px;padding:.625rem .875rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem">
+      <div>
+        <div style="font-size:10px;color:var(--\u00f6-muted);text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:2px">${k.label}</div>
+        <div style="font-size:10px;color:var(--\u00f6-muted)">${goal!=null?'M\u00e5l: '+goal+'%':'\u2014'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:17px;font-weight:600;color:${val!=null?color:'var(--\u00f6-muted)'}">${display}</div>
+        ${val!=null&&goalDec?`<div style="width:60px;height:3px;background:var(--\u00f6-border);border-radius:2px;margin-top:4px;margin-left:auto"><div style="height:100%;width:${barW}%;background:${color};border-radius:2px"></div></div>`:''}
+      </div>
+    </div>`;
+  }
+
+  const pHTML = primaries.length   ? `<div class="kgrid" style="margin-bottom:.625rem">${primaries.map(k=>tile(k,true)).join('')}</div>` : '';
+  const sHTML = secondaries.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px;margin-bottom:1rem">${secondaries.map(k=>tile(k,false)).join('')}</div>` : '';
+  return pHTML + sHTML;
 }
+
 
 function renderDeptTable(sd,wData,aData,mode){
   const active=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
@@ -1125,16 +1214,9 @@ function procF(file){
       // Hitta alla veckoflikar — format YYYYWW (t.ex. 202618)
       const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
       if(!weekSheets.length){
-        // Fallback: gammal enkel fil, en butik, manuell vecka — behandla som förut
-        pmsg.textContent='Enkel fil (en vecka) — läser...';
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-        const cw=getWeekNum(new Date()),cy=new Date().getFullYear();
-        const pk=periodKey(cy,cw);
-        await parseBIBSheet(rows,pk);
+        // BIB-filen har en flik per butik (inte per vecka) — visa veckoväljare
         prog.style.display='none';
-        toast(`${pk} inläst ✓`);
-        renderUploadFörsäljning();
+        showBIBWeekPicker(wb, file.name);
         return;
       }
 
@@ -1172,10 +1254,106 @@ function procF(file){
 }
 
 function sheetToPK(sheetName){
-  // '202618' → '2026-V18'
   const yr=sheetName.slice(0,4);
   const wk=parseInt(sheetName.slice(4));
   return periodKey(parseInt(yr),wk);
+}
+
+// Veckoväljare för BIB-filer utan veckoflikar (en flik per butik)
+let _pendingBIBWorkbook = null;
+
+function showBIBWeekPicker(wb, fileName) {
+  _pendingBIBWorkbook = wb;
+  const cw = getWeekNum(new Date()), cy = new Date().getFullYear();
+  const prog = document.getElementById('fp'), pmsg = document.getElementById('fpm');
+  if(prog) prog.style.display = 'block';
+  if(pmsg) pmsg.innerHTML = `
+    <div style="font-weight:600;margin-bottom:.625rem">📊 ${fileName}</div>
+    <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.875rem">Filen innehåller inte veckoinformation — ange vilken period rapporten avser:</div>
+    <div style="display:flex;gap:.625rem;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--ö-muted);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">År</label>
+        <input type="number" id="bib-yr" value="${cy}" style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:6px;padding:6px 9px;font-family:'SF Mono',monospace;font-size:14px;font-weight:600;outline:none;width:85px;transition:border-color .15s" onfocus="this.style.borderColor='var(--ö-mid)'" onblur="this.style.borderColor='var(--ö-border)'">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--ö-muted);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Vecka</label>
+        <input type="number" id="bib-wk" value="${cw}" min="1" max="53" style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:6px;padding:6px 9px;font-family:'SF Mono',monospace;font-size:14px;font-weight:600;outline:none;width:72px;transition:border-color .15s" onfocus="this.style.borderColor='var(--ö-mid)'" onblur="this.style.borderColor='var(--ö-border)'" onkeydown="if(event.key==='Enter')confirmBIBUpload()">
+      </div>
+      <button class="btn-g" onclick="confirmBIBUpload()" style="padding:7px 18px">Ladda upp →</button>
+      <button class="btn-sm" onclick="document.getElementById('fp').style.display='none';_pendingBIBWorkbook=null" style="padding:7px 12px">Avbryt</button>
+    </div>
+    <div id="bib-conflict" style="display:none;margin-top:.625rem;padding:.5rem .75rem;background:#fef0dc;border-radius:6px;font-size:12px;color:#944f00"></div>`;
+}
+
+async function confirmBIBUpload() {
+  const yr = parseInt(document.getElementById('bib-yr')?.value);
+  const wk = parseInt(document.getElementById('bib-wk')?.value);
+  if(!yr||!wk||wk<1||wk>53){toast('Ange ett giltigt år och vecka');return;}
+  const pk = periodKey(yr, wk);
+  const conflict = document.getElementById('bib-conflict');
+
+  if(REPORT_DB[pk]) {
+    if(conflict) {
+      conflict.style.display = 'block';
+      conflict.innerHTML = `⚠ ${pk} finns redan. <button class="btn-sm" onclick="doBIBUpload(true)" style="margin-left:8px">Ersätt ändå</button> <button class="btn-sm" onclick="document.getElementById('bib-conflict').style.display='none'" style="margin-left:4px">Avbryt</button>`;
+    }
+    return;
+  }
+  await doBIBUpload(false);
+}
+
+async function doBIBUpload(force) {
+  const yr = parseInt(document.getElementById('bib-yr')?.value);
+  const wk = parseInt(document.getElementById('bib-wk')?.value);
+  const pk = periodKey(yr, wk);
+  const pmsg = document.getElementById('fpm');
+  if(pmsg) pmsg.innerHTML = `<span>Läser alla butiksflikar för ${pk}...</span>`;
+
+  const wb = _pendingBIBWorkbook;
+  if(!wb) return;
+
+  // BIB-filen har en flik per butik — läs alla och bygg ihop en period
+  const pd = {};
+  for(const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    // Hitta butiksnivårader
+    for(const row of rows) {
+      const c0=row[0], c1=row[1], c2=row[2], c3=row[3];
+      if(c0 && String(c0).trim().match(/^\d{4}$/) && c1) {
+        const cs = String(c0).trim();
+        pd[cs] = {name:c1,
+          forsaljning:     row[6]!=null?parseFloat(row[6]):null,
+          forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+          antalSt:         row[8]!=null?parseFloat(row[8]):null,
+          antalDelta:      row[9]!=null?parseFloat(row[9]):null,
+          bvKr:            row[10]!=null?parseFloat(row[10]):null,
+          bvPct:           row[11]!=null?parseFloat(row[11]):null,
+          depts:[]};
+      } else if(pd[c0?String(c0).trim():null]!==undefined && !c0 && !c1 && c2 && String(c2).trim().match(/^\d{1,2}$/) && c3) {
+        // Avdelningsrad under befintlig butik
+        const lastStore = Object.keys(pd).pop();
+        if(lastStore) pd[lastStore].depts.push({
+          code:String(c2).trim().padStart(2,'0'), name:c3,
+          forsaljning:     row[6]!=null?parseFloat(row[6]):null,
+          forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+          antalSt:         row[8]!=null?parseFloat(row[8]):null,
+          antalDelta:      row[9]!=null?parseFloat(row[9]):null,
+          bvKr:            row[10]!=null?parseFloat(row[10]):null,
+          bvPct:           row[11]!=null?parseFloat(row[11]):null});
+      }
+    }
+  }
+
+  REPORT_DB[pk] = pd;
+  Object.entries(pd).forEach(([id,d]) => getSD(id).reportData = d);
+  await saveReportPeriod(pk);
+  _pendingBIBWorkbook = null;
+  document.getElementById('fp').style.display = 'none';
+  const sc = Object.keys(pd).length;
+  const dc = Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
+  toast(`${pk} inläst — ${sc} butiker, ${dc} avdelningar ✓`);
+  renderUploadFörsäljning();
 }
 
 async function parseBIBSheet(rows,pk){
@@ -1524,6 +1702,98 @@ function generatePDF(storeId,pdfMode){
   for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFillColor(...LG);doc.rect(0,287,W,10,'F');doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...GR);doc.text(`Konfidentiell · ${storeName} · Vecka ${week}`,M,293);doc.text(`Sida ${i} av ${pages}`,W-M,293,{align:'right'});}
   doc.save(`Veckorapport_${storeName.replace(/\s+/g,'_')}_V${week}.pdf`);
   toast('PDF nedladdad ✓');
+}
+
+// ── KPI-ADMIN ─────────────────────────────────────────
+function renderKPIAdmin(){
+  const källaLabel = {bib:'BIB_HEM06', svinn:'Svinnfil', os20:'9A ÖS20'};
+  const källaColor = {bib:'#1e4d2b', svinn:'#944f00', os20:'#1a3a5c'};
+  const källaBg    = {bib:'#d6eddb',  svinn:'#fef0dc',  os20:'#ddeaf7'};
+
+  document.getElementById('panel-kpi-admin').innerHTML=`
+    <div class="ph">
+      <div><div class="pt">KPI-inställningar</div><div class="ps">Välj vilka nyckeltal som visas — gäller alla butiker</div></div>
+      <button class="btn-sm green" onclick="saveKPIConfig()">Spara ändringar</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">Primära KPI:er</div><div class="cs">Visas som stora tiles överst — max 6 rekommenderas</div></div></div>
+      <div style="padding:.75rem 1rem">
+        <div style="display:grid;gap:6px">
+          ${KPI_LIBRARY.map(k=>{
+            const cfg = KPI_CONFIG[k.key] || {visible:false, tier:'secondary'};
+            const isPrimary = cfg.visible && cfg.tier==='primary';
+            return`<div style="display:flex;align-items:center;gap:1rem;padding:.625rem .875rem;background:${isPrimary?'var(--ö-light)':'#f8f7f3'};border:1px solid ${isPrimary?'#c0dbc5':'var(--ö-border)'};border-radius:8px;transition:all .15s">
+              <button class="toggle-btn ${cfg.visible&&cfg.tier==='primary'?'on':'off'}" onclick="toggleKPITier('${k.key}','primary',this)"></button>
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500">${k.label}</div>
+                <div style="font-size:11px;color:var(--ö-muted);margin-top:1px">${k.unit}</div>
+              </div>
+              <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:${källaBg[k.källa]};color:${källaColor[k.källa]}">${källaLabel[k.källa]}</span>
+              ${!Object.keys(REPORT_DB).length&&k.källa==='bib' ? `<span style="font-size:10px;color:#c65000">⚠ Ingen data</span>` : ''}
+              ${!Object.keys(OS20_DB).length&&k.källa==='os20'  ? `<span style="font-size:10px;color:#c65000">⚠ Ingen data</span>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">Sekundära KPI:er</div><div class="cs">Visas som kompakt rad under primära — kan visa fler på en gång</div></div></div>
+      <div style="padding:.75rem 1rem">
+        <div style="display:grid;gap:6px">
+          ${KPI_LIBRARY.map(k=>{
+            const cfg = KPI_CONFIG[k.key] || {visible:false, tier:'secondary'};
+            const isSec = cfg.visible && cfg.tier==='secondary';
+            return`<div style="display:flex;align-items:center;gap:1rem;padding:.625rem .875rem;background:${isSec?'#f0f8e8':'#f8f7f3'};border:1px solid ${isSec?'#c0dbc5':'var(--ö-border)'};border-radius:8px;transition:all .15s">
+              <button class="toggle-btn ${isSec?'on':'off'}" onclick="toggleKPITier('${k.key}','secondary',this)"></button>
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500">${k.label}</div>
+                <div style="font-size:11px;color:var(--ö-muted);margin-top:1px">${k.unit}</div>
+              </div>
+              <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:${källaBg[k.källa]};color:${källaColor[k.källa]}">${källaLabel[k.källa]}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="ct">Förhandsgranskning</div><div class="cs">Så här ser det ut på dashboarden</div></div>
+      <div style="padding:1rem;background:var(--ö-bkg);border-radius:0 0 14px 14px">
+        ${renderKPIGrid(Object.values(DB)[0]||{storeGoals:{oms:7,marginal:26.2,svinn_k:0.7,antal:5,kvitton:5,snittKop:180,driftlackage:3.5,kundkorg:7,medlems:80,emv:20,eko:5}}, null, Object.keys(STORES)[0])}
+      </div>
+    </div>`;
+}
+
+function toggleKPITier(key, tier, btn) {
+  const cfg = KPI_CONFIG[key] || {visible:false, tier:'secondary'};
+  if(cfg.visible && cfg.tier === tier) {
+    // Stäng av
+    cfg.visible = false;
+    btn.className = 'toggle-btn off';
+    btn.closest('div[style]').style.background = '#f8f7f3';
+    btn.closest('div[style]').style.border = '1px solid var(--ö-border)';
+  } else {
+    // Slå på och sätt tier — slå av eventuellt den andra tieren
+    cfg.visible = true;
+    cfg.tier = tier;
+    btn.className = 'toggle-btn on';
+    btn.closest('div[style]').style.background = tier==='primary'?'var(--ö-light)':'#f0f8e8';
+    btn.closest('div[style]').style.border = '1px solid #c0dbc5';
+  }
+  KPI_CONFIG[key] = cfg;
+  // Uppdatera förhandsgranskning
+  const prev = document.querySelector('#panel-kpi-admin .card:last-child [style*="ö-bkg"]');
+  if(prev) prev.innerHTML = renderKPIGrid(
+    Object.values(DB)[0]||{storeGoals:{oms:7,marginal:26.2,svinn_k:0.7,antal:5,kvitton:5,snittKop:180,driftlackage:3.5,kundkorg:7,medlems:80,emv:20,eko:5}},
+    null, Object.keys(STORES)[0]);
+}
+
+async function saveKPIConfig() {
+  await sbUpsert('kpi_config', {id:'global', config:KPI_CONFIG, updated_at:new Date().toISOString()});
+  toast('KPI-inställningar sparade ✓');
+  renderKPIAdmin();
 }
 
 // ── ADMIN ─────────────────────────────────────────────
