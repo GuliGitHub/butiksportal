@@ -334,6 +334,10 @@ async function loadAllFromSupabase() {
     const periods = await sbGet('periods');
     PERIODS = periods.map(p => ({id:p.id, name:p.name, year:p.year, weekFrom:p.week_from, weekTo:p.week_to}));
 
+    // OS20 data
+    const os20 = await sbGet('os20_data');
+    os20.forEach(row => { OS20_DB[row.period_key] = row.data; });
+
     // PINs
     const pins = await sbGet('pins');
     pins.forEach(row => { PINS[row.store_id] = row.pin; });
@@ -467,7 +471,7 @@ const STORE_KPI_DEFS=[
 const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','14'];
 
 // ── STATE ─────────────────────────────────────────────
-let DB={}, REPORT_DB={}, SVINN_DB={}, PERIODS=[], PINS={};
+let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, PERIODS=[], PINS={};
 let role=null, sid=null, viewMode='week', selPeriodId=null;
 
 function defaultSD() {
@@ -1018,77 +1022,297 @@ async function delPeriod(id){
 // ── UPLOAD FÖRSÄLJNING ────────────────────────────────
 function renderUploadFörsäljning(){
   const periods=Object.keys(REPORT_DB).sort().reverse();
-  const cw=getWeekNum(new Date()),cy=new Date().getFullYear();
+  const os20periods=Object.keys(OS20_DB).sort().reverse();
+
   document.getElementById('panel-upload-försäljning').innerHTML=`
-    <div class="ph"><div><div class="pt">Försäljningsdata</div><div class="ps">Ladda upp vecko- eller historisk data — alla butiker i en fil</div></div></div>
-    <div class="card"><div class="card-head"><div class="ct">Ladda upp rapport</div><div class="cs">BIB_HEM06_DS1 format</div></div>
+    <div class="ph"><div><div class="pt">Försäljningsdata</div><div class="ps">Ladda upp veckorapporter — nya veckor läggs till automatiskt</div></div></div>
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">BIB_HEM06 — Försäljning per avdelning</div><div class="cs">En flik per vecka · nya veckor läggs till, befintliga hoppas över</div></div></div>
       <div style="padding:1rem">
-        <div style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:.875rem;flex-wrap:wrap">
-          <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">ÅR</label><input type="number" id="fy" value="${cy}" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:7px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:14px;outline:none;width:88px"></div>
-          <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">VECKA</label><input type="number" id="fw" value="${cw}" min="1" max="53" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:7px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:14px;outline:none;width:72px"></div>
-          <button class="btn-g" onclick="document.getElementById('ff').click()" style="padding:7px 16px;align-self:flex-end">Välj fil →</button>
-        </div>
         <div class="uzone" onclick="document.getElementById('ff').click()" ondragover="event.preventDefault();this.classList.add('udrag')" ondragleave="this.classList.remove('udrag')" ondrop="hFD(event)">
           <div style="font-size:22px;margin-bottom:.375rem">📊</div>
-          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp försäljningsrapport</div>
-          <div style="font-size:12px;color:#888">BIB_HEM06_DS1 · .xlsx · Alla butiker i en fil</div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp BIB_HEM06-filen</div>
+          <div style="font-size:12px;color:var(--ö-muted)">Alla veckor läses in automatiskt · befintliga veckor påverkas inte</div>
         </div>
-        <input type="file" id="ff" style="display:none" accept=".xlsx,.xls,.csv" onchange="hFF(event)">
-        <div id="fp" style="display:none;padding:.75rem;background:#f8f8f6;border-radius:8px;font-size:13px;color:#555"><span id="fpm"></span></div>
+        <input type="file" id="ff" style="display:none" accept=".xlsx,.xls" onchange="hFF(event)">
+        <div id="fp" style="display:none;padding:.75rem;background:#f8f7f3;border-radius:8px;font-size:13px;color:#555;margin-top:.5rem">
+          <div id="fpm"></div>
+          <div id="fp-progress" style="margin-top:.5rem;display:none">
+            <div style="background:var(--ö-border);border-radius:4px;height:6px;overflow:hidden">
+              <div id="fp-bar" style="height:100%;background:var(--ö-green);width:0%;transition:width .3s;border-radius:4px"></div>
+            </div>
+          </div>
+        </div>
       </div>
+      <div style="padding:.75rem 1rem;border-top:1px solid var(--ö-border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <div style="font-size:12px;color:var(--ö-muted)">${periods.length} veckor inlästa</div>
+        ${periods.length?`<button class="btn-sm red" onclick="if(confirm('Ta bort ALL försäljningsdata?')){Object.keys(REPORT_DB).forEach(k=>deleteReportPeriod(k));REPORT_DB={};renderUploadFörsäljning();toast('All data borttagen')}">Rensa allt</button>`:''}
+      </div>
+      ${periods.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Vecka</th><th class="num">Butiker</th><th class="num">Avd.</th><th class="num">Kvitton</th><th class="num">Snittköp</th><th></th></tr></thead><tbody>
+        ${periods.map(pk=>{
+          const pd=REPORT_DB[pk];
+          const sc=Object.keys(pd).length;
+          const dc=Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
+          const kvitton=Object.values(pd).reduce((s,d)=>s+(d.kvitton||0),0);
+          const snitt=Object.values(pd).filter(d=>d.snittKop).map(d=>d.snittKop);
+          const snittAvg=snitt.length?snitt.reduce((a,b)=>a+b,0)/snitt.length:null;
+          return`<tr>
+            <td><div class="dept-name">${pk}</div></td>
+            <td class="num">${sc}/9</td><td class="num">${dc}</td>
+            <td class="num">${kvitton?kvitton.toLocaleString('sv-SE'):'—'}</td>
+            <td class="num">${snittAvg?snittAvg.toFixed(0)+' kr':'—'}</td>
+            <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="delPK('fors','${pk}')">Ta bort</button></td>
+          </tr>`;}).join('')}
+        </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga försäljningsrapporter uppladdade</div>'}
     </div>
-    <div class="card"><div class="card-head"><div><div class="ct">Uppladdade perioder</div></div><div class="cs">${periods.length} veckor</div></div>
-      ${periods.length?`<table class="dtbl"><thead><tr><th>Period</th><th class="num">Butiker</th><th class="num">Avdelningar</th><th></th></tr></thead><tbody>
-        ${periods.map(pk=>{const pd=REPORT_DB[pk];const sc=Object.keys(pd).length;const dc=Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
-          return`<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td><td class="num">${dc}</td>
-          <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="delPK('fors','${pk}')">Ta bort</button></td></tr>`;}).join('')}
-        </tbody></table>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:#aaa">Inga rapporter uppladdade</div>'}
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">9A ÖS20 — Försäljning & driftläckage</div><div class="cs">En flik per vecka · innehåller kvitton, snittköp, driftläckage m.m.</div></div></div>
+      <div style="padding:1rem">
+        <div class="uzone" onclick="document.getElementById('os20f').click()" ondragover="event.preventDefault();this.classList.add('udrag')" ondragleave="this.classList.remove('udrag')" ondrop="hOS20D(event)">
+          <div style="font-size:22px;margin-bottom:.375rem">📋</div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp 9A ÖS20-filen</div>
+          <div style="font-size:12px;color:var(--ö-muted)">Alla veckor läses in · befintliga veckor påverkas inte</div>
+        </div>
+        <input type="file" id="os20f" style="display:none" accept=".xlsx,.xls" onchange="hOS20F(event)">
+        <div id="os20p" style="display:none;padding:.75rem;background:#f8f7f3;border-radius:8px;font-size:13px;color:#555;margin-top:.5rem">
+          <div id="os20pm"></div>
+          <div style="margin-top:.5rem;display:none" id="os20-progress">
+            <div style="background:var(--ö-border);border-radius:4px;height:6px;overflow:hidden">
+              <div id="os20-bar" style="height:100%;background:var(--ö-green);width:0%;transition:width .3s;border-radius:4px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:.75rem 1rem;border-top:1px solid var(--ö-border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <div style="font-size:12px;color:var(--ö-muted)">${os20periods.length} veckor inlästa</div>
+      </div>
+      ${os20periods.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Vecka</th><th class="num">Butiker</th><th class="num">Kvitton</th><th class="num">Snittköp</th><th class="num">Driftläckage%</th><th></th></tr></thead><tbody>
+        ${os20periods.map(pk=>{
+          const pd=OS20_DB[pk];
+          const sc=Object.keys(pd).length;
+          const kvitton=Object.values(pd).reduce((s,d)=>s+(d.kvitton||0),0);
+          const snitt=Object.values(pd).filter(d=>d.snittKop).map(d=>d.snittKop);
+          const snittAvg=snitt.length?snitt.reduce((a,b)=>a+b,0)/snitt.length:null;
+          const drift=Object.values(pd).filter(d=>d.driftlackagePct!=null).map(d=>d.driftlackagePct);
+          const driftAvg=drift.length?drift.reduce((a,b)=>a+b,0)/drift.length:null;
+          return`<tr>
+            <td><div class="dept-name">${pk}</div></td>
+            <td class="num">${sc}/9</td>
+            <td class="num">${kvitton?kvitton.toLocaleString('sv-SE'):'—'}</td>
+            <td class="num">${snittAvg?snittAvg.toFixed(0)+' kr':'—'}</td>
+            <td class="num">${driftAvg!=null?(driftAvg*100).toFixed(2)+'%':'—'}</td>
+            <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="delPK('os20','${pk}')">Ta bort</button></td>
+          </tr>`;}).join('')}
+        </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga ÖS20-rapporter uppladdade</div>'}
     </div>`;
 }
+
+// ── PARSER: BIB_HEM06 (en flik = en vecka) ────────────
 function hFD(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procF(e.dataTransfer.files[0]);}
 function hFF(e){if(e.target.files[0])procF(e.target.files[0]);}
+
 function procF(file){
-  const yr=parseInt(document.getElementById('fy')?.value)||new Date().getFullYear();
-  const wk=parseInt(document.getElementById('fw')?.value)||getWeekNum(new Date());
-  const pk=periodKey(yr,wk);
-  const prog=document.getElementById('fp'),pmsg=document.getElementById('fpm');
+  const prog=document.getElementById('fp'),pmsg=document.getElementById('fpm'),pbar=document.getElementById('fp-progress'),bar=document.getElementById('fp-bar');
   if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
   const reader=new FileReader();
   reader.onload=async function(ev){
     try{
-      pmsg.textContent='Tolkar Excel...';
+      pmsg.textContent='Tolkar Excel — identifierar flikar...';
       const wb=XLSX.read(ev.target.result,{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-      if(REPORT_DB[pk]&&!confirm(`${pk} finns redan. Ersätta?`)){prog.style.display='none';return;}
-      const pd={};let cs=null;
-      for(const row of rows){
-        const c0=row[0],c1=row[1],c2=row[2],c3=row[3];
-        if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){cs=String(c0).trim();pd[cs]={name:c1,
-            forsaljning:row[6]!=null?parseFloat(row[6]):null,
-            forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
-            antalSt:row[8]!=null?parseFloat(row[8]):null,
-            antalDelta:row[9]!=null?parseFloat(row[9]):null,
-            bvKr:row[10]!=null?parseFloat(row[10]):null,
-            bvPct:row[11]!=null?parseFloat(row[11]):null,
-            depts:[]};}
-        else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){pd[cs].depts.push({code:String(c2).trim().padStart(2,'0'),name:c3,
-            forsaljning:row[6]!=null?parseFloat(row[6]):null,
-            forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
-            antalSt:row[8]!=null?parseFloat(row[8]):null,
-            antalDelta:row[9]!=null?parseFloat(row[9]):null,
-            bvKr:row[10]!=null?parseFloat(row[10]):null,
-            bvPct:row[11]!=null?parseFloat(row[11]):null});}
+
+      // Hitta alla veckoflikar — format YYYYWW (t.ex. 202618)
+      const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
+      if(!weekSheets.length){
+        // Fallback: gammal enkel fil, en butik, manuell vecka — behandla som förut
+        pmsg.textContent='Enkel fil (en vecka) — läser...';
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        const cw=getWeekNum(new Date()),cy=new Date().getFullYear();
+        const pk=periodKey(cy,cw);
+        await parseBIBSheet(rows,pk);
+        prog.style.display='none';
+        toast(`${pk} inläst ✓`);
+        renderUploadFörsäljning();
+        return;
       }
-      REPORT_DB[pk]=pd;Object.entries(pd).forEach(([id,d])=>getSD(id).reportData=d);
-      const sc=Object.keys(pd).length,dc=Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
-      const hasAntal=Object.values(pd).some(d=>d.antalDelta!=null);
-      await saveReportPeriod(pk);
+
+      // Flerfliks-fil
+      const nya=weekSheets.filter(s=>!REPORT_DB[sheetToPK(s)]);
+      const finns=weekSheets.filter(s=>REPORT_DB[sheetToPK(s)]);
+
+      if(nya.length===0){
+        pmsg.textContent=`Alla ${finns.length} veckor finns redan — inget nytt att ladda upp.`;
+        setTimeout(()=>prog.style.display='none',3000);
+        return;
+      }
+
+      if(pbar)pbar.style.display='block';
+      pmsg.textContent=`Läser ${nya.length} nya veckor (${finns.length} hoppar över)...`;
+
+      let done=0;
+      for(const sheetName of nya){
+        const pk=sheetToPK(sheetName);
+        const ws=wb.Sheets[sheetName];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        await parseBIBSheet(rows,pk);
+        done++;
+        if(bar)bar.style.width=`${Math.round(done/nya.length*100)}%`;
+        pmsg.textContent=`Sparar ${pk}... (${done}/${nya.length})`;
+      }
+
       prog.style.display='none';
-      toast(`${pk} inläst — ${sc} butiker, ${dc} avdelningar${hasAntal?' · Antal sålda ✓':' · ⚠ Antal sålda saknas'}`);
+      const skipMsg=finns.length?` · ${finns.length} redan uppladdade hoppades över`:'';
+      toast(`${nya.length} nya veckor inlästa${skipMsg} ✓`);
       renderUploadFörsäljning();
-    }catch(err){pmsg.textContent='Fel: '+err.message;}
-  };reader.readAsArrayBuffer(file);
+    }catch(err){if(pmsg)pmsg.textContent='Fel: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function sheetToPK(sheetName){
+  // '202618' → '2026-V18'
+  const yr=sheetName.slice(0,4);
+  const wk=parseInt(sheetName.slice(4));
+  return periodKey(parseInt(yr),wk);
+}
+
+async function parseBIBSheet(rows,pk){
+  const pd={};let cs=null;
+  for(const row of rows){
+    const c0=row[0],c1=row[1],c2=row[2],c3=row[3];
+    if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){
+      cs=String(c0).trim();
+      pd[cs]={name:c1,
+        forsaljning:   row[6]!=null?parseFloat(row[6]):null,
+        forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+        antalSt:       row[8]!=null?parseFloat(row[8]):null,
+        antalDelta:    row[9]!=null?parseFloat(row[9]):null,
+        bvKr:          row[10]!=null?parseFloat(row[10]):null,
+        bvPct:         row[11]!=null?parseFloat(row[11]):null,
+        depts:[]};
+    } else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){
+      pd[cs].depts.push({code:String(c2).trim().padStart(2,'0'),name:c3,
+        forsaljning:   row[6]!=null?parseFloat(row[6]):null,
+        forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+        antalSt:       row[8]!=null?parseFloat(row[8]):null,
+        antalDelta:    row[9]!=null?parseFloat(row[9]):null,
+        bvKr:          row[10]!=null?parseFloat(row[10]):null,
+        bvPct:         row[11]!=null?parseFloat(row[11]):null});
+    }
+  }
+  REPORT_DB[pk]=pd;
+  Object.entries(pd).forEach(([id,d])=>getSD(id).reportData=d);
+  await saveReportPeriod(pk);
+}
+
+// ── PARSER: 9A ÖS20 (en flik = en vecka) ─────────────
+// Butiksnamnsmapping: OS20 använder långa namn, vi matchar mot butiksId
+const OS20_STORE_MAP={
+  'HEMKÖP BORENSBERG':        '4734',
+  'HEMKÖP LINKÖPING ULLSTÄMM':'4738',
+  'HEMKÖP LKPG FOLKUNGAVALLE':'4757',
+  'HEMKÖP MOTALA VÄSTER':     '4732',
+  'HEMKÖP MOTALA VERKSTAN':   '4730',
+  'HEMKÖP NORRK BJÖRKALUND':  '4756',
+  'HEMKÖP SKÄNNINGE':         '4737',
+  'HEMKÖP VADSTENA MIMA':     '4736',
+  'HEMKÖP VADSTENA STARBY':   '4735',
+};
+
+function matchOS20Store(name){
+  if(!name)return null;
+  const n=String(name).toUpperCase().trim();
+  for(const [key,id] of Object.entries(OS20_STORE_MAP)){
+    if(n.startsWith(key))return id;
+  }
+  return null;
+}
+
+function hOS20D(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procOS20(e.dataTransfer.files[0]);}
+function hOS20F(e){if(e.target.files[0])procOS20(e.target.files[0]);}
+
+function procOS20(file){
+  const prog=document.getElementById('os20p'),pmsg=document.getElementById('os20pm'),pbar=document.getElementById('os20-progress'),bar=document.getElementById('os20-bar');
+  if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
+  const reader=new FileReader();
+  reader.onload=async function(ev){
+    try{
+      pmsg.textContent='Identifierar veckoflikar...';
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
+
+      if(!weekSheets.length){pmsg.textContent='Hittade inga veckoflikar (format YYYYVV)';return;}
+
+      const nya=weekSheets.filter(s=>!OS20_DB[sheetToPK(s)]);
+      const finns=weekSheets.filter(s=>OS20_DB[sheetToPK(s)]);
+
+      if(nya.length===0){
+        pmsg.textContent=`Alla ${finns.length} veckor finns redan.`;
+        setTimeout(()=>prog.style.display='none',3000);return;
+      }
+
+      if(pbar)pbar.style.display='block';
+      let done=0;
+      for(const sheetName of nya){
+        const pk=sheetToPK(sheetName);
+        const ws=wb.Sheets[sheetName];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        await parseOS20Sheet(rows,pk);
+        done++;
+        if(bar)bar.style.width=`${Math.round(done/nya.length*100)}%`;
+        pmsg.textContent=`Sparar ${pk}... (${done}/${nya.length})`;
+      }
+
+      prog.style.display='none';
+      const skipMsg=finns.length?` · ${finns.length} hoppades över`:'';
+      toast(`${nya.length} ÖS20-veckor inlästa${skipMsg} ✓`);
+      renderUploadFörsäljning();
+    }catch(err){if(pmsg)pmsg.textContent='Fel: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function parseOS20Sheet(rows,pk){
+  const pd={};
+  // Rad 6 (index 5) = rubrikrad, rad 7+ = data
+  // Kolumner (0-indexed): 3=Butik, 4=Förs kr, 6=ΔFÅ%, 10=Antal sålda, 11=Antal ΔFÅ%,
+  // 13=BV kr, 15=BV% ΔFÅ%, 19=Lokal AP%, 20=Artikelrabatt%, 21=Känt svinn%,
+  // 22=Driftläckage%, 23=Driftläckage ΔFÅ, 25=BV%, 26=BV% ΔFÅ,
+  // 27=Central AP%, 28=Antal kvitton, 29=Kvitton ΔFÅ%,
+  // 31=Snittköp, 32=Snittköp ΔFÅ, 34=Kundkorg, 35=Kundkorg ΔFÅ%,
+  // 36=Medlemsandel%, 37=EMV%, 39=EKO%
+  for(const row of rows){
+    const storeName=row[3];
+    const storeId=matchOS20Store(storeName);
+    if(!storeId)continue;
+    pd[storeId]={
+      forsaljning:         row[4]!=null?parseFloat(row[4]):null,
+      forsaljningDelta:    row[6]!=null?parseFloat(row[6]):null,
+      antalSt:             row[10]!=null?parseFloat(row[10]):null,
+      antalDelta:          row[11]!=null?parseFloat(row[11]):null,
+      bvKr:                row[13]!=null?parseFloat(row[13]):null,
+      bvPct:               row[25]!=null?parseFloat(row[25]):null,
+      lokalAP:             row[19]!=null?parseFloat(row[19]):null,
+      artikelRabatt:       row[20]!=null?parseFloat(row[20]):null,
+      svinnPct:            row[21]!=null?parseFloat(row[21]):null,
+      driftlackagePct:     row[22]!=null?parseFloat(row[22]):null,
+      driftlackageDelta:   row[23]!=null?parseFloat(row[23]):null,
+      centralAP:           row[27]!=null?parseFloat(row[27]):null,
+      kvitton:             row[28]!=null?parseFloat(row[28]):null,
+      kvittonDelta:        row[29]!=null?parseFloat(row[29]):null,
+      snittKop:            row[31]!=null?parseFloat(row[31]):null,
+      snittKopDelta:       row[32]!=null?parseFloat(row[32]):null,
+      kundkorg:            row[34]!=null?parseFloat(row[34]):null,
+      kundkorgDelta:       row[35]!=null?parseFloat(row[35]):null,
+      medlemsandel:        row[36]!=null?parseFloat(row[36]):null,
+      emvAndel:            row[37]!=null?parseFloat(row[37]):null,
+      ekoAndel:            row[39]!=null?parseFloat(row[39]):null,
+    };
+  }
+  OS20_DB[pk]=pd;
+  await sbUpsert('os20_data',{period_key:pk,data:pd,uploaded_at:new Date().toISOString()});
 }
 
 // ── UPLOAD SVINN ──────────────────────────────────────
@@ -1147,9 +1371,10 @@ function procS(file){
   };reader.readAsArrayBuffer(file);
 }
 async function delPK(type,pk){
-  if(!confirm(`Ta bort ${type==='fors'?'försäljnings':'svinn'}data för ${pk}?`))return;
+  if(!confirm(`Ta bort ${type==='fors'?'försäljnings':type==='svinn'?'svinn':'ÖS20'}-data för ${pk}?`))return;
   if(type==='fors'){delete REPORT_DB[pk];await deleteReportPeriod(pk);renderUploadFörsäljning();}
-  else{delete SVINN_DB[pk];await deleteSvinnPeriod(pk);renderUploadSvinn();}
+  else if(type==='svinn'){delete SVINN_DB[pk];await deleteSvinnPeriod(pk);renderUploadSvinn();}
+  else if(type==='os20'){delete OS20_DB[pk];await sbDelete('os20_data',{period_key:pk});renderUploadFörsäljning();}
   toast(`${pk} borttagen`);
 }
 
