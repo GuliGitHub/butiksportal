@@ -224,6 +224,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
   <div class="fld" id="store-fld" style="display:none"><label>Butik</label>
     <select id="store-sel">
       <option value="">— Välj butik —</option>
+      <option value="total">⬛ Östenssons Totalt (alla butiker)</option>
       <option value="4730">Hemköp Motala Verkstan</option>
       <option value="4732">Hemköp Motala Väster</option>
       <option value="4734">Hemköp Borensberg</option>
@@ -239,7 +240,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:27</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:33</div>
 </div>
 </div>
 
@@ -258,7 +259,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:27</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:33</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -585,6 +586,89 @@ function getAccData(storeId,period){
 function fmtKr(v){if(v==null)return'—';return Math.round(v).toLocaleString('sv-SE')+' kr';}
 function fmtPct(v,d=1){if(v==null)return'—';return(v*100).toFixed(d)+'%';}
 function fmtDelta(v){if(v==null)return'—';return(v>=0?'+':'')+(v*100).toFixed(1)+'%';}
+
+// ── TOTAL-BUTIK AGGREGERING ───────────────────────────
+const TOTAL_ID = 'total';
+const TOTAL_NAME = 'Östenssons Totalt';
+
+// Aggregera data för alla butiker för en given vecka/period
+function getTotalData(weeks) {
+  const wks = weeks && weeks.size>0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  let totF=0, totBvKr=0, totAntalSum=0, totAntalCount=0, omsSum=0, omsCount=0;
+  const deptAcc = {};
+
+  wks.forEach(pk=>{
+    Object.keys(STORES).forEach(storeId=>{
+      const pd = REPORT_DB[pk]?.[storeId];
+      if(!pd) return;
+      totF     += pd.forsaljning||0;
+      totBvKr  += pd.bvKr||0;
+      if(pd.antalDelta!=null){totAntalSum+=pd.antalDelta;totAntalCount++;}
+      if(pd.forsaljningDelta!=null){omsSum+=pd.forsaljningDelta;omsCount++;}
+      (pd.depts||[]).forEach(d=>{
+        if(!deptAcc[d.code]) deptAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0,antalDeltas:[],forsaljningDeltas:[]};
+        deptAcc[d.code].forsaljning+=d.forsaljning||0;
+        deptAcc[d.code].bvKr+=d.bvKr||0;
+        if(d.antalDelta!=null) deptAcc[d.code].antalDeltas.push(d.antalDelta);
+        if(d.forsaljningDelta!=null) deptAcc[d.code].forsaljningDeltas.push(d.forsaljningDelta);
+      });
+    });
+  });
+
+  if(!totF && !omsCount) return null;
+  const bvPct = totF>0 ? totBvKr/totF : null;
+  const forsaljningDelta = omsCount>0 ? omsSum/omsCount : null;
+  const antalDelta = totAntalCount>0 ? totAntalSum/totAntalCount : null;
+  const depts = Object.values(deptAcc).map(d=>({
+    ...d,
+    bvPct: d.forsaljning>0 ? d.bvKr/d.forsaljning : null,
+    forsaljningDelta: d.forsaljningDeltas.length>0 ? d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length : null,
+    antalDelta: d.antalDeltas.length>0 ? d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length : null,
+  }));
+  return {forsaljning:totF, bvKr:totBvKr, bvPct, forsaljningDelta, antalDelta, depts, pk:'total'};
+}
+
+// Aggregera svinn för alla butiker
+function getTotalSvinnPct(weeks) {
+  const wks = weeks && weeks.size>0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  let totSvinnKr=0, totF=0;
+  wks.forEach(pk=>{
+    Object.keys(STORES).forEach(storeId=>{
+      const svinnRows = SVINN_DB[pk]?.[storeId]||[];
+      svinnRows.forEach(r=>totSvinnKr+=r.svinnKr||0);
+      const rep = REPORT_DB[pk]?.[storeId];
+      if(rep) totF+=rep.forsaljning||0;
+    });
+  });
+  return totF>0 ? totSvinnKr/totF : null;
+}
+
+// Aggregera KPI-värde för total
+function getTotalKPIVal(key, weeks) {
+  const wks = weeks && weeks.size>0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  const data = getTotalData(wks);
+  const os20Latest = [...Object.keys(OS20_DB).sort()].pop();
+
+  switch(key) {
+    case 'oms':      return data?.forsaljningDelta ?? null;
+    case 'marginal': return data?.bvPct ?? null;
+    case 'antal':    return data?.antalDelta ?? null;
+    case 'svinn_k':  return getTotalSvinnPct(wks);
+    case 'kvitton': {
+      const vals = [...wks].map(pk=>Object.keys(STORES).map(id=>OS20_DB[pk]?.[id]?.kvittonDelta).filter(v=>v!=null)).flat();
+      return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+    }
+    case 'snittKop': {
+      const vals = [...wks].map(pk=>Object.keys(STORES).map(id=>OS20_DB[pk]?.[id]?.snittKop).filter(v=>v!=null)).flat();
+      return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+    }
+    case 'driftlackage': {
+      const vals = [...wks].map(pk=>Object.keys(STORES).map(id=>OS20_DB[pk]?.[id]?.driftlackagePct).filter(v=>v!=null)).flat();
+      return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+    }
+    default: return null;
+  }
+}
 function pctColor(val,goal,lb){
   if(val==null||goal==null)return'#aaa';
   if(lb)return val<=goal?'#3d6e10':val<=goal*1.15?'#c65000':'#c62828';
@@ -612,7 +696,8 @@ async function login(){
   if(r==='store' && pin !== storePin){ toast('Fel PIN-kod'); return; }
 
   role=r; sid=r==='admin'?null:s;
-  document.getElementById('store-lbl').textContent=r==='admin'?'Admin / Central':STORES[s];
+  const storeName = s==='total' ? TOTAL_NAME : STORES[s];
+  document.getElementById('store-lbl').textContent=r==='admin'?'Admin / Central':storeName;
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='flex';
   await loadAllFromSupabase();
@@ -620,8 +705,99 @@ async function login(){
 }
 function logout(){role=null;sid=null;document.getElementById('login').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('pin-in').value='';document.getElementById('role-sel').value='';document.getElementById('store-sel').value='';document.getElementById('store-fld').style.display='none';}
 
+
+// ── TOTAL-VY ──────────────────────────────────────────
+function renderTotalOv(el) {
+  const sd = getSD(TOTAL_ID);
+  const wks = viewMode==='period'&&selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  const data = getTotalData(wks);
+  const acts = Object.values(sd.actions).flat();
+  const done = acts.filter(a=>a.done).length;
+  const pending = acts.filter(a=>!a.done).slice(0,4);
+
+  el.innerHTML = `
+    <div class="ph">
+      <div><div class="pt">${TOTAL_NAME}</div><div class="ps">Alla 9 butiker samlade · ${Object.keys(REPORT_DB).length} veckor inlästa</div></div>
+      ${data?.forsaljning ? `<span style="font-size:13px;font-weight:600;color:var(--ö-green)">${fmtKr(data.forsaljning)} total omsättning</span>` : ''}
+    </div>
+    ${viewToggle()}
+    ${renderKPIGrid(sd, data, TOTAL_ID)}
+    ${renderTotalDeptTable(sd, data)}
+    <div class="card">
+      <div class="card-head"><div class="ct">Actions — Östenssons Totalt</div><span class="pill ${done===acts.length&&acts.length>0?'pg':done>0?'pa':'pn'}">${done}/${acts.length} klara</span></div>
+      ${pending.length ? pending.map(a=>{
+        const code=Object.entries(sd.actions).find(([c,as])=>as.some(x=>x.id===a.id))?.[0]||'';
+        const dn=DEPTS.find(d=>d.code===code)?.name||'';
+        return`<div class="act-row" style="cursor:pointer" onclick="qToggle('${code}',${a.id})">
+          <div class="act-check ${a.done?'on':''}"></div>
+          <div class="act-body"><div style="font-size:11px;color:var(--ö-muted);margin-bottom:2px">${dn}</div>
+            <div style="font-size:13px">${a.text}</div>${a.cond?`<div style="font-size:11px;color:var(--ö-muted)">${a.cond}</div>`:''}
+          </div><span class="act-type ${a.type==='fixed'?'at-fix':'at-goal'}">${a.type==='fixed'?'Fast':'Mål'}</span>
+        </div>`;}).join('')
+      : '<div style="padding:1rem;font-size:13px;color:var(--ö-muted);text-align:center">Inga actions satta för Totalbutiken</div>'}
+    </div>`;
+}
+
+function renderTotalDeptTable(sd, data) {
+  const active = DEPTS.filter(d=>sd.deptGoals?.[d.code]?.active);
+  if(!active.length) {
+    return`<div class="card" style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">
+      Aktivera avdelningar under <strong>Avdelningsmål</strong> för Totalbutiken.
+    </div>`;
+  }
+  return`<div class="card">
+    <div class="card-head"><div><div class="ct">Avdelningsöversikt — alla butiker</div><div class="cs">Summerat utfall för samtliga 9 butiker</div></div></div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:480px">
+      <thead><tr style="background:var(--ö-bkg)">
+        <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Avdelning</th>
+        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Omsättning kr</th>
+        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Oms Delta%</th>
+        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">BV%</th>
+        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">BV kr</th>
+      </tr></thead>
+      <tbody>${active.map(d=>{
+        const dg = sd.deptGoals?.[d.code];
+        const dd = data?.depts?.find(x=>x.code===d.code);
+        const omsDelta = dd?.forsaljningDelta ?? null;
+        const bvPct    = dd?.bvPct ?? null;
+        const omsKr    = dd?.forsaljning ?? null;
+        const bvKr     = dd?.bvKr ?? null;
+        const omsMal   = dg?.oms ? dg.oms/100 : null;
+        const bvMal    = dg?.marginal ? dg.marginal/100 : null;
+        const dotColor = omsDelta!=null&&omsMal ? pctColor(omsDelta,omsMal,false) : '#888';
+        return`<tr style="border-bottom:1px solid var(--ö-border)">
+          <td style="padding:8px 12px;vertical-align:middle">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
+              <div><div style="font-size:13px;font-weight:500;color:var(--ö-text)">${d.name}</div>
+              <div style="font-size:10px;color:var(--ö-muted)">avd.${d.code}</div></div>
+            </div>
+          </td>
+          <td style="padding:8px 10px;text-align:right;font-size:12px;font-family:'SF Mono',monospace;color:var(--ö-muted)">${omsKr!=null?fmtKr(omsKr):'—'}</td>
+          <td style="padding:8px 10px;text-align:right">
+            <div style="font-size:12px;font-weight:600;color:${omsDelta!=null&&omsMal?pctColor(omsDelta,omsMal,false):'var(--ö-muted)'}">${omsDelta!=null?fmtDelta(omsDelta):'—'}</div>
+            ${dg?.oms?`<div style="font-size:10px;color:var(--ö-muted)">mal ${dg.oms}%</div>`:''}
+          </td>
+          <td style="padding:8px 10px;text-align:right">
+            <div style="font-size:12px;font-weight:600;color:${bvPct!=null&&bvMal?pctColor(bvPct,bvMal,false):'var(--ö-muted)'}">${bvPct!=null?fmtPct(bvPct):'—'}</div>
+            ${dg?.marginal?`<div style="font-size:10px;color:var(--ö-muted)">mal ${dg.marginal}%</div>`:''}
+          </td>
+          <td style="padding:8px 10px;text-align:right;font-size:12px;font-family:'SF Mono',monospace;color:var(--ö-muted)">${bvKr!=null?fmtKr(bvKr):'—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div></div>`;
+}
+
 // ── NAV ───────────────────────────────────────────────
 function buildNav(){
+  if(sid===TOTAL_ID){
+    document.getElementById('nav').innerHTML=`
+      <div class="ni active" onclick="showTab('overview',this)">Översikt</div>
+      <div class="ni" onclick="showTab('storemål',this)">Totalmål</div>
+      <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
+      <div class="ni" onclick="showTab('actions',this)">Actions</div>`;
+    return;
+  }
   document.getElementById('nav').innerHTML=role==='admin'
     ?`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('upload-försäljning',this)">📊 Försäljning</div>
@@ -762,6 +938,7 @@ function getAccDataFromWeeks(storeId, weeks){
 function renderOverview(){
   const el=document.getElementById('panel-overview');
   if(role==='admin'){renderAdminOv(el);return;}
+  if(sid===TOTAL_ID){renderTotalOv(el);return;}
   const sd=getSD(sid);
   const wData=getLatestWeekData(sid);
   const aData=viewMode==='period'?getAccDataFromWeeks(sid,selWeeks):null;
@@ -770,7 +947,7 @@ function renderOverview(){
   const done=acts.filter(a=>a.done).length;
   const pending=acts.filter(a=>!a.done).slice(0,4);
   el.innerHTML=`
-    <div class="ph"><div><div class="pt">Veckoöversikt</div><div class="ps">${STORES[sid]}</div></div>
+    <div class="ph"><div><div class="pt">Veckoöversikt</div><div class="ps">${(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid)}</div></div>
       <span style="font-size:11px;color:#aaa;background:#f8f8f6;border:0.5px solid #e8e8e5;border-radius:6px;padding:3px 8px">Senaste data: ${wData?.pk||'—'}</span>
     </div>
     ${viewToggle()}
@@ -793,6 +970,9 @@ function renderOverview(){
 
 function getKPIVal(key, storeId, weeks) {
   const curSid = storeId || sid;
+
+  // Totalbutiken — aggregera alla butiker
+  if(curSid === TOTAL_ID) return getTotalKPIVal(key, weeks);
   const wks = weeks && weeks.size > 0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
   const latestPK = [...Object.keys(REPORT_DB).sort()].pop();
   const latestOS20PK = [...Object.keys(OS20_DB).sort()].pop();
@@ -1091,7 +1271,7 @@ function backAdmin(){sid=null;document.getElementById('store-lbl').textContent='
 function renderStoreMål(){
   const sd=getSD(sid);
   document.getElementById('panel-storemål').innerHTML=`
-    <div class="ph"><div><div class="pt">Butiksmål</div><div class="ps">${STORES[sid]}</div></div><button class="btn-sm green" onclick="saveStoreMål()">Spara</button></div>
+    <div class="ph"><div><div class="pt">Butiksmål</div><div class="ps">${(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid)}</div></div><button class="btn-sm green" onclick="saveStoreMål()">Spara</button></div>
     <div class="card"><div class="card-head"><div><div class="ct">Övergripande KPI-mål</div><div class="cs">Gäller hela butiken</div></div></div>
       <div class="goals-grid">${KPI_LIBRARY.map(k=>`
         <div class="goal-tile"><div class="gt-label">${k.label}</div>
@@ -1110,7 +1290,7 @@ async function saveStoreMål(){
 function renderDeptMål(){
   const sd=getSD(sid);
   document.getElementById('panel-deptmål').innerHTML=`
-    <div class="ph"><div><div class="pt">Avdelningsmål</div><div class="ps">${STORES[sid]}</div></div><button class="btn-sm green" onclick="saveDeptMål()">Spara alla</button></div>
+    <div class="ph"><div><div class="pt">Avdelningsmål</div><div class="ps">${(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid)}</div></div><button class="btn-sm green" onclick="saveDeptMål()">Spara alla</button></div>
     <p style="font-size:12px;color:#888;margin-bottom:.875rem">Aktivera avdelningar ni vill följa upp. Inaktiva syns inte i rapporten.</p>
     <div class="card" style="overflow-x:auto"><table class="dtbl" style="min-width:520px">
       <thead><tr><th style="width:44px">Aktiv</th><th>Avdelning</th><th class="num">Oms. ökning %</th><th class="num">Marginal %</th><th class="num">Känt svinn %</th></tr></thead>
@@ -1136,7 +1316,7 @@ function renderActions(){
   const sd=getSD(sid);
   const active=DEPTS.filter(d=>sd.deptGoals[d.code]?.active||sd.actions[d.code]?.length>0);
   document.getElementById('panel-actions').innerHTML=`
-    <div class="ph"><div><div class="pt">Actions</div><div class="ps">${STORES[sid]}</div></div></div>
+    <div class="ph"><div><div class="pt">Actions</div><div class="ps">${(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid)}</div></div></div>
     <div class="card">${active.length?active.map(d=>{
       const acts=sd.actions[d.code]||[];const done=acts.filter(a=>a.done).length;
       const fixed=acts.filter(a=>a.type==='fixed'),goal=acts.filter(a=>a.type==='goal');
@@ -1835,7 +2015,7 @@ async function delPK(type,pk){
 
 // ── PDF ───────────────────────────────────────────────
 function renderPdfPanel(){
-  const storeName=STORES[sid],week=getWeekNum(new Date());
+  const storeName=(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid),week=getWeekNum(new Date());
   const opts=PERIODS.map(p=>`<option value="${p.id}">${p.name} (V${p.weekFrom}–V${p.weekTo} ${p.year})</option>`).join('');
   document.getElementById('panel-pdf').innerHTML=`
     <div class="ph"><div><div class="pt">Ladda ner PDF-rapport</div><div class="ps">${storeName}</div></div></div>
