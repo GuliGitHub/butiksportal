@@ -662,34 +662,34 @@ function selectPeriodPreset(periodId){
 // Ersätter gamla getAccData — nu baserat på selWeeks
 function getAccDataFromWeeks(storeId, weeks){
   if(!weeks||weeks.size===0) return null;
-  let totF=0,totBvKr=0,totAntal=0,totAntalFgAr=0,dAcc={},found=0;
+  let totF=0,totBvKr=0,totAntalSum=0,totAntalCount=0,omsSum=0,omsCount=0,dAcc={},found=0;
   weeks.forEach(pk => {
     const pd=REPORT_DB[pk]?.[storeId];
     if(!pd)return;
-    found++;totF+=pd.forsaljning||0;totBvKr+=pd.bvKr||0;
-    // antal: antalDelta är % vs fg år, vi ackumulerar som snitt
-    if(pd.antalDelta!=null){totAntal+=pd.antalDelta;totAntalFgAr++;}
+    found++;
+    totF    += pd.forsaljning||0;
+    totBvKr += pd.bvKr||0;
+    if(pd.antalDelta!=null){totAntalSum+=pd.antalDelta;totAntalCount++;}
+    if(pd.forsaljningDelta!=null){omsSum+=pd.forsaljningDelta;omsCount++;}
     (pd.depts||[]).forEach(d=>{
       if(!dAcc[d.code])dAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0,antalDeltas:[],forsaljningDeltas:[]};
-      dAcc[d.code].forsaljning+=d.forsaljning||0;dAcc[d.code].bvKr+=d.bvKr||0;
+      dAcc[d.code].forsaljning+=d.forsaljning||0;
+      dAcc[d.code].bvKr+=d.bvKr||0;
       if(d.antalDelta!=null)dAcc[d.code].antalDeltas.push(d.antalDelta);
       if(d.forsaljningDelta!=null)dAcc[d.code].forsaljningDeltas.push(d.forsaljningDelta);
     });
   });
   if(!found)return null;
-  const bvPct=totF>0?totBvKr/totF:null;
-  const antalDelta=totAntalFgAr>0?totAntal/totAntalFgAr:null;
-  // Omsättningsdelta ackumulerat: viktat medelvärde av veckodelta
-  let omsDeltas=[],omsDeltaCount=0;
-  weeks.forEach(pk=>{const pd=REPORT_DB[pk]?.[storeId];if(pd?.forsaljningDelta!=null){omsDeltas+=pd.forsaljningDelta;omsDeltaCount++;}});
-  const forsaljningDelta=omsDeltaCount>0?omsDeltas/omsDeltaCount:null;
+  const bvPct          = totF>0 ? totBvKr/totF : null;
+  const antalDelta     = totAntalCount>0 ? totAntalSum/totAntalCount : null;
+  const forsaljningDelta = omsCount>0 ? omsSum/omsCount : null;
   const depts=Object.values(dAcc).map(d=>({
     ...d,
-    bvPct:d.forsaljning>0?d.bvKr/d.forsaljning:null,
-    antalDelta:d.antalDeltas.length>0?d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length:null,
-    forsaljningDelta:d.forsaljningDeltas.length>0?d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length:null,
+    bvPct:           d.forsaljning>0 ? d.bvKr/d.forsaljning : null,
+    antalDelta:      d.antalDeltas.length>0 ? d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length : null,
+    forsaljningDelta:d.forsaljningDeltas.length>0 ? d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length : null,
   }));
-  return{forsaljning:totF,bvKr:totBvKr,bvPct,forsaljningDelta,antalDelta,depts,found,total:weeks.size};
+  return{forsaljning:totF, bvKr:totBvKr, bvPct, forsaljningDelta, antalDelta, depts, found, total:weeks.size};
 }
 
 // ── OVERVIEW ──────────────────────────────────────────
@@ -1067,14 +1067,16 @@ function procF(file){
         if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){cs=String(c0).trim();pd[cs]={name:c1,
             forsaljning:row[6]?parseFloat(row[6]):null,
             forsaljningDelta:row[7]?parseFloat(row[7]):null,
-            antalDelta:row[8]?parseFloat(row[8]):null,
+            antalSt:row[8]?parseFloat(row[8]):null,
+            antalDelta:row[9]?parseFloat(row[9]):null,
             bvKr:row[10]?parseFloat(row[10]):null,
             bvPct:row[11]?parseFloat(row[11]):null,
             depts:[]};}
         else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){pd[cs].depts.push({code:String(c2).trim().padStart(2,'0'),name:c3,
             forsaljning:row[6]?parseFloat(row[6]):null,
             forsaljningDelta:row[7]?parseFloat(row[7]):null,
-            antalDelta:row[8]?parseFloat(row[8]):null,
+            antalSt:row[8]?parseFloat(row[8]):null,
+            antalDelta:row[9]?parseFloat(row[9]):null,
             bvKr:row[10]?parseFloat(row[10]):null,
             bvPct:row[11]?parseFloat(row[11]):null});}
       }
