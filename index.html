@@ -257,7 +257,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:13</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:27</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -920,41 +920,33 @@ function renderDeptTable(sd,wData,aData,mode){
 
   return`<div class="card">
     <div class="card-head"><div><div class="ct">Avdelningsöversikt</div><div class="cs">${label}</div></div></div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:520px">
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:480px">
       <thead><tr style="background:var(--ö-bkg)">
         <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Avdelning</th>
         <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Omsättning</th>
         <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Marginal BV%</th>
         <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Känt Svinn</th>
-        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Actions</th>
       </tr></thead>
       <tbody>${active.map(d=>{
         const dg=sd.deptGoals[d.code];
         const rw=wData?.depts?.find(x=>x.code===d.code);
         const ra=aData?.depts?.find(x=>x.code===d.code);
         const acts=sd.actions[d.code]||[];
-        const adone=acts.filter(a=>a.done).length;
         const fixed=acts.filter(a=>a.type==='fixed');
         const goalActs=acts.filter(a=>a.type==='goal');
 
-        // Statusdott — baseras på omsättning vs mål
         const omsVal=rw?.forsaljningDelta;
         const omsMål=dg.oms/100;
         let dotColor='#888';
         if(omsVal!=null) dotColor=omsVal>=omsMål*0.95?'#3B6D11':omsVal>=omsMål*0.80?'#BA7517':'#A32D2D';
 
-        // Omsättning
         const omsUtfall=rw?.forsaljningDelta??null;
         const omsAcc=ra?.forsaljningDelta??null;
-
-        // BV%
         const bvUtfall=rw?.bvPct??null;
         const bvAcc=ra?.bvPct??null;
-
-        // Svinn — mål finns, utfall från svinnfilen (per avdelning ej tillgängligt ännu)
         const svinnUtfall=deptSvinnPct(d.code);
 
-        const colspan=5;
+        const colspan=4;
 
         return`<tr style="border-bottom:${acts.length?'none':'1px solid var(--ö-border)'}">
           <td style="padding:8px 12px;vertical-align:middle">
@@ -969,26 +961,15 @@ function renderDeptTable(sd,wData,aData,mode){
           ${kpiCell(omsUtfall, dg.oms, 'delta', false, omsAcc)}
           ${kpiCell(bvUtfall, dg.marginal, 'pct', false, bvAcc)}
           ${kpiCell(svinnUtfall, dg.svinn, 'pct', true, null)}
-          <td style="padding:8px 10px;text-align:right;vertical-align:middle">
-            ${acts.length
-              ? `<span style="display:inline-flex;align-items:center;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:${adone===acts.length?'#d6eddb':adone>0?'#fef0dc':'var(--ö-light)'};color:${adone===acts.length?'#1a5c28':adone>0?'#944f00':'var(--ö-green)'}">${adone}/${acts.length}</span>`
-              : `<span style="font-size:10px;color:var(--ö-muted)">—</span>`}
-          </td>
         </tr>
         ${acts.length?`<tr style="border-bottom:1px solid var(--ö-border)">
           <td colspan="${colspan}" style="padding:0 12px 8px 27px">
-            <div style="display:flex;flex-wrap:wrap;gap:5px">
-              ${fixed.map(a=>`
-                <div style="display:inline-flex;align-items:center;gap:5px;background:#EAF3DE;border:0.5px solid #C0DD97;border-radius:5px;padding:3px 9px;font-size:11px">
-                  <span style="font-size:9px;font-weight:700;color:#3B6D11;text-transform:uppercase;letter-spacing:.05em">Fast</span>
-                  <span style="color:#1a4a2e">${a.text}</span>
-                  <span style="font-size:11px;color:${a.done?'#3B6D11':'#b0b0a0'}">${a.done?'✓':'○'}</span>
-                </div>`).join('')}
-              ${goalActs.map(a=>`
-                <div style="display:inline-flex;align-items:center;gap:5px;background:#FAEEDA;border:0.5px solid #FAC775;border-radius:5px;padding:3px 9px;font-size:11px">
-                  <span style="font-size:9px;font-weight:700;color:#854F0B;text-transform:uppercase;letter-spacing:.05em">Mål</span>
-                  <span style="color:#4a2a0a">${a.text}${a.cond?` · <em style="color:#854F0B">${a.cond}</em>`:''}</span>
-                  <span style="font-size:11px;color:${a.done?'#3B6D11':'#b0b0a0'}">${a.done?'✓':'○'}</span>
+            <div style="display:flex;flex-direction:row;gap:5px;flex-wrap:nowrap;overflow-x:auto">
+              ${[...fixed,...goalActs].map(a=>`
+                <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;background:${a.type==='fixed'?'#EAF3DE':'#FAEEDA'};border:0.5px solid ${a.type==='fixed'?'#C0DD97':'#FAC775'};border-radius:5px;padding:3px 9px;font-size:11px">
+                  <span style="font-size:9px;font-weight:700;color:${a.type==='fixed'?'#3B6D11':'#854F0B'};text-transform:uppercase;letter-spacing:.05em">${a.type==='fixed'?'Fast':'Mål'}</span>
+                  <span style="color:${a.type==='fixed'?'#1a4a2e':'#4a2a0a'}">${a.text}${a.cond?` · <em style="opacity:.75">${a.cond}</em>`:''}</span>
+                  <span style="font-size:11px;color:${a.done?'#3B6D11':'#c0bfb5'}">${a.done?'✓':'○'}</span>
                 </div>`).join('')}
             </div>
           </td>
@@ -1388,15 +1369,16 @@ async function doBIBUpload(force) {
 
   // BIB-filen har en flik per butik — läs alla och bygg ihop en period
   const pd = {};
+  let lastStore = null, lastDept = null;
   for(const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
-    // Hitta butiksnivårader
     for(const row of rows) {
       const c0=row[0], c1=row[1], c2=row[2], c3=row[3];
       if(c0 && String(c0).trim().match(/^\d{4}$/) && c1) {
-        const cs = String(c0).trim();
-        pd[cs] = {name:c1,
+        // Butiksnivårad
+        lastStore = String(c0).trim(); lastDept = null;
+        pd[lastStore] = {name:c1,
           forsaljning:     row[6]!=null?parseFloat(row[6]):null,
           forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
           antalSt:         row[8]!=null?parseFloat(row[8]):null,
@@ -1404,17 +1386,20 @@ async function doBIBUpload(force) {
           bvKr:            row[10]!=null?parseFloat(row[10]):null,
           bvPct:           row[11]!=null?parseFloat(row[11]):null,
           depts:[]};
-      } else if(pd[c0?String(c0).trim():null]!==undefined && !c0 && !c1 && c2 && String(c2).trim().match(/^\d{1,2}$/) && c3) {
-        // Avdelningsrad under befintlig butik
-        const lastStore = Object.keys(pd).pop();
-        if(lastStore) pd[lastStore].depts.push({
-          code:String(c2).trim().padStart(2,'0'), name:c3,
+      } else if(lastStore && !c0 && !c1 && c2 && String(c2).trim().match(/^\d{1,2}$/) && c3) {
+        // Avdelningsrad
+        lastDept = String(c2).trim().padStart(2,'0');
+        pd[lastStore].depts.push({code:lastDept, name:c3,
           forsaljning:     row[6]!=null?parseFloat(row[6]):null,
           forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
           antalSt:         row[8]!=null?parseFloat(row[8]):null,
           antalDelta:      row[9]!=null?parseFloat(row[9]):null,
           bvKr:            row[10]!=null?parseFloat(row[10]):null,
           bvPct:           row[11]!=null?parseFloat(row[11]):null});
+      } else if(lastStore && lastDept && !c0 && !c1 && !c2 && !c3 && row[4] && row[5]) {
+        // Artikelrad — bygg EAN-mappning
+        const ean = String(row[5]).trim();
+        if(ean && ean.match(/^\d+$/)) EAN_DEPT_MAP[ean] = lastDept;
       }
     }
   }
@@ -1422,6 +1407,9 @@ async function doBIBUpload(force) {
   REPORT_DB[pk] = pd;
   Object.entries(pd).forEach(([id,d]) => getSD(id).reportData = d);
   await saveReportPeriod(pk);
+  if(Object.keys(EAN_DEPT_MAP).length>0){
+    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,updated_at:new Date().toISOString()});
+  }
   _pendingBIBWorkbook = null;
   document.getElementById('fp').style.display = 'none';
   const sc = Object.keys(pd).length;
