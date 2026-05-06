@@ -1065,25 +1065,28 @@ function procF(file){
       for(const row of rows){
         const c0=row[0],c1=row[1],c2=row[2],c3=row[3];
         if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){cs=String(c0).trim();pd[cs]={name:c1,
-            forsaljning:row[6]?parseFloat(row[6]):null,
-            forsaljningDelta:row[7]?parseFloat(row[7]):null,
-            antalSt:row[8]?parseFloat(row[8]):null,
-            antalDelta:row[9]?parseFloat(row[9]):null,
-            bvKr:row[10]?parseFloat(row[10]):null,
-            bvPct:row[11]?parseFloat(row[11]):null,
+            forsaljning:row[6]!=null?parseFloat(row[6]):null,
+            forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+            antalSt:row[8]!=null?parseFloat(row[8]):null,
+            antalDelta:row[9]!=null?parseFloat(row[9]):null,
+            bvKr:row[10]!=null?parseFloat(row[10]):null,
+            bvPct:row[11]!=null?parseFloat(row[11]):null,
             depts:[]};}
         else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){pd[cs].depts.push({code:String(c2).trim().padStart(2,'0'),name:c3,
-            forsaljning:row[6]?parseFloat(row[6]):null,
-            forsaljningDelta:row[7]?parseFloat(row[7]):null,
-            antalSt:row[8]?parseFloat(row[8]):null,
-            antalDelta:row[9]?parseFloat(row[9]):null,
-            bvKr:row[10]?parseFloat(row[10]):null,
-            bvPct:row[11]?parseFloat(row[11]):null});}
+            forsaljning:row[6]!=null?parseFloat(row[6]):null,
+            forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+            antalSt:row[8]!=null?parseFloat(row[8]):null,
+            antalDelta:row[9]!=null?parseFloat(row[9]):null,
+            bvKr:row[10]!=null?parseFloat(row[10]):null,
+            bvPct:row[11]!=null?parseFloat(row[11]):null});}
       }
       REPORT_DB[pk]=pd;Object.entries(pd).forEach(([id,d])=>getSD(id).reportData=d);
       const sc=Object.keys(pd).length,dc=Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
+      const hasAntal=Object.values(pd).some(d=>d.antalDelta!=null);
       await saveReportPeriod(pk);
-      prog.style.display='none';toast(`${pk} inläst — ${sc} butiker, ${dc} avdelningar ✓`);renderUploadFörsäljning();
+      prog.style.display='none';
+      toast(`${pk} inläst — ${sc} butiker, ${dc} avdelningar${hasAntal?' · Antal sålda ✓':' · ⚠ Antal sålda saknas'}`);
+      renderUploadFörsäljning();
     }catch(err){pmsg.textContent='Fel: '+err.message;}
   };reader.readAsArrayBuffer(file);
 }
