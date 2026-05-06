@@ -240,7 +240,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:33</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:38</div>
 </div>
 </div>
 
@@ -259,7 +259,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:33</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:38</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -953,6 +953,7 @@ function renderOverview(){
     ${viewToggle()}
     ${renderKPIGrid(sd,curData,sid)}
     ${renderDeptTable(sd,wData,aData,viewMode)}
+    ${renderStoreSvinnTop10()}
     <div class="card">
       <div class="card-head"><div class="ct">Veckans actions</div><span class="pill ${done===acts.length&&acts.length>0?'pg':done>0?'pa':'pn'}">${done}/${acts.length} klara</span></div>
       ${pending.length?pending.map(a=>{
@@ -1064,6 +1065,55 @@ function renderKPIGrid(sd, data, storeId) {
 }
 
 
+function renderStoreSvinnTop10() {
+  const wks = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  const artMap = {};
+  wks.forEach(pk=>{
+    (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
+      const key = r.artName || r.ean;
+      if(!artMap[key]) artMap[key] = {artName:r.artName||r.ean, svinnKr:0};
+      artMap[key].svinnKr += r.svinnKr||0;
+    });
+  });
+  const rows = Object.values(artMap)
+    .filter(a=>a.svinnKr>0)
+    .sort((a,b)=>b.svinnKr-a.svinnKr)
+    .slice(0,10);
+  if(!rows.length) return '';
+
+  const totSvinn = rows.reduce((s,a)=>s+a.svinnKr,0);
+  return`<div class="card">
+    <div class="card-head">
+      <div><div class="ct">Top 10 svinnade artiklar</div><div class="cs">Hela butiken · ${fmtKr(totSvinn)} totalt svinn i listan</div></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:var(--ö-bkg)">
+        <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">#</th>
+        <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Artikel</th>
+        <th style="padding:7px 12px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Svinn kr</th>
+        <th style="padding:7px 12px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Andel av top 10</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map((a,i)=>{
+          const andel = totSvinn>0 ? a.svinnKr/totSvinn : 0;
+          return`<tr style="border-bottom:0.5px solid var(--ö-border)">
+            <td style="padding:8px 12px;font-size:11px;color:var(--ö-muted);font-family:'SF Mono',monospace">${i+1}</td>
+            <td style="padding:8px 12px;font-size:13px;color:var(--ö-text)">${a.artName}</td>
+            <td style="padding:8px 12px;text-align:right;font-size:12px;font-family:'SF Mono',monospace;font-weight:600;color:#A32D2D">${Math.round(a.svinnKr).toLocaleString('sv-SE')} kr</td>
+            <td style="padding:8px 12px;text-align:right">
+              <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+                <div style="width:80px;height:4px;background:var(--ö-border);border-radius:2px">
+                  <div style="height:100%;width:${Math.round(andel*100)}%;background:#A32D2D;border-radius:2px"></div>
+                </div>
+                <span style="font-size:11px;font-family:'SF Mono',monospace;color:var(--ö-muted);min-width:32px;text-align:right">${(andel*100).toFixed(0)}%</span>
+              </div>
+            </td>
+          </tr>`;}).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
 function renderDeptTable(sd,wData,aData,mode){
   const active=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
   if(!active.length)return'';
@@ -1109,28 +1159,22 @@ function renderDeptTable(sd,wData,aData,mode){
     const artMap = {};
     wks.forEach(pk=>{
       (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
-        // Matcha via deptCode om det finns, annars via EAN_DEPT_MAP som fallback
-        const rDept = r.deptCode || EAN_DEPT_MAP[r.ean]?.dept || null;
-        if(rDept !== deptCode) return;
-        const key = r.ean || r.artName;
-        if(!artMap[key]) artMap[key] = {artName:r.artName, svinnKr:0, artOms:0};
+        const key = r.artName || r.ean;
+        if(!artMap[key]) artMap[key] = {artName:r.artName||r.ean, svinnKr:0, deptCode:r.deptCode||null};
         artMap[key].svinnKr += r.svinnKr||0;
-        // Hämta omsättning från EAN_DEPT_MAP
-        const bibOms = EAN_DEPT_MAP[r.ean]?.oms || 0;
-        if(bibOms > artMap[key].artOms) artMap[key].artOms = bibOms;
       });
-    });
-    // Multiplicera artOms med antal veckor med svinn för korrekt period
-    Object.entries(artMap).forEach(([key, art])=>{
-      let weeksWithSvinn = 0;
-      wks.forEach(pk=>{ if((SVINN_DB[pk]?.[sid]||[]).some(r=>(r.ean||r.artName)===key)) weeksWithSvinn++; });
-      if(weeksWithSvinn > 1) art.artOms *= weeksWithSvinn;
     });
     return Object.values(artMap)
       .filter(a=>a.svinnKr>0)
       .sort((a,b)=>b.svinnKr-a.svinnKr)
       .slice(0,10)
-      .map(a=>({...a, svinnPct: a.artOms>0 ? a.svinnKr/a.artOms : null}));
+      .map(a=>({...a, svinnPct:null}));
+  }
+
+  // Visa top 10 bara på första aktiva avdelningen (som en butiksövergripande lista)
+  function shouldShowSvinnList(deptCode) {
+    const active = DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
+    return active.length > 0 && active[0].code === deptCode;
   }
 
   function svinnListHTML(deptCode) {
@@ -1191,8 +1235,8 @@ function renderDeptTable(sd,wData,aData,mode){
         const bvUtfall=rw?.bvPct??null;
         const bvAcc=ra?.bvPct??null;
         const svinnUtfall=deptSvinnPct(d.code);
-        const svinnList=svinnListHTML(d.code);
-        const hasSubRows = acts.length>0 || svinnList!=='';
+        const svinnList=''; // visas separat som butiksövergripande lista nedan
+        const hasSubRows = acts.length>0;
 
         return`<tr style="border-bottom:${hasSubRows?'none':'1px solid var(--ö-border)'}">
           <td style="padding:8px 12px;vertical-align:middle">
