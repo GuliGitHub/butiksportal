@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:18</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:27</div>
 </div>
 </div>
 
@@ -258,7 +258,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:18</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:27</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -324,7 +324,8 @@ async function loadAllFromSupabase() {
     const rows = await sbGet('store_settings');
     rows.forEach(row => {
       if(!DB[row.store_id]) DB[row.store_id] = defaultSD();
-      DB[row.store_id].storeGoals = row.store_goals || DB[row.store_id].storeGoals;
+      // Merga med defaults så att nya KPI-nycklar alltid finns
+      DB[row.store_id].storeGoals = {...defaultSD().storeGoals, ...(row.store_goals||{})};
       DB[row.store_id].deptGoals  = row.dept_goals  || DB[row.store_id].deptGoals;
       DB[row.store_id].emails     = row.emails       || [];
     });
@@ -536,7 +537,7 @@ let role=null, sid=null, viewMode='week', selPeriodId=null;
 
 function defaultSD() {
   return {
-    storeGoals:{oms:7, marginal:26.2, svinn_k:0.7, antal:5, kvitton:5},
+    storeGoals:{oms:7, marginal:26.2, svinn_k:0.7, antal:5, kvitton:5, snittKop:180, driftlackage:3.5, kundkorg:7, medlems:80, emv:20, eko:5},
     deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,marginal:28,svinn:1.0}])),
     actions:{
       '01':[{id:1,type:'fixed',text:'Fyll på färskt bröd senast kl 08:00',cond:'',done:false},{id:2,type:'goal',text:'Justera beställning vid högt svinn',cond:'Om svinn > 1,5%',done:false}],
@@ -926,38 +927,25 @@ function renderDeptTable(sd,wData,aData,mode){
   function top10Svinn(deptCode) {
     const wks = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
     const artMap = {};
-
     wks.forEach(pk=>{
-      // Summera svinn per artikel per vecka
       (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
-        if(r.deptCode !== deptCode) return;
+        // Matcha via deptCode om det finns, annars via EAN_DEPT_MAP som fallback
+        const rDept = r.deptCode || EAN_DEPT_MAP[r.ean]?.dept || null;
+        if(rDept !== deptCode) return;
         const key = r.ean || r.artName;
         if(!artMap[key]) artMap[key] = {artName:r.artName, svinnKr:0, artOms:0};
         artMap[key].svinnKr += r.svinnKr||0;
+        // Hämta omsättning från EAN_DEPT_MAP
+        const bibOms = EAN_DEPT_MAP[r.ean]?.oms || 0;
+        if(bibOms > artMap[key].artOms) artMap[key].artOms = bibOms;
       });
     });
-
-    // Hämta artikelomsättning från BIB per vecka och summera
-    // BIB har omsättning per artikel per vecka — matcha via EAN
-    wks.forEach(pk=>{
-      const bibStore = REPORT_DB[pk]?.[sid];
-      if(!bibStore) return;
-      // EAN_DEPT_MAP håller senaste kända omsättning per EAN
-      // Vi kan inte få per-vecka artikelomsättning från BIB utan att lagra det
-      // Bästa approximation: använd EAN_DEPT_MAP.oms som vecko-proxy och multiplicera
+    // Multiplicera artOms med antal veckor med svinn för korrekt period
+    Object.entries(artMap).forEach(([key, art])=>{
+      let weeksWithSvinn = 0;
+      wks.forEach(pk=>{ if((SVINN_DB[pk]?.[sid]||[]).some(r=>(r.ean||r.artName)===key)) weeksWithSvinn++; });
+      if(weeksWithSvinn > 1) art.artOms *= weeksWithSvinn;
     });
-
-    // Använd EAN_DEPT_MAP.oms × antal veckor med svinn som omsättningsuppskattning
-    Object.entries(artMap).forEach(([ean, art])=>{
-      const bibInfo = EAN_DEPT_MAP[ean];
-      if(bibInfo?.oms > 0) {
-        // Räkna hur många veckor denna artikel faktiskt hade svinn
-        let weeksWithSvinn = 0;
-        wks.forEach(pk=>{ if((SVINN_DB[pk]?.[sid]||[]).some(r=>(r.ean||r.artName)===ean)) weeksWithSvinn++; });
-        art.artOms = bibInfo.oms * weeksWithSvinn;
-      }
-    });
-
     return Object.values(artMap)
       .filter(a=>a.svinnKr>0)
       .sort((a,b)=>b.svinnKr-a.svinnKr)
@@ -1105,15 +1093,15 @@ function renderStoreMål(){
   document.getElementById('panel-storemål').innerHTML=`
     <div class="ph"><div><div class="pt">Butiksmål</div><div class="ps">${STORES[sid]}</div></div><button class="btn-sm green" onclick="saveStoreMål()">Spara</button></div>
     <div class="card"><div class="card-head"><div><div class="ct">Övergripande KPI-mål</div><div class="cs">Gäller hela butiken</div></div></div>
-      <div class="goals-grid">${STORE_KPI_DEFS.map(k=>`
+      <div class="goals-grid">${KPI_LIBRARY.map(k=>`
         <div class="goal-tile"><div class="gt-label">${k.label}</div>
-          <div class="gt-inp-wrap"><input class="gt-inp" type="number" step="0.1" id="sg-${k.key}" value="${sd.storeGoals[k.key]}"><span class="gt-unit">${k.unit}</span></div>
+          <div class="gt-inp-wrap"><input class="gt-inp" type="number" step="0.1" id="sg-${k.key}" value="${sd.storeGoals[k.key]??''}"><span class="gt-unit">${k.unit}</span></div>
         </div>`).join('')}</div>
     </div>`;
 }
 async function saveStoreMål(){
   const sd=getSD(sid);
-  STORE_KPI_DEFS.forEach(k=>{const v=parseFloat(document.getElementById('sg-'+k.key)?.value);if(!isNaN(v))sd.storeGoals[k.key]=v;});
+  KPI_LIBRARY.forEach(k=>{const v=parseFloat(document.getElementById('sg-'+k.key)?.value);if(!isNaN(v))sd.storeGoals[k.key]=v;});
   await saveStoreSettings(sid);
   toast('Butiksmål sparade ✓');
 }
@@ -1899,23 +1887,21 @@ function generatePDF(storeId,pdfMode){
   // KPI tiles function
   function kpiSection(data,label){
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...DK);doc.text(label,M,y);y+=5;
-    const svinnPct = getSvinnPct(storeId, viewMode==='period'?selWeeks:null);
-    const kpis=STORE_KPI_DEFS,tW=(W-2*M-5*3)/3,tH=20;
-    const vals={
-      oms:      data?.forsaljningDelta!=null?`${(data.forsaljningDelta*100).toFixed(1)}%`:'—',
-      marginal: data?.bvPct!=null?`${(data.bvPct*100).toFixed(1)}%`:'—',
-      svinn_k:  svinnPct!=null?`${(svinnPct*100).toFixed(2)}%`:'—',
-      antal:    data?.antalDelta!=null?`${data.antalDelta>=0?'+':''}${(data.antalDelta*100).toFixed(1)}%`:'—',
-      kvitton:  '—',
-    };
+    const kpis = KPI_LIBRARY.filter(k=>KPI_CONFIG[k.key]?.visible);
+    const tW=(W-2*M-5*3)/3,tH=20;
     for(let i=0;i<kpis.length;i++){
-      const col=i%3,row=Math.floor(i/3),tx=M+col*(tW+3),ty=y+row*(tH+3),k=kpis[i],val=vals[k.key],goal=sd.storeGoals[k.key];
+      const col=i%3,row=Math.floor(i/3),tx=M+col*(tW+3),ty=y+row*(tH+3),k=kpis[i];
+      const val = fmtKPIVal(k, getKPIVal(k.key, storeId, viewMode==='period'?selWeeks:null));
+      const goal = sd.storeGoals[k.key];
       doc.setFillColor(...LG);doc.roundedRect(tx,ty,tW,tH,2,2,'F');
       doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text(k.label.toUpperCase(),tx+4,ty+5);
-      doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...G);doc.text(val!=='—'?val:`${goal}${k.unit.includes('%')?'%':''}`,tx+4,ty+13);
-      doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...GR);doc.text(`Mål: ${goal}${k.unit.includes('%')?'%':''}`,tx+4,ty+18);
+      doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...G);
+      doc.text(val!=='—'?val:(goal!=null?`${goal}%`:'—'),tx+4,ty+13);
+      doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...GR);
+      doc.text(goal!=null?`Mål: ${goal}%`:'',tx+4,ty+18);
     }
-    y+=2*tH+2*3+8;
+    const rows = Math.ceil(kpis.length/3);
+    y+=rows*tH+(rows-1)*3+8;
   }
 
   if(pdfMode==='week'||pdfMode==='both')kpiSection(wData,`Nyckeltal — föregående vecka${wData?.pk?' ('+wData.pk+')':''}`);
