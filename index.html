@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:38</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:40</div>
 </div>
 </div>
 
@@ -258,7 +258,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:38</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:40</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1371,16 +1371,26 @@ async function doBIBUpload(force) {
   // BIB-filen har EN flik med alla butiker efter varandra (rad för rad)
   const pd = {};
   let lastStore = null, lastDept = null;
+  let butikCount=0, avdCount=0, artCount=0;
 
-  // Läs alla flikar men behandla dem som en sammanhängande ström av rader
   for(const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+
+    // Debug: logga de 5 första raderna
+    console.log(`[BIB] Flik: "${sheetName}", ${rows.length} rader`);
+    rows.slice(0,5).forEach((r,i)=>{
+      const vals = r.map((v,j)=>v!=null?`[${j}]=${JSON.stringify(v)}`:'').filter(Boolean);
+      console.log(`  rad${i+1}: ${vals.join(', ')}`);
+    });
+
     for(const row of rows) {
       const c0=row[0], c1=row[1], c2=row[2], c3=row[3];
-      if(c0 && String(c0).trim().match(/^\d{4}$/) && c1) {
-        // Butiksnivårad
-        lastStore = String(c0).trim(); lastDept = null;
+      const c0str = c0!=null ? String(c0).trim() : '';
+      const c2str = c2!=null ? String(c2).trim() : '';
+
+      if(c0!=null && c0str.match(/^\d{4}$/) && c1!=null) {
+        lastStore = c0str; lastDept = null; butikCount++;
         pd[lastStore] = {name:c1,
           forsaljning:     row[6]!=null?parseFloat(row[6]):null,
           forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
@@ -1389,9 +1399,8 @@ async function doBIBUpload(force) {
           bvKr:            row[10]!=null?parseFloat(row[10]):null,
           bvPct:           row[11]!=null?parseFloat(row[11]):null,
           depts:[]};
-      } else if(lastStore && !c0 && !c1 && c2!=null && String(c2).trim().match(/^\d{1,2}$/) && c3) {
-        // Avdelningsrad
-        lastDept = String(c2).trim().padStart(2,'0');
+      } else if(lastStore && c0==null && c1==null && c2!=null && c2str.match(/^\d{1,2}$/) && c3!=null) {
+        lastDept = c2str.padStart(2,'0'); avdCount++;
         pd[lastStore].depts.push({code:lastDept, name:c3,
           forsaljning:     row[6]!=null?parseFloat(row[6]):null,
           forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
@@ -1399,13 +1408,13 @@ async function doBIBUpload(force) {
           antalDelta:      row[9]!=null?parseFloat(row[9]):null,
           bvKr:            row[10]!=null?parseFloat(row[10]):null,
           bvPct:           row[11]!=null?parseFloat(row[11]):null});
-      } else if(lastStore && lastDept && !c0 && !c1 && !c2 && !c3 && row[4]!=null && row[5]!=null) {
-        // Artikelrad — bygg EAN-mappning
+      } else if(lastStore && lastDept && c0==null && c1==null && c2==null && c3==null && row[4]!=null && row[5]!=null) {
         const ean = String(row[5]).trim();
-        if(ean && ean.match(/^\d{6,14}$/)) EAN_DEPT_MAP[ean] = lastDept;
+        if(ean.match(/^\d{6,14}$/)) { EAN_DEPT_MAP[ean] = lastDept; artCount++; }
       }
     }
   }
+  console.log(`[BIB] Resultat: ${butikCount} butiker, ${avdCount} avdelningar, ${artCount} EAN-koder`);
 
   REPORT_DB[pk] = pd;
   Object.entries(pd).forEach(([id,d]) => getSD(id).reportData = d);
