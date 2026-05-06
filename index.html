@@ -584,19 +584,100 @@ function renderPanel(tab){
 }
 
 // ── VIEW TOGGLE ───────────────────────────────────────
+// Valda veckor (multi-select)
+let selWeeks = new Set(); // set av period_keys, t.ex. '2026-V18'
+
 function viewToggle(){
-  const opts=PERIODS.map(p=>`<option value="${p.id}" ${selPeriodId===p.id?'selected':''}>${p.name} (V${p.weekFrom}–V${p.weekTo} ${p.year})</option>`).join('');
-  return`<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
-    <div class="vtog">
-      <button class="vtog-btn ${viewMode==='week'?'active':''}" onclick="setVM('week')">Föregående vecka</button>
-      <button class="vtog-btn ${viewMode==='period'?'active':''}" onclick="setVM('period')">Ackumulerat</button>
+  const allWeeks = Object.keys(REPORT_DB).sort();
+  const hasWeeks = allWeeks.length > 0;
+
+  return`<div style="margin-bottom:1rem">
+    <div class="vtog" style="margin-bottom:.75rem">
+      <button class="vtog-btn ${viewMode==='week'?'active':''}" onclick="setVM('week')">Senaste veckan</button>
+      <button class="vtog-btn ${viewMode==='period'?'active':''}" onclick="setVM('period')">Välj veckor</button>
     </div>
-    ${viewMode==='period'&&PERIODS.length?`<select onchange="setSP(this.value)" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:7px;padding:5px 9px;font-family:inherit;font-size:13px;outline:none"><option value="">— Välj period —</option>${opts}</select>`:''}
-    ${viewMode==='period'&&!PERIODS.length?`<span style="font-size:12px;color:#aaa">Skapa perioder under Admin → Perioder</span>`:''}
+
+    ${viewMode==='period' ? `
+    <div style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:12px;padding:.875rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.625rem;flex-wrap:wrap;gap:.5rem">
+        <div style="font-size:12px;font-weight:600;color:var(--ö-green);text-transform:uppercase;letter-spacing:.06em">
+          Välj veckor att ackumulera
+        </div>
+        <div style="display:flex;gap:.5rem">
+          ${PERIODS.length ? `<select onchange="selectPeriodPreset(this.value)" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:4px 8px;font-family:var(--ö-sans);font-size:12px;outline:none;color:var(--ö-text)">
+            <option value="">Snabbval: välj period...</option>
+            ${PERIODS.map(p=>`<option value="${p.id}">${p.name} (V${p.weekFrom}–V${p.weekTo} ${p.year})</option>`).join('')}
+          </select>` : ''}
+          <button class="btn-sm" onclick="selWeeks.clear();renderPanel('overview')" style="font-size:11px;padding:4px 10px">Rensa</button>
+          <button class="btn-sm green" onclick="selectAllWeeks()" style="font-size:11px;padding:4px 10px">Välj alla</button>
+        </div>
+      </div>
+      ${hasWeeks ? `
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${allWeeks.map(pk => {
+          const sel = selWeeks.has(pk);
+          return `<button onclick="toggleWeek('${pk}')" style="
+            padding:5px 12px;border-radius:20px;border:1.5px solid ${sel?'var(--ö-green)':'var(--ö-border)'};
+            background:${sel?'var(--ö-green)':'var(--ö-card)'};color:${sel?'#fff':'var(--ö-muted)'};
+            font-family:var(--ö-sans);font-size:12px;font-weight:${sel?'600':'400'};cursor:pointer;
+            transition:all .15s">${pk.replace('-V',' V')}</button>`;
+        }).join('')}
+      </div>
+      ${selWeeks.size > 0 ? `
+      <div style="margin-top:.625rem;padding:.5rem .75rem;background:var(--ö-light);border-radius:8px;font-size:12px;color:var(--ö-green);font-weight:500">
+        ${selWeeks.size} ${selWeeks.size===1?'vecka':'veckor'} valda — visar ackumulerat utfall
+      </div>` : `
+      <div style="margin-top:.625rem;font-size:12px;color:var(--ö-muted)">
+        Klicka på veckor ovan för att välja — eller använd snabbval för en hel period
+      </div>`}
+      ` : `<div style="font-size:13px;color:var(--ö-muted);padding:.5rem 0">Ingen försäljningsdata uppladdad ännu</div>`}
+    </div>` : ''}
   </div>`;
 }
-function setVM(m){viewMode=m;renderPanel('overview');}
-function setSP(id){selPeriodId=id||null;renderPanel('overview');}
+
+function setVM(m){ viewMode=m; if(m==='week')selWeeks.clear(); renderPanel('overview'); }
+
+function toggleWeek(pk){
+  if(selWeeks.has(pk)) selWeeks.delete(pk);
+  else selWeeks.add(pk);
+  renderPanel('overview');
+}
+
+function selectAllWeeks(){
+  Object.keys(REPORT_DB).forEach(pk => selWeeks.add(pk));
+  renderPanel('overview');
+}
+
+function selectPeriodPreset(periodId){
+  if(!periodId) return;
+  const p = PERIODS.find(x=>x.id===periodId);
+  if(!p) return;
+  selWeeks.clear();
+  for(let w=p.weekFrom; w<=p.weekTo; w++){
+    const pk = periodKey(p.year, w);
+    if(REPORT_DB[pk]) selWeeks.add(pk);
+  }
+  renderPanel('overview');
+}
+
+// Ersätter gamla getAccData — nu baserat på selWeeks
+function getAccDataFromWeeks(storeId, weeks){
+  if(!weeks||weeks.size===0) return null;
+  let totF=0,totBvKr=0,dAcc={},found=0;
+  weeks.forEach(pk => {
+    const pd=REPORT_DB[pk]?.[storeId];
+    if(!pd)return;
+    found++;totF+=pd.forsaljning||0;totBvKr+=pd.bvKr||0;
+    (pd.depts||[]).forEach(d=>{
+      if(!dAcc[d.code])dAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0};
+      dAcc[d.code].forsaljning+=d.forsaljning||0;dAcc[d.code].bvKr+=d.bvKr||0;
+    });
+  });
+  if(!found)return null;
+  const bvPct=totF>0?totBvKr/totF:null;
+  const depts=Object.values(dAcc).map(d=>({...d,bvPct:d.forsaljning>0?d.bvKr/d.forsaljning:null}));
+  return{forsaljning:totF,bvKr:totBvKr,bvPct,depts,found,total:weeks.size};
+}
 
 // ── OVERVIEW ──────────────────────────────────────────
 function renderOverview(){
@@ -604,8 +685,7 @@ function renderOverview(){
   if(role==='admin'){renderAdminOv(el);return;}
   const sd=getSD(sid);
   const wData=getLatestWeekData(sid);
-  const period=PERIODS.find(p=>p.id===selPeriodId);
-  const aData=period?getAccData(sid,period):null;
+  const aData=viewMode==='period'?getAccDataFromWeeks(sid,selWeeks):null;
   const curData=viewMode==='week'?wData:aData;
   const acts=Object.values(sd.actions).flat();
   const done=acts.filter(a=>a.done).length;
@@ -616,7 +696,7 @@ function renderOverview(){
     </div>
     ${viewToggle()}
     ${renderKPIGrid(sd,curData)}
-    ${renderDeptTable(sd,wData,aData,viewMode,period)}
+    ${renderDeptTable(sd,wData,aData,viewMode)}
     <div class="card">
       <div class="card-head"><div class="ct">Veckans actions</div><span class="pill ${done===acts.length&&acts.length>0?'pg':done>0?'pa':'pn'}">${done}/${acts.length} klara</span></div>
       ${pending.length?pending.map(a=>{
@@ -646,11 +726,12 @@ function renderKPIGrid(sd,data){
     </div>`;}).join('')}</div>`;
 }
 
-function renderDeptTable(sd,wData,aData,mode,period){
+function renderDeptTable(sd,wData,aData,mode){
   const active=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
   if(!active.length)return'';
   const showAcc=mode==='period'&&aData;
-  const label=showAcc?(period?`${period.name} (${aData.found}/${aData.total} veckor)`:'Ackumulerat'):'Föreg. vecka';
+  const wksArr=[...selWeeks].sort();
+  const label=showAcc?(selWeeks.size===1?wksArr[0].replace('-V',' V'):`${wksArr[0].replace('-V',' V')} – ${wksArr[wksArr.length-1].replace('-V',' V')} (${aData.found} veckor)`):'Föreg. vecka';
   return`<div class="card">
     <div class="card-head"><div><div class="ct">Avdelningsöversikt</div><div class="cs">${label}</div></div></div>
     <div style="overflow-x:auto"><table class="summary-tbl">
@@ -697,13 +778,12 @@ function renderDeptTable(sd,wData,aData,mode,period){
 }
 
 function renderAdminOv(el){
-  const period=PERIODS.find(p=>p.id===selPeriodId);
   el.innerHTML=`<div class="ph"><div><div class="pt">Alla butiker</div><div class="ps">Östenssons — översikt</div></div></div>
     ${viewToggle()}
     <div class="store-grid">${Object.entries(STORES).map(([id,name])=>{
       const sd=getSD(id);
       const wD=getLatestWeekData(id);
-      const aD=viewMode==='period'&&period?getAccData(id,period):null;
+      const aD=viewMode==='period'?getAccDataFromWeeks(id,selWeeks):null;
       const data=viewMode==='week'?wD:aD;
       const ad=Object.values(sd.deptGoals).filter(d=>d.active).length;
       return`<div class="sc" onclick="adminViewStore('${id}')">
@@ -1020,24 +1100,24 @@ function renderPdfPanel(){
           </label>`).join('')}
         </div>
         <div id="pdf-psel" style="display:none">
-          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">Välj period</label>
-          <select id="pdf-pid" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:7px;padding:7px 9px;font-family:inherit;font-size:13px;outline:none;width:100%">
-            <option value="">— Välj period —</option>${opts}
-          </select>
+          <div style="background:var(--ö-light);border-radius:8px;padding:.625rem .875rem;font-size:12px;color:var(--ö-green)">
+            ${selWeeks.size>0?`${selWeeks.size} ${selWeeks.size===1?'vecka':'veckor'} valda under Översikt — används för ackumulerat`:'Välj veckor under Översikt → Välj veckor innan du laddar ner'}
+          </div>
         </div>
-        <button class="btn-g" onclick="generatePDF('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week',document.getElementById('pdf-pid')?.value)" style="width:100%;padding:12px;font-size:15px">⬇ Ladda ner PDF-rapport</button>
+        <button class="btn-g" onclick="generatePDF('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week')" style="width:100%;padding:12px;font-size:15px">⬇ Ladda ner PDF-rapport</button>
       </div>
     </div>`;
 }
 function updPdfSel(){const m=document.querySelector('input[name=pmode]:checked')?.value;document.getElementById('pdf-psel').style.display=(m==='period'||m==='both')?'block':'none';}
 
-function generatePDF(storeId,pdfMode,pdfPeriodId){
+function generatePDF(storeId,pdfMode){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
   const sd=getSD(storeId),storeName=STORES[storeId],week=getWeekNum(new Date());
-  const period=PERIODS.find(p=>p.id===pdfPeriodId);
   const wData=getLatestWeekData(storeId);
-  const aData=period?getAccData(storeId,period):null;
+  const aData=(pdfMode==='period'||pdfMode==='both')?getAccDataFromWeeks(storeId,selWeeks):null;
+  const wksArr=[...selWeeks].sort();
+  const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
   const W=210,M=16;
   const G=[30,77,43],GL=[214,237,219],DK=[26,26,24],GR=[122,120,112],LG=[243,240,233],AM=[254,240,220];
   let y=0;
@@ -1051,7 +1131,7 @@ function generatePDF(storeId,pdfMode,pdfPeriodId){
 
   // Title
   doc.setTextColor(...G);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text(storeName,M,y);y+=7;
-  const ml=pdfMode==='week'?`Föregående vecka${wData?.pk?' ('+wData.pk+')':''}`:pdfMode==='period'?`Period: ${period?.name||'—'}`:`Vecka & Period${period?' — '+period.name:''}`;
+  const ml=pdfMode==='week'?`Föregående vecka${wData?.pk?' ('+wData.pk+')':''}`:pdfMode==='period'?`Ackumulerat: ${periodLabel}`:`Vecka & Ackumulerat: ${periodLabel}`;
   doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(`Veckorapport · ${ml} · Östenssons`,M,y);y+=5;
   doc.setDrawColor(220,220,218);doc.setLineWidth(0.3);doc.line(M,y,W-M,y);y+=8;
 
@@ -1071,7 +1151,7 @@ function generatePDF(storeId,pdfMode,pdfPeriodId){
   }
 
   if(pdfMode==='week'||pdfMode==='both')kpiSection(wData,`Nyckeltal — föregående vecka${wData?.pk?' ('+wData.pk+')':''}`);
-  if((pdfMode==='period'||pdfMode==='both')&&aData)kpiSection(aData,`Nyckeltal — ackumulerat${period?' ('+period.name+')':''} · ${aData.found}/${aData.total} veckor`);
+  if((pdfMode==='period'||pdfMode==='both')&&aData)kpiSection(aData,`Nyckeltal — ackumulerat (${periodLabel}) · ${aData.found} veckor`);
 
   if(y>240){doc.addPage();y=20;}
 
