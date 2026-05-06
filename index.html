@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:40</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:49</div>
 </div>
 </div>
 
@@ -258,7 +258,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:40</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:49</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1255,6 +1255,62 @@ function renderUploadFörsäljning(){
 }
 
 // ── PARSER: BIB_HEM06 (en flik = en vecka) ────────────
+// ── FILVALIDERING ─────────────────────────────────────
+// Känner igen filtyp baserat på fliknamn och innehåll
+function identifyFile(wb) {
+  const sheets = wb.SheetNames;
+  const first = sheets[0] || '';
+
+  // 9A ÖS09b — svinnfil
+  if(first.toLowerCase().includes('ös09') || first.toLowerCase().includes('svinn'))
+    return {type:'svinn', name:'9A ÖS09b Svinnrapport'};
+
+  // 9A ÖS20 — driftläckagefil (flikar format YYYYWW)
+  if(sheets.some(s=>s.match(/^\d{6}$/))) {
+    // Kolla om det är ÖS20 eller BIB via innehåll
+    const ws = wb.Sheets[sheets.find(s=>s.match(/^\d{6}$/))];
+    const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:0});
+    const header = (rows[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
+    if(header.includes('driftläckage') || header.includes('kvitton') || header.includes('snittköp'))
+      return {type:'os20', name:'9A ÖS20 Försäljning & driftläckage'};
+    return {type:'bib_multi', name:'BIB_HEM06 (flerfliks)'};
+  }
+
+  // BIB_HEM06 — en flik med alla butiker
+  if(first.toLowerCase().includes('bib') || first.toLowerCase().includes('hem06') || first.toLowerCase().includes('försäljning'))
+    return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
+
+  // Kolla innehåll i första fliken
+  const ws = wb.Sheets[sheets[0]];
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:0});
+  const header = (rows[2]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
+  if(header.includes('svinnkod') || header.includes('svinn kr') || header.includes('artikel (ean)'))
+    return {type:'svinn', name:'9A ÖS09b Svinnrapport'};
+  if(header.includes('bruttovinst') && header.includes('lo huvudgrupp'))
+    return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
+
+  return {type:'unknown', name:sheets[0]};
+}
+
+function wrongFileError(pmsg, detected, expected, expectedLabel) {
+  pmsg.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.25rem 0">
+      <div style="font-size:20px;flex-shrink:0">⚠️</div>
+      <div>
+        <div style="font-weight:600;color:#944f00;margin-bottom:4px">Fel fil uppladdad</div>
+        <div style="font-size:12px;color:#555;margin-bottom:8px">
+          Du verkar ha laddat upp <strong>${detected.name}</strong> här.<br>
+          Den här zonen förväntar sig <strong>${expectedLabel}</strong>.
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          ${detected.type==='svinn'?`<span style="font-size:11px;background:#EAF3DE;color:#1a5c28;border-radius:5px;padding:2px 8px">Svinnfilen laddas upp under 🗑 Svinn-fliken</span>`:''}
+          ${detected.type==='os20'?`<span style="font-size:11px;background:#EAF3DE;color:#1a5c28;border-radius:5px;padding:2px 8px">ÖS20-filen laddas upp under 9A ÖS20-sektionen nedan</span>`:''}
+          ${detected.type==='bib'||detected.type==='bib_multi'?`<span style="font-size:11px;background:#EAF3DE;color:#1a5c28;border-radius:5px;padding:2px 8px">BIB-filen laddas upp under BIB_HEM06-sektionen ovan</span>`:''}
+        </div>
+      </div>
+    </div>`;
+}
+
 function hFD(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procF(e.dataTransfer.files[0]);}
 function hFF(e){if(e.target.files[0])procF(e.target.files[0]);}
 
@@ -1264,8 +1320,19 @@ function procF(file){
   const reader=new FileReader();
   reader.onload=async function(ev){
     try{
-      pmsg.textContent='Tolkar Excel — identifierar flikar...';
+      pmsg.textContent='Identifierar fil...';
       const wb=XLSX.read(ev.target.result,{type:'array'});
+
+      // Validera filtyp
+      const detected = identifyFile(wb);
+      if(detected.type === 'svinn') {
+        wrongFileError(pmsg, detected, 'bib', 'BIB_HEM06 Försäljningsrapport');
+        return;
+      }
+      if(detected.type === 'os20') {
+        wrongFileError(pmsg, detected, 'bib', 'BIB_HEM06 Försäljningsrapport');
+        return;
+      }
 
       // Hitta alla veckoflikar — format YYYYWW (t.ex. 202618)
       const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
@@ -1508,6 +1575,18 @@ function procOS20(file){
     try{
       pmsg.textContent='Identifierar veckoflikar...';
       const wb=XLSX.read(ev.target.result,{type:'array'});
+
+      // Validera filtyp
+      const detectedOS = identifyFile(wb);
+      if(detectedOS.type === 'svinn') {
+        wrongFileError(pmsg, detectedOS, 'os20', '9A ÖS20 Försäljning & driftläckage');
+        return;
+      }
+      if(detectedOS.type === 'bib' || detectedOS.type === 'bib_multi') {
+        wrongFileError(pmsg, detectedOS, 'os20', '9A ÖS20 Försäljning & driftläckage');
+        return;
+      }
+
       const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
 
       if(!weekSheets.length){pmsg.textContent='Hittade inga veckoflikar (format YYYYVV)';return;}
@@ -1623,9 +1702,19 @@ function procS(file){
   const reader=new FileReader();
   reader.onload=async function(ev){
     try{
+      pmsg.textContent='Identifierar fil...';
+      const wbS=XLSX.read(ev.target.result,{type:'array'});
+      const detectedS = identifyFile(wbS);
+      if(detectedS.type === 'bib' || detectedS.type === 'bib_multi') {
+        wrongFileError(pmsg, detectedS, 'svinn', '9A ÖS09b Svinnrapport');
+        return;
+      }
+      if(detectedS.type === 'os20') {
+        wrongFileError(pmsg, detectedS, 'svinn', '9A ÖS09b Svinnrapport');
+        return;
+      }
       pmsg.textContent='Tolkar svinndata...';
-      const wb=XLSX.read(ev.target.result,{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
+      const ws=wbS.Sheets[wbS.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
       if(SVINN_DB[pk]&&!confirm(`Svinndata för ${pk} finns. Ersätta?`)){prog.style.display='none';return;}
       const pd={};
