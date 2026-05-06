@@ -458,12 +458,11 @@ const DEPTS=[
   {code:'98',name:'Övrig Försäljning 12% Moms'},
 ];
 const STORE_KPI_DEFS=[
-  {key:'oms',label:'Omsättning',unit:'% ökning',lb:false},
-  {key:'marginal',label:'Marginal NBP',unit:'%',lb:false},
-  {key:'svinn_k',label:'Känt Svinn',unit:'%',lb:true},
-  {key:'svinn_d',label:'Dolt Svinn',unit:'%',lb:true},
-  {key:'antal',label:'Antal Sålda',unit:'% ökning',lb:false},
-  {key:'kvitton',label:'Kvitton',unit:'% ökning',lb:false},
+  {key:'oms',      label:'Omsättning',   unit:'% vs fg år', lb:false, fmt:'delta'},
+  {key:'marginal', label:'Marginal NBP', unit:'%',          lb:false, fmt:'pct'},
+  {key:'svinn_k',  label:'Känt Svinn',   unit:'%',          lb:true,  fmt:'pct'},
+  {key:'antal',    label:'Antal Sålda',  unit:'% vs fg år', lb:false, fmt:'delta'},
+  {key:'kvitton',  label:'Kvitton',      unit:'% vs fg år', lb:false, fmt:'delta'},
 ];
 const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','14'];
 
@@ -473,7 +472,7 @@ let role=null, sid=null, viewMode='week', selPeriodId=null;
 
 function defaultSD() {
   return {
-    storeGoals:{oms:7,marginal:26.2,svinn_k:0.7,svinn_d:1.0,antal:5,kvitton:5},
+    storeGoals:{oms:7, marginal:26.2, svinn_k:0.7, antal:5, kvitton:5},
     deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,marginal:28,svinn:1.0}])),
     actions:{
       '01':[{id:1,type:'fixed',text:'Fyll på färskt bröd senast kl 08:00',cond:'',done:false},{id:2,type:'goal',text:'Justera beställning vid högt svinn',cond:'Om svinn > 1,5%',done:false}],
@@ -663,20 +662,34 @@ function selectPeriodPreset(periodId){
 // Ersätter gamla getAccData — nu baserat på selWeeks
 function getAccDataFromWeeks(storeId, weeks){
   if(!weeks||weeks.size===0) return null;
-  let totF=0,totBvKr=0,dAcc={},found=0;
+  let totF=0,totBvKr=0,totAntal=0,totAntalFgAr=0,dAcc={},found=0;
   weeks.forEach(pk => {
     const pd=REPORT_DB[pk]?.[storeId];
     if(!pd)return;
     found++;totF+=pd.forsaljning||0;totBvKr+=pd.bvKr||0;
+    // antal: antalDelta är % vs fg år, vi ackumulerar som snitt
+    if(pd.antalDelta!=null){totAntal+=pd.antalDelta;totAntalFgAr++;}
     (pd.depts||[]).forEach(d=>{
-      if(!dAcc[d.code])dAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0};
+      if(!dAcc[d.code])dAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0,antalDeltas:[],forsaljningDeltas:[]};
       dAcc[d.code].forsaljning+=d.forsaljning||0;dAcc[d.code].bvKr+=d.bvKr||0;
+      if(d.antalDelta!=null)dAcc[d.code].antalDeltas.push(d.antalDelta);
+      if(d.forsaljningDelta!=null)dAcc[d.code].forsaljningDeltas.push(d.forsaljningDelta);
     });
   });
   if(!found)return null;
   const bvPct=totF>0?totBvKr/totF:null;
-  const depts=Object.values(dAcc).map(d=>({...d,bvPct:d.forsaljning>0?d.bvKr/d.forsaljning:null}));
-  return{forsaljning:totF,bvKr:totBvKr,bvPct,depts,found,total:weeks.size};
+  const antalDelta=totAntalFgAr>0?totAntal/totAntalFgAr:null;
+  // Omsättningsdelta ackumulerat: viktat medelvärde av veckodelta
+  let omsDeltas=[],omsDeltaCount=0;
+  weeks.forEach(pk=>{const pd=REPORT_DB[pk]?.[storeId];if(pd?.forsaljningDelta!=null){omsDeltas+=pd.forsaljningDelta;omsDeltaCount++;}});
+  const forsaljningDelta=omsDeltaCount>0?omsDeltas/omsDeltaCount:null;
+  const depts=Object.values(dAcc).map(d=>({
+    ...d,
+    bvPct:d.forsaljning>0?d.bvKr/d.forsaljning:null,
+    antalDelta:d.antalDeltas.length>0?d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length:null,
+    forsaljningDelta:d.forsaljningDeltas.length>0?d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length:null,
+  }));
+  return{forsaljning:totF,bvKr:totBvKr,bvPct,forsaljningDelta,antalDelta,depts,found,total:weeks.size};
 }
 
 // ── OVERVIEW ──────────────────────────────────────────
@@ -695,7 +708,7 @@ function renderOverview(){
       <span style="font-size:11px;color:#aaa;background:#f8f8f6;border:0.5px solid #e8e8e5;border-radius:6px;padding:3px 8px">Senaste data: ${wData?.pk||'—'}</span>
     </div>
     ${viewToggle()}
-    ${renderKPIGrid(sd,curData)}
+    ${renderKPIGrid(sd,curData,sid)}
     ${renderDeptTable(sd,wData,aData,viewMode)}
     <div class="card">
       <div class="card-head"><div class="ct">Veckans actions</div><span class="pill ${done===acts.length&&acts.length>0?'pg':done>0?'pa':'pn'}">${done}/${acts.length} klara</span></div>
@@ -712,18 +725,58 @@ function renderOverview(){
     </div>`;
 }
 
-function renderKPIGrid(sd,data){
+function getSvinnPct(storeId, weeks) {
+  // Beräkna känt svinn% = svinnKr / omsättning för valda veckor
+  let totSvinnKr=0, totForsaljning=0;
+  const wks = weeks && weeks.size>0 ? weeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  wks.forEach(pk => {
+    const svinnRows = SVINN_DB[pk]?.[storeId];
+    const repData   = REPORT_DB[pk]?.[storeId];
+    if(svinnRows) totSvinnKr   += svinnRows.reduce((s,r)=>s+(r.svinnKr||0),0);
+    if(repData)   totForsaljning += repData.forsaljning||0;
+  });
+  return totForsaljning>0 ? totSvinnKr/totForsaljning : null;
+}
+
+function renderKPIGrid(sd, data, storeId) {
+  const curSid = storeId || sid;
+  const svinnPct = getSvinnPct(curSid, viewMode==='period'?selWeeks:null);
+
   return`<div class="kgrid">${STORE_KPI_DEFS.map(k=>{
-    const goal=sd.storeGoals[k.key];
-    let val=null;
-    if(data){if(k.key==='oms')val=data.forsaljningDelta;else if(k.key==='marginal')val=data.bvPct;}
-    const color=pctColor(val,goal/100,k.lb);
+    const goal = sd.storeGoals[k.key];
+    let val = null;
+    if(data) {
+      if(k.key==='oms')      val = data.forsaljningDelta;
+      else if(k.key==='marginal') val = data.bvPct;
+      else if(k.key==='antal')    val = data.antalDelta;
+    }
+    if(k.key==='svinn_k') val = svinnPct;
+
+    // Färgjämförelse: goal är i % (t.ex. 7), val är decimal (t.ex. 0.07) för delta/pct från rapport
+    // svinn_k: goal är i % (0.7), val är decimal
+    const goalDec = goal/100;
+    const color = pctColor(val, goalDec, k.lb);
+
+    // Formatera utfall
+    let display = '—';
+    if(val!=null) {
+      if(k.fmt==='delta') display = fmtDelta(val);
+      else display = fmtPct(val);
+    }
+
+    // Progressbar: hur nära målet (0–100%)
+    let barWidth = 50;
+    if(val!=null && goalDec!==0) {
+      barWidth = Math.min(Math.abs(val/goalDec)*100, 100);
+    }
+
     return`<div class="ktile">
       <div class="kl">${k.label}</div>
-      <div class="kv" style="color:${val!=null?color:'#1a1a1a'}">${val!=null?(k.key==='oms'?fmtDelta(val):fmtPct(val)):`${goal}%`}</div>
-      <div class="kt">Mål: ${goal}${k.unit.includes('%')?'%':''}</div>
-      <div class="kbar"><div class="kfill" style="width:${val!=null?Math.min(Math.abs(val/(goal/100))*100,100):50}%;background:${val!=null?color:'#d5d5d0'}"></div></div>
-    </div>`;}).join('')}</div>`;
+      <div class="kv" style="color:${val!=null?color:'var(--ö-text)'}">${val!=null?display:`${goal}%`}</div>
+      <div class="kt">Mål: ${goal}%${val!=null?` · Utfall: ${display}`:' · Ingen data'}</div>
+      <div class="kbar"><div class="kfill" style="width:${barWidth}%;background:${val!=null?color:'var(--ö-border)'}"></div></div>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function renderDeptTable(sd,wData,aData,mode){
@@ -1011,8 +1064,19 @@ function procF(file){
       const pd={};let cs=null;
       for(const row of rows){
         const c0=row[0],c1=row[1],c2=row[2],c3=row[3];
-        if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){cs=String(c0).trim();pd[cs]={name:c1,forsaljning:row[6]?parseFloat(row[6]):null,forsaljningDelta:row[7]?parseFloat(row[7]):null,bvKr:row[10]?parseFloat(row[10]):null,bvPct:row[11]?parseFloat(row[11]):null,depts:[]};}
-        else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){pd[cs].depts.push({code:String(c2).trim().padStart(2,'0'),name:c3,forsaljning:row[6]?parseFloat(row[6]):null,forsaljningDelta:row[7]?parseFloat(row[7]):null,bvKr:row[10]?parseFloat(row[10]):null,bvPct:row[11]?parseFloat(row[11]):null});}
+        if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){cs=String(c0).trim();pd[cs]={name:c1,
+            forsaljning:row[6]?parseFloat(row[6]):null,
+            forsaljningDelta:row[7]?parseFloat(row[7]):null,
+            antalDelta:row[8]?parseFloat(row[8]):null,
+            bvKr:row[10]?parseFloat(row[10]):null,
+            bvPct:row[11]?parseFloat(row[11]):null,
+            depts:[]};}
+        else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){pd[cs].depts.push({code:String(c2).trim().padStart(2,'0'),name:c3,
+            forsaljning:row[6]?parseFloat(row[6]):null,
+            forsaljningDelta:row[7]?parseFloat(row[7]):null,
+            antalDelta:row[8]?parseFloat(row[8]):null,
+            bvKr:row[10]?parseFloat(row[10]):null,
+            bvPct:row[11]?parseFloat(row[11]):null});}
       }
       REPORT_DB[pk]=pd;Object.entries(pd).forEach(([id,d])=>getSD(id).reportData=d);
       const sc=Object.keys(pd).length,dc=Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
@@ -1138,8 +1202,15 @@ function generatePDF(storeId,pdfMode){
   // KPI tiles function
   function kpiSection(data,label){
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...DK);doc.text(label,M,y);y+=5;
+    const svinnPct = getSvinnPct(storeId, viewMode==='period'?selWeeks:null);
     const kpis=STORE_KPI_DEFS,tW=(W-2*M-5*3)/3,tH=20;
-    const vals={oms:data?.forsaljningDelta!=null?`${(data.forsaljningDelta*100).toFixed(1)}%`:'—',marginal:data?.bvPct!=null?`${(data.bvPct*100).toFixed(1)}%`:'—',svinn_k:'—',svinn_d:'—',antal:'—',kvitton:'—'};
+    const vals={
+      oms:      data?.forsaljningDelta!=null?`${(data.forsaljningDelta*100).toFixed(1)}%`:'—',
+      marginal: data?.bvPct!=null?`${(data.bvPct*100).toFixed(1)}%`:'—',
+      svinn_k:  svinnPct!=null?`${(svinnPct*100).toFixed(2)}%`:'—',
+      antal:    data?.antalDelta!=null?`${data.antalDelta>=0?'+':''}${(data.antalDelta*100).toFixed(1)}%`:'—',
+      kvitton:  '—',
+    };
     for(let i=0;i<kpis.length;i++){
       const col=i%3,row=Math.floor(i/3),tx=M+col*(tW+3),ty=y+row*(tH+3),k=kpis[i],val=vals[k.key],goal=sd.storeGoals[k.key];
       doc.setFillColor(...LG);doc.roundedRect(tx,ty,tW,tH,2,2,'F');
