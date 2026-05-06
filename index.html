@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:14</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:18</div>
 </div>
 </div>
 
@@ -258,7 +258,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:14</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:18</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1339,35 +1339,37 @@ function identifyFile(wb) {
   const sheets = wb.SheetNames;
   const first = sheets[0] || '';
 
-  // 9A ÖS09b — svinnfil
+  // 9A ÖS09b — svinnfil (en flik, namn innehåller svinn/ös09)
   if(first.toLowerCase().includes('ös09') || first.toLowerCase().includes('svinn'))
     return {type:'svinn', name:'9A ÖS09b Svinnrapport'};
 
-  // 9A ÖS20 — driftläckagefil (flikar format YYYYWW)
-  if(sheets.some(s=>s.match(/^\d{6}$/))) {
-    // Kolla om det är ÖS20 eller BIB via innehåll
-    const ws = wb.Sheets[sheets.find(s=>s.match(/^\d{6}$/))];
-    const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:0});
-    const header = (rows[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
-    if(header.includes('driftläckage') || header.includes('kvitton') || header.includes('snittköp'))
+  // Filer med veckoflikar (format YYYYWW)
+  const weekSheets = sheets.filter(s=>s.match(/^\d{6}$/));
+  if(weekSheets.length) {
+    // Läs rad 6 (index 5) som är headern i OS20-filen
+    const ws = wb.Sheets[weekSheets[0]];
+    const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+    const header6 = (rows[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
+    if(header6.includes('driftläckage') || header6.includes('kvitton') || header6.includes('snittköp'))
       return {type:'os20', name:'9A ÖS20 Försäljning & driftläckage'};
     return {type:'bib_multi', name:'BIB_HEM06 (flerfliks)'};
   }
 
-  // BIB_HEM06 — en flik med alla butiker
-  if(first.toLowerCase().includes('bib') || first.toLowerCase().includes('hem06') || first.toLowerCase().includes('försäljning'))
-    return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
-
-  // Kolla innehåll i första fliken
+  // En flik — kolla innehåll
   const ws = wb.Sheets[sheets[0]];
-  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:0});
-  const header = (rows[2]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
-  if(header.includes('svinnkod') || header.includes('svinn kr') || header.includes('artikel (ean)'))
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+
+  // Kolla rubrikrad (rad 1) och datarad (rad 2-4)
+  const allText = rows.slice(0,5).flat().map(v=>String(v||'').toLowerCase()).join(' ');
+
+  if(allText.includes('svinnkod') || allText.includes('svinn kr') || allText.includes('antal svinn'))
     return {type:'svinn', name:'9A ÖS09b Svinnrapport'};
-  if(header.includes('bruttovinst') && header.includes('lo huvudgrupp'))
+  if(allText.includes('lo huvudgrupp') || allText.includes('bruttovinst') && allText.includes('butik'))
+    return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
+  if(first.toLowerCase().includes('bib') || first.toLowerCase().includes('hem06'))
     return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
 
-  return {type:'unknown', name:sheets[0]};
+  return {type:'unknown', name:first};
 }
 
 function wrongFileError(pmsg, detected, expected, expectedLabel) {
