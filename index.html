@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 20:49</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:06</div>
 </div>
 </div>
 
@@ -258,7 +258,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 20:49</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:06</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -919,6 +919,79 @@ function renderDeptTable(sd,wData,aData,mode){
     </td>`;
   }
 
+  function top10Svinn(deptCode) {
+    const wks = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+    const artMap = {};
+
+    wks.forEach(pk=>{
+      // Summera svinn per artikel per vecka
+      (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
+        if(r.deptCode !== deptCode) return;
+        const key = r.ean || r.artName;
+        if(!artMap[key]) artMap[key] = {artName:r.artName, svinnKr:0, artOms:0};
+        artMap[key].svinnKr += r.svinnKr||0;
+      });
+    });
+
+    // Hämta artikelomsättning från BIB per vecka och summera
+    // BIB har omsättning per artikel per vecka — matcha via EAN
+    wks.forEach(pk=>{
+      const bibStore = REPORT_DB[pk]?.[sid];
+      if(!bibStore) return;
+      // EAN_DEPT_MAP håller senaste kända omsättning per EAN
+      // Vi kan inte få per-vecka artikelomsättning från BIB utan att lagra det
+      // Bästa approximation: använd EAN_DEPT_MAP.oms som vecko-proxy och multiplicera
+    });
+
+    // Använd EAN_DEPT_MAP.oms × antal veckor med svinn som omsättningsuppskattning
+    Object.entries(artMap).forEach(([ean, art])=>{
+      const bibInfo = EAN_DEPT_MAP[ean];
+      if(bibInfo?.oms > 0) {
+        // Räkna hur många veckor denna artikel faktiskt hade svinn
+        let weeksWithSvinn = 0;
+        wks.forEach(pk=>{ if((SVINN_DB[pk]?.[sid]||[]).some(r=>(r.ean||r.artName)===ean)) weeksWithSvinn++; });
+        art.artOms = bibInfo.oms * weeksWithSvinn;
+      }
+    });
+
+    return Object.values(artMap)
+      .filter(a=>a.svinnKr>0)
+      .sort((a,b)=>b.svinnKr-a.svinnKr)
+      .slice(0,10)
+      .map(a=>({...a, svinnPct: a.artOms>0 ? a.svinnKr/a.artOms : null}));
+  }
+
+  function svinnListHTML(deptCode) {
+    const rows = top10Svinn(deptCode);
+    if(!rows.length) return '';
+    return `<tr style="border-bottom:1px solid var(--ö-border)">
+      <td colspan="4" style="padding:0 12px 12px 27px">
+        <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin:6px 0 5px">Top ${rows.length} svinnade artiklar</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="border-bottom:1px solid var(--ö-border)">
+            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px 4px 0;text-align:left">#</th>
+            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 0 4px;text-align:left">Artikel</th>
+            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px 4px;text-align:right">Omsättning</th>
+            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px 4px;text-align:right">Svinn kr</th>
+            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 0 4px 8px;text-align:right">Svinn %</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map((a,i)=>{
+              const pctStr = a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':'—';
+              const pctCol = a.svinnPct!=null?(a.svinnPct>0.02?'#A32D2D':a.svinnPct>0.01?'#BA7517':'#3B6D11'):'var(--ö-muted)';
+              return `<tr style="border-bottom:0.5px solid var(--ö-border)">
+                <td style="padding:4px 8px 4px 0;font-size:10px;color:var(--ö-muted)">${i+1}</td>
+                <td style="padding:4px 0;font-size:11px;color:var(--ö-text)">${a.artName}</td>
+                <td style="padding:4px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;color:var(--ö-muted)">${a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE')+' kr':'—'}</td>
+                <td style="padding:4px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:500;color:#A32D2D">${Math.round(a.svinnKr).toLocaleString('sv-SE')} kr</td>
+                <td style="padding:4px 0 4px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:${pctCol}">${pctStr}</td>
+              </tr>`;}).join('')}
+          </tbody>
+        </table>
+      </td>
+    </tr>`;
+  }
+
   return`<div class="card">
     <div class="card-head"><div><div class="ct">Avdelningsöversikt</div><div class="cs">${label}</div></div></div>
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:480px">
@@ -946,10 +1019,10 @@ function renderDeptTable(sd,wData,aData,mode){
         const bvUtfall=rw?.bvPct??null;
         const bvAcc=ra?.bvPct??null;
         const svinnUtfall=deptSvinnPct(d.code);
+        const svinnList=svinnListHTML(d.code);
+        const hasSubRows = acts.length>0 || svinnList!=='';
 
-        const colspan=4;
-
-        return`<tr style="border-bottom:${acts.length?'none':'1px solid var(--ö-border)'}">
+        return`<tr style="border-bottom:${hasSubRows?'none':'1px solid var(--ö-border)'}">
           <td style="padding:8px 12px;vertical-align:middle">
             <div style="display:flex;align-items:center;gap:8px">
               <div style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
@@ -963,8 +1036,8 @@ function renderDeptTable(sd,wData,aData,mode){
           ${kpiCell(bvUtfall, dg.marginal, 'pct', false, bvAcc)}
           ${kpiCell(svinnUtfall, dg.svinn, 'pct', true, null)}
         </tr>
-        ${acts.length?`<tr style="border-bottom:1px solid var(--ö-border)">
-          <td colspan="${colspan}" style="padding:0 12px 8px 27px">
+        ${acts.length?`<tr style="border-bottom:${svinnList?'none':'1px solid var(--ö-border)'}">
+          <td colspan="4" style="padding:0 12px 8px 27px">
             <div style="display:flex;flex-direction:row;gap:5px;flex-wrap:nowrap;overflow-x:auto">
               ${[...fixed,...goalActs].map(a=>`
                 <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;background:${a.type==='fixed'?'#EAF3DE':'#FAEEDA'};border:0.5px solid ${a.type==='fixed'?'#C0DD97':'#FAC775'};border-radius:5px;padding:3px 9px;font-size:11px">
@@ -974,7 +1047,8 @@ function renderDeptTable(sd,wData,aData,mode){
                 </div>`).join('')}
             </div>
           </td>
-        </tr>`:''}`;
+        </tr>`:''}
+        ${svinnList}`;
       }).join('')}</tbody>
     </table></div></div>`;
 }
@@ -1477,7 +1551,10 @@ async function doBIBUpload(force) {
           bvPct:           row[11]!=null?parseFloat(row[11]):null});
       } else if(lastStore && lastDept && c0==null && c1==null && c2==null && c3==null && row[4]!=null && row[5]!=null) {
         const ean = String(row[5]).trim();
-        if(ean.match(/^\d{6,14}$/)) { EAN_DEPT_MAP[ean] = lastDept; artCount++; }
+        if(ean.match(/^\d{6,14}$/)){
+          EAN_DEPT_MAP[ean]={dept:lastDept, oms:row[6]!=null?parseFloat(row[6]):0};
+          artCount++;
+        }
       }
     }
   }
@@ -1498,9 +1575,8 @@ async function doBIBUpload(force) {
   renderUploadFörsäljning();
 }
 
-// EAN → avdelningskod-mappning, byggs från BIB-filen vid uppladdning
-// Format: {'7310865064171': '01', ...}
-let EAN_DEPT_MAP = {};
+// EAN → {deptCode, oms} mappning
+let EAN_DEPT_MAP = {}; // ean → {dept, oms}
 
 async function parseBIBSheet(rows,pk){
   const pd={};let cs=null, curDept=null;
@@ -1527,9 +1603,11 @@ async function parseBIBSheet(rows,pk){
         bvKr:          row[10]!=null?parseFloat(row[10]):null,
         bvPct:         row[11]!=null?parseFloat(row[11]):null});
     } else if(cs&&curDept&&!c0&&!c1&&!c2&&!c3&&row[4]&&row[5]){
-      // Artikelrad: kol[4]=artikelnamn, kol[5]=EAN
+      // Artikelrad: kol[4]=artikelnamn, kol[5]=EAN, kol[6]=oms kr
       const ean=String(row[5]).trim();
-      if(ean && ean.match(/^\d+$/)) EAN_DEPT_MAP[ean]=curDept;
+      if(ean && ean.match(/^\d{6,14}$/)){
+        EAN_DEPT_MAP[ean]={dept:curDept, oms:row[6]!=null?parseFloat(row[6]):0};
+      }
     }
   }
   REPORT_DB[pk]=pd;
@@ -1726,13 +1804,16 @@ function procS(file){
         if(!pd[c0])pd[c0]=[];
         const ean=String(row[3]||'').trim();
         // Slå upp avdelningskod via EAN-mappningen från BIB-filen
-        const deptCode=EAN_DEPT_MAP[ean]||null;
+        const eanInfo = EAN_DEPT_MAP[ean];
+        const deptCode = eanInfo?.dept || null;
+        const artOms   = eanInfo?.oms  || 0;
         if(deptCode) mappedCount++; else unmappedCount++;
         pd[c0].push({
           storeId:c0,
           artName:row[4]||'',
           ean,
-          deptCode,  // null om EAN saknas i mappningen
+          deptCode,
+          artOms,
           svinnKod:row[8]||'',
           svinnKodText:row[9]||'',
           antal:parseFloat(row[11])||0,
