@@ -240,7 +240,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-06 21:38</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 13:41</div>
 </div>
 </div>
 
@@ -259,7 +259,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-06 21:38</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 13:41</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1120,100 +1120,104 @@ function renderDeptTable(sd,wData,aData,mode){
   const showAcc=mode==='period'&&aData;
   const wksArr=[...selWeeks].sort();
   const label=showAcc?(selWeeks.size===1?wksArr[0].replace('-V',' V'):`${wksArr[0].replace('-V',' V')} – ${wksArr[wksArr.length-1].replace('-V',' V')} (${aData.found} veckor)`):'Föreg. vecka';
+  const wks = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
 
-  // Beräkna svinn per avdelning — matchar via deptCode på svinnrader
-  function deptSvinnPct(deptCode) {
-    const wks = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
-    let totSvinnKr=0, totFors=0;
+  // KPI: svinn% per avdelning
+  function deptSvinnPct(code) {
+    let totS=0,totF=0;
     wks.forEach(pk=>{
-      // Svinn kr för denna avdelning
-      const svinnRows=SVINN_DB[pk]?.[sid]||[];
-      svinnRows.forEach(r=>{
-        if(r.deptCode===deptCode) totSvinnKr+=r.svinnKr||0;
-      });
-      // Omsättning för avdelningen (från BIB)
-      const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===deptCode);
-      if(rd) totFors+=rd.forsaljning||0;
+      (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{if(r.deptCode===code)totS+=r.svinnKr||0;});
+      const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===code);
+      if(rd)totF+=rd.forsaljning||0;
     });
-    return totFors>0 ? totSvinnKr/totFors : null;
+    return totF>0?totS/totF:null;
+  }
+
+  // Top 5 svinn kr per avdelning
+  function top5Svinn(code) {
+    const m={};
+    wks.forEach(pk=>{
+      (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
+        if((r.deptCode||null)!==code)return;
+        const k=r.artName||r.ean;
+        if(!m[k])m[k]={artName:r.artName||r.ean,svinnKr:0,artOms:r.artOms||0};
+        m[k].svinnKr+=r.svinnKr||0;
+        if((r.artOms||0)>m[k].artOms)m[k].artOms=r.artOms||0;
+      });
+    });
+    return Object.values(m).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5)
+      .map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
+  }
+
+  // Top 5 TB kr per avdelning (från EAN_DEPT_MAP som har bvKr per artikel från BIB)
+  function top5TB(code) {
+    // Samla alla artiklar i denna avdelning med bvKr summerat över valda veckor
+    // EAN_DEPT_MAP har bvKr för senaste BIB-veckan — multiplicera med antal veckor
+    const artMap = {};
+    wks.forEach(pk=>{
+      const bibStore = REPORT_DB[pk]?.[sid];
+      if(!bibStore) return;
+      // Iterera EAN_DEPT_MAP för att hitta artiklar i denna avdelning
+      // (bvKr i EAN_DEPT_MAP är per senaste vecka — vi använder den som proxy)
+    });
+    // Direkt approach: hämta alla artiklar i avdelningen från EAN_DEPT_MAP
+    Object.entries(EAN_DEPT_MAP).forEach(([artnr, info])=>{
+      if(info.dept !== code) return;
+      if(!info.bvKr || info.bvKr <= 0) return;
+      artMap[artnr] = {artName: info.namn||artnr, bvKr: info.bvKr, oms: info.oms||0};
+    });
+    return Object.values(artMap)
+      .sort((a,b)=>b.bvKr-a.bvKr)
+      .slice(0,5);
+  }
+
+  function miniList(title, rows, krField, color) {
+    if(!rows.length)return'';
+    return `<div style="margin-top:6px">
+      <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">${title}</div>
+      <table style="width:100%;border-collapse:collapse">
+        ${rows.map((a,i)=>{
+          const pct = a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':null;
+          const pctCol = a.svinnPct!=null?(a.svinnPct>0.02?'#A32D2D':a.svinnPct>0.01?'#BA7517':'#3B6D11'):'';
+          return`<tr style="border-bottom:0.5px solid var(--ö-border)">
+            <td style="padding:2px 6px 2px 0;font-size:10px;color:var(--ö-muted);font-family:'SF Mono',monospace;width:14px">${i+1}</td>
+            <td style="padding:2px 0;font-size:11px;color:var(--ö-text)">${a.artName}</td>
+            <td style="padding:2px 0 2px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:500;color:${color};white-space:nowrap">
+              ${Math.round(a[krField]).toLocaleString('sv-SE')} kr
+              ${pct?`<span style="margin-left:5px;color:${pctCol};font-size:10px">${pct}</span>`:''}
+            </td>
+          </tr>`;}).join('')}
+      </table>
+    </div>`;
   }
 
   function kpiCell(utfall, mål, unit, lb, accUtfall) {
-    const hasVal = utfall!=null;
-    const hasMål = mål!=null;
-    const col = hasVal&&hasMål ? pctColor(utfall, mål/100, lb) : 'var(--ö-muted)';
-    const barW = hasVal&&hasMål&&mål!==0 ? Math.min(Math.abs(utfall/(mål/100))*100,100) : 0;
-    const dispUtfall = hasVal ? (unit==='delta'?fmtDelta(utfall):fmtPct(utfall)) : '—';
-    const dispMål = hasMål ? mål+'%' : '—';
-    const dispAcc = accUtfall!=null ? (unit==='delta'?fmtDelta(accUtfall):fmtPct(accUtfall)) : null;
+    const hasVal=utfall!=null,hasMål=mål!=null;
+    const col=hasVal&&hasMål?pctColor(utfall,mål/100,lb):'var(--ö-muted)';
+    const barW=hasVal&&hasMål&&mål!==0?Math.min(Math.abs(utfall/(mål/100))*100,100):0;
+    const dispUtfall=hasVal?(unit==='delta'?fmtDelta(utfall):fmtPct(utfall)):'—';
+    const dispAcc=accUtfall!=null?(unit==='delta'?fmtDelta(accUtfall):fmtPct(accUtfall)):null;
     return `<td style="padding:8px 10px;text-align:right;vertical-align:middle">
       <div style="font-size:12px;font-weight:600;color:${col}">${dispUtfall}</div>
-      <div style="font-size:10px;color:var(--ö-muted)">mål ${dispMål}</div>
+      <div style="font-size:10px;color:var(--ö-muted)">mål ${hasMål?mål+'%':'—'}</div>
       ${hasVal&&hasMål?`<div style="width:44px;height:2.5px;background:var(--ö-border);border-radius:2px;margin-top:3px;margin-left:auto"><div style="height:100%;width:${barW}%;background:${col};border-radius:2px"></div></div>`:''}
       ${showAcc&&dispAcc?`<div style="font-size:10px;color:var(--ö-muted);margin-top:1px">ack. ${dispAcc}</div>`:''}
     </td>`;
   }
 
-  function top10Svinn(deptCode) {
-    const wks = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
-    const artMap = {};
-    wks.forEach(pk=>{
-      (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
-        const key = r.artName || r.ean;
-        if(!artMap[key]) artMap[key] = {artName:r.artName||r.ean, svinnKr:0, deptCode:r.deptCode||null};
-        artMap[key].svinnKr += r.svinnKr||0;
-      });
-    });
-    return Object.values(artMap)
-      .filter(a=>a.svinnKr>0)
-      .sort((a,b)=>b.svinnKr-a.svinnKr)
-      .slice(0,10)
-      .map(a=>({...a, svinnPct:null}));
-  }
-
-  // Visa top 10 bara på första aktiva avdelningen (som en butiksövergripande lista)
-  function shouldShowSvinnList(deptCode) {
-    const active = DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
-    return active.length > 0 && active[0].code === deptCode;
-  }
-
-  function svinnListHTML(deptCode) {
-    const rows = top10Svinn(deptCode);
-    if(!rows.length) return '';
-    return `<tr style="border-bottom:1px solid var(--ö-border)">
-      <td colspan="4" style="padding:0 12px 12px 27px">
-        <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin:6px 0 5px">Top ${rows.length} svinnade artiklar</div>
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="border-bottom:1px solid var(--ö-border)">
-            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px 4px 0;text-align:left">#</th>
-            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 0 4px;text-align:left">Artikel</th>
-            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px 4px;text-align:right">Omsättning</th>
-            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 8px 4px;text-align:right">Svinn kr</th>
-            <th style="font-size:9px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;padding:3px 0 4px 8px;text-align:right">Svinn %</th>
-          </tr></thead>
-          <tbody>
-            ${rows.map((a,i)=>{
-              const pctStr = a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':'—';
-              const pctCol = a.svinnPct!=null?(a.svinnPct>0.02?'#A32D2D':a.svinnPct>0.01?'#BA7517':'#3B6D11'):'var(--ö-muted)';
-              return `<tr style="border-bottom:0.5px solid var(--ö-border)">
-                <td style="padding:4px 8px 4px 0;font-size:10px;color:var(--ö-muted)">${i+1}</td>
-                <td style="padding:4px 0;font-size:11px;color:var(--ö-text)">${a.artName}</td>
-                <td style="padding:4px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;color:var(--ö-muted)">${a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE')+' kr':'—'}</td>
-                <td style="padding:4px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:500;color:#A32D2D">${Math.round(a.svinnKr).toLocaleString('sv-SE')} kr</td>
-                <td style="padding:4px 0 4px 8px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:${pctCol}">${pctStr}</td>
-              </tr>`;}).join('')}
-          </tbody>
-        </table>
-      </td>
-    </tr>`;
+  // Antal sålda per avdelning (delta% och absolut)
+  function deptAntal(code,isAcc) {
+    if(isAcc&&aData){const d=aData.depts?.find(x=>x.code===code);return d?.antalDelta??null;}
+    const d=wData?.depts?.find(x=>x.code===code);return d?.antalDelta??null;
   }
 
   return`<div class="card">
     <div class="card-head"><div><div class="ct">Avdelningsöversikt</div><div class="cs">${label}</div></div></div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:480px">
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px">
       <thead><tr style="background:var(--ö-bkg)">
         <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Avdelning</th>
         <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Omsättning</th>
+        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Antal sålda</th>
         <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Marginal BV%</th>
         <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Känt Svinn</th>
       </tr></thead>
@@ -1225,20 +1229,28 @@ function renderDeptTable(sd,wData,aData,mode){
         const fixed=acts.filter(a=>a.type==='fixed');
         const goalActs=acts.filter(a=>a.type==='goal');
 
-        const omsVal=rw?.forsaljningDelta;
-        const omsMål=dg.oms/100;
+        const omsVal=rw?.forsaljningDelta,omsMål=dg.oms/100;
         let dotColor='#888';
-        if(omsVal!=null) dotColor=omsVal>=omsMål*0.95?'#3B6D11':omsVal>=omsMål*0.80?'#BA7517':'#A32D2D';
+        if(omsVal!=null)dotColor=omsVal>=omsMål*0.95?'#3B6D11':omsVal>=omsMål*0.80?'#BA7517':'#A32D2D';
 
-        const omsUtfall=rw?.forsaljningDelta??null;
-        const omsAcc=ra?.forsaljningDelta??null;
-        const bvUtfall=rw?.bvPct??null;
-        const bvAcc=ra?.bvPct??null;
+        const omsUtfall=rw?.forsaljningDelta??null,omsAcc=ra?.forsaljningDelta??null;
+        const bvUtfall=rw?.bvPct??null,bvAcc=ra?.bvPct??null;
         const svinnUtfall=deptSvinnPct(d.code);
-        const svinnList=''; // visas separat som butiksövergripande lista nedan
-        const hasSubRows = acts.length>0;
+        const antalUtfall=rw?.antalDelta??null,antalAcc=ra?.antalDelta??null;
 
-        return`<tr style="border-bottom:${hasSubRows?'none':'1px solid var(--ö-border)'}">
+        // Top 5 listor
+        const svinnRows=top5Svinn(d.code);
+        const tbRows=top5TB(d.code);
+        const hasSvinnData=svinnRows.length>0;
+        const hasTBData=tbRows.length>0;
+
+        // TB kr avdelningsnivå (för fallback om inga artiklar i EAN_DEPT_MAP ännu)
+        let totBvKr=0;
+        wks.forEach(pk=>{const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);if(rd)totBvKr+=rd.bvKr||0;});
+
+        const hasSubContent=acts.length>0||hasSvinnData||hasTBData||totBvKr>0;
+
+        return`<tr style="border-bottom:${hasSubContent?'none':'1px solid var(--ö-border)'}">
           <td style="padding:8px 12px;vertical-align:middle">
             <div style="display:flex;align-items:center;gap:8px">
               <div style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
@@ -1248,26 +1260,36 @@ function renderDeptTable(sd,wData,aData,mode){
               </div>
             </div>
           </td>
-          ${kpiCell(omsUtfall, dg.oms, 'delta', false, omsAcc)}
-          ${kpiCell(bvUtfall, dg.marginal, 'pct', false, bvAcc)}
-          ${kpiCell(svinnUtfall, dg.svinn, 'pct', true, null)}
+          ${kpiCell(omsUtfall,dg.oms,'delta',false,omsAcc)}
+          ${kpiCell(antalUtfall,dg.antal??null,'delta',false,antalAcc)}
+          ${kpiCell(bvUtfall,dg.marginal,'pct',false,bvAcc)}
+          ${kpiCell(svinnUtfall,dg.svinn,'pct',true,null)}
         </tr>
-        ${acts.length?`<tr style="border-bottom:${svinnList?'none':'1px solid var(--ö-border)'}">
-          <td colspan="4" style="padding:0 12px 8px 27px">
-            <div style="display:flex;flex-direction:row;gap:5px;flex-wrap:nowrap;overflow-x:auto">
+        ${hasSubContent?`<tr style="border-bottom:1px solid var(--ö-border)">
+          <td colspan="5" style="padding:0 12px 10px 27px">
+            ${acts.length?`<div style="display:flex;flex-direction:row;gap:5px;flex-wrap:nowrap;overflow-x:auto;margin-top:6px;padding-bottom:4px">
               ${[...fixed,...goalActs].map(a=>`
                 <div style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;background:${a.type==='fixed'?'#EAF3DE':'#FAEEDA'};border:0.5px solid ${a.type==='fixed'?'#C0DD97':'#FAC775'};border-radius:5px;padding:3px 9px;font-size:11px">
                   <span style="font-size:9px;font-weight:700;color:${a.type==='fixed'?'#3B6D11':'#854F0B'};text-transform:uppercase;letter-spacing:.05em">${a.type==='fixed'?'Fast':'Mål'}</span>
                   <span style="color:${a.type==='fixed'?'#1a4a2e':'#4a2a0a'}">${a.text}${a.cond?` · <em style="opacity:.75">${a.cond}</em>`:''}</span>
                   <span style="font-size:11px;color:${a.done?'#3B6D11':'#c0bfb5'}">${a.done?'✓':'○'}</span>
                 </div>`).join('')}
+            </div>`:''}
+            <div style="display:grid;grid-template-columns:${hasSvinnData&&(hasTBData||totBvKr>0)?'1fr 1fr':'1fr'};gap:16px;margin-top:${acts.length?'8px':'6px'}">
+              ${hasSvinnData?miniList('Top 5 svinn kr',svinnRows,'svinnKr','#A32D2D'):''}
+              ${hasTBData?miniList('Top 5 TB kr',tbRows,'bvKr','#3B6D11'):
+                totBvKr>0?`<div>
+                  <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">TB kr avdelning</div>
+                  <div style="font-size:18px;font-weight:600;color:#3B6D11;font-family:'SF Mono',monospace">${Math.round(totBvKr).toLocaleString('sv-SE')} kr</div>
+                  ${bvUtfall!=null?`<div style="font-size:11px;color:var(--ö-muted);margin-top:2px">BV% ${fmtPct(bvUtfall)} · mål ${dg.marginal}%</div>`:''}
+                </div>`:''}
             </div>
           </td>
-        </tr>`:''}
-        ${svinnList}`;
+        </tr>`:''}`;
       }).join('')}</tbody>
     </table></div></div>`;
 }
+
 
 function renderAdminOv(el){
   el.innerHTML=`<div class="ph"><div><div class="pt">Alla butiker</div><div class="ps">Östenssons — översikt</div></div></div>
@@ -1770,7 +1792,12 @@ async function doBIBUpload(force) {
       } else if(lastStore && lastDept && c0==null && c1==null && c2==null && c3==null && row[4]!=null && row[5]!=null) {
         const ean = String(row[5]).trim();
         if(ean.match(/^\d{6,14}$/)){
-          EAN_DEPT_MAP[ean]={dept:lastDept, oms:row[6]!=null?parseFloat(row[6]):0};
+          EAN_DEPT_MAP[ean]={
+            dept: lastDept,
+            oms:  row[6]!=null?parseFloat(row[6]):0,
+            bvKr: row[10]!=null?parseFloat(row[10]):0,
+            namn: row[4]||''
+          };
           artCount++;
         }
       }
@@ -1821,10 +1848,15 @@ async function parseBIBSheet(rows,pk){
         bvKr:          row[10]!=null?parseFloat(row[10]):null,
         bvPct:         row[11]!=null?parseFloat(row[11]):null});
     } else if(cs&&curDept&&!c0&&!c1&&!c2&&!c3&&row[4]&&row[5]){
-      // Artikelrad: kol[4]=artikelnamn, kol[5]=EAN, kol[6]=oms kr
+      // Artikelrad: kol[4]=namn, kol[5]=artnr, kol[6]=oms, kol[10]=bvKr
       const ean=String(row[5]).trim();
       if(ean && ean.match(/^\d{6,14}$/)){
-        EAN_DEPT_MAP[ean]={dept:curDept, oms:row[6]!=null?parseFloat(row[6]):0};
+        EAN_DEPT_MAP[ean]={
+          dept: curDept,
+          oms:  row[6]!=null?parseFloat(row[6]):0,
+          bvKr: row[10]!=null?parseFloat(row[10]):0,
+          namn: row[4]||''
+        };
       }
     }
   }
@@ -2015,28 +2047,52 @@ function procS(file){
       if(SVINN_DB[pk]&&!confirm(`Svinndata för ${pk} finns. Ersätta?`)){prog.style.display='none';return;}
       const pd={};
       let mappedCount=0, unmappedCount=0;
-      for(const row of rows){
-        if(!row[0])continue;
+
+      // Hitta headerraden (innehåller 'Butik' i kol 0)
+      let headerRow=1, dataStart=2;
+      for(let i=0;i<Math.min(rows.length,10);i++){
+        if(rows[i]&&rows[i][0]&&String(rows[i][0]).trim()==='Butik'){headerRow=i;dataStart=i+1;break;}
+      }
+
+      // Avgör filformat: ny fil har kol[3]=ArtNr, kol[4]=EAN, kol[5]=namn, kol[13]=svinnKr
+      // Gammal fil: kol[3]=EAN, kol[4]=namn, kol[12]=svinnKr
+      const hdr = rows[headerRow]||[];
+      const isNew = hdr[3]&&String(hdr[3]).toLowerCase().includes('artikel')&&!String(hdr[3]).toLowerCase().includes('ean');
+      pmsg.textContent=`Tolkar svinndata (${isNew?'nytt':'gammalt'} format, ${rows.length-dataStart} rader)...`;
+
+      for(let i=dataStart;i<rows.length;i++){
+        const row=rows[i];
+        if(!row||!row[0])continue;
         const c0=String(row[0]).trim();
         if(!c0.match(/^\d{4}$/))continue;
         if(!pd[c0])pd[c0]=[];
-        const ean=String(row[3]||'').trim();
-        // Slå upp avdelningskod via EAN-mappningen från BIB-filen
-        const eanInfo = EAN_DEPT_MAP[ean];
-        const deptCode = eanInfo?.dept || null;
-        const artOms   = eanInfo?.oms  || 0;
-        if(deptCode) mappedCount++; else unmappedCount++;
-        pd[c0].push({
-          storeId:c0,
-          artName:row[4]||'',
-          ean,
-          deptCode,
-          artOms,
-          svinnKod:row[8]||'',
-          svinnKodText:row[9]||'',
-          antal:parseFloat(row[11])||0,
-          svinnKr:parseFloat(row[12])||0
-        });
+
+        let artNr, ean, artName, svinnKod, antal, svinnKr;
+        if(isNew){
+          artNr   = row[3]!=null?String(row[3]).trim():null;
+          ean     = row[4]!=null?String(row[4]).trim():null;
+          artName = row[5]||'';
+          svinnKod= row[9]||'';
+          antal   = parseFloat(row[12])||0;
+          svinnKr = parseFloat(row[13])||0;
+        } else {
+          artNr   = null;
+          ean     = row[3]!=null?String(row[3]).trim():null;
+          artName = row[4]||'';
+          svinnKod= row[8]||'';
+          antal   = parseFloat(row[11])||0;
+          svinnKr = parseFloat(row[12])||0;
+        }
+
+        // Slå upp avdelning: prioritera artikelnummer, sedan EAN
+        let deptCode=null, artOms=0;
+        const bibByArt = artNr?EAN_DEPT_MAP[artNr]:null;
+        const bibByEan = ean?EAN_DEPT_MAP[ean]:null;
+        const bib = bibByArt || bibByEan;
+        if(bib){deptCode=bib.dept;artOms=bib.oms||0;mappedCount++;}
+        else unmappedCount++;
+
+        pd[c0].push({storeId:c0, artNr, ean, artName, deptCode, artOms, svinnKod, antal, svinnKr});
       }
       SVINN_DB[pk]=pd;
       const sc=Object.keys(pd).length,ac=Object.values(pd).reduce((s,r)=>s+r.length,0);
