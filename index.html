@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 18:46</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 18:54</div>
 </div>
 </div>
 
@@ -252,7 +252,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 18:46</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 18:54</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1366,8 +1366,53 @@ function renderDeptTable(sd,wData,aData,mode){
 }
 
 function renderAdminOv(el){
+  const storesSummary = Object.entries(STORES).map(([id,name])=>{
+    const emails = getSD(id).emails||[];
+    return {id, name, emails};
+  });
+  const withMail = storesSummary.filter(s=>s.emails.length>0);
+  const noMail   = storesSummary.filter(s=>s.emails.length===0);
+
   el.innerHTML=`<div class="ph"><div><div class="pt">Alla butiker</div><div class="ps">Östenssons — översikt</div></div></div>
     ${viewToggle()}
+
+    <!-- Mailutskick-panel -->
+    <div class="card" style="margin-bottom:.875rem">
+      <div class="card-head">
+        <div><div class="ct">✉ Skicka veckorapport</div><div class="cs">${withMail.length} av 9 butiker har mailadresser registrerade</div></div>
+      </div>
+      <div style="padding:1rem">
+        <!-- Lägesväljare -->
+        <div style="display:flex;gap:.625rem;margin-bottom:.875rem;flex-wrap:wrap">
+          ${[['week','Föregående vecka'],['period','Ackumulerat'],['both','Båda']].map(([v,t])=>`
+          <label style="display:flex;align-items:center;gap:.375rem;cursor:pointer;padding:.5rem .875rem;border:1px solid var(--ö-border);border-radius:7px;font-size:13px">
+            <input type="radio" name="amode" value="${v}" ${v==='week'?'checked':''}> ${t}
+          </label>`).join('')}
+        </div>
+
+        <!-- Butiksöversikt med mailadresser -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-bottom:.875rem">
+          ${storesSummary.map(s=>`
+          <div style="padding:8px 10px;background:${s.emails.length?'#f0f4ff':'#fff8f8'};border:1px solid ${s.emails.length?'var(--ö-lblue)':'var(--ö-pink)'};border-radius:7px;font-size:12px">
+            <div style="font-weight:500;color:var(--ö-text);margin-bottom:2px">${s.name.replace('Hemköp ','')}</div>
+            ${s.emails.length
+              ? `<div style="color:var(--ö-blue);font-size:11px">📧 ${s.emails.length} mottagare</div>`
+              : `<div style="color:#c62828;font-size:11px">⚠ Ingen mailadress</div>`}
+          </div>`).join('')}
+        </div>
+
+        ${noMail.length?`<div style="font-size:11px;color:var(--ö-muted);margin-bottom:.75rem">⚠ ${noMail.length} butiker saknar mailadresser och hoppas över. Lägg till via Butiksinställningar.</div>`:''}
+
+        <div style="display:flex;gap:.625rem;align-items:center">
+          <button class="btn-g" onclick="sendAllStoreReports(document.querySelector('input[name=amode]:checked')?.value||'week')" style="padding:10px 28px;font-size:14px">
+            Skicka till ${withMail.length} butikers prenumeranter
+          </button>
+          <div id="mail-all-status" style="display:none;font-size:12px;padding:.5rem .875rem;border-radius:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Butiksgrid -->
     <div class="store-grid">${Object.entries(STORES).map(([id,name])=>{
       const sd=getSD(id);
       const wD=getLatestWeekData(id);
@@ -1389,6 +1434,7 @@ function renderAdminOv(el){
         <div style="display:flex;gap:6px;margin-top:8px">
           <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();adminViewStore('${id}')">Redigera →</button>
           <button class="btn-sm green" onclick="event.stopPropagation();sid='${id}';generatePDF('${id}','week',null)">⬇ PDF</button>
+          ${sd.emails?.length?`<button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendSingleFromAdmin('${id}')">✉</button>`:''}
         </div>
       </div>`;}).join('')}</div>`;
 }
@@ -2281,67 +2327,60 @@ const EDGE_FUNCTION_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1
 
 async function sendStoreReport(storeId, pdfMode) {
   const statusEl = document.getElementById('mail-status');
-  statusEl.style.display = 'block';
-  statusEl.style.background = '#f0f4ff';
-  statusEl.style.color = 'var(--ö-blue)';
-  statusEl.textContent = 'Förbereder och skickar rapport...';
+  if(statusEl){ statusEl.style.display='block'; statusEl.style.background='#f0f4ff'; statusEl.style.color='var(--ö-blue)'; statusEl.textContent='Genererar PDF...'; }
 
   try {
-    const html = buildMailHTML(storeId, pdfMode);
-    const storeName = STORES[storeId] || storeId;
-    const wksArr = [...selWeeks].sort();
-    const periodLabel = selWeeks.size===1 ? wksArr[0].replace('-V','V') : selWeeks.size>1 ? `${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}` : `V${getWeekNum(new Date())}`;
+    const storeName = STORES[storeId]||storeId;
+    const wksArr=[...selWeeks].sort();
+    const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
+    const fileName = `Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel}.pdf`;
+
+    if(statusEl) statusEl.textContent='Skickar rapport...';
+    const pdfBase64 = generatePDFBase64(storeId, pdfMode);
+    if(!pdfBase64) throw new Error('Kunde inte generera PDF');
 
     const res = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json', 'Authorization':`Bearer ${SB_KEY}`},
-      body: JSON.stringify({storeId, storeName, htmlReport:html, periodLabel, subject:`Veckorapport ${storeName} — ${periodLabel}`})
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
+      body:JSON.stringify({storeId, storeName, periodLabel, fileName,
+        subject:`Veckorapport ${storeName} — ${periodLabel}`,
+        pdfBase64  // skickar PDF som base64-bilaga
+      })
     });
     const data = await res.json();
-    if(res.ok) {
-      statusEl.style.background = '#e8f5e9';
-      statusEl.style.color = '#2e7d32';
-      statusEl.textContent = `✓ Skickat till ${data.sent} av ${data.total} prenumeranter`;
-    } else {
-      throw new Error(data.error || 'Okänt fel');
-    }
-  } catch(e) {
-    statusEl.style.background = '#fdecea';
-    statusEl.style.color = '#c62828';
-    statusEl.textContent = `⚠ Fel: ${e.message}`;
+    if(res.ok){
+      if(statusEl){ statusEl.style.background='#e8f5e9'; statusEl.style.color='#2e7d32'; statusEl.textContent=`✓ Skickat till ${data.sent} av ${data.total} prenumeranter`; }
+    } else throw new Error(data.error||'Okänt fel');
+  } catch(e){
+    if(statusEl){ statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; statusEl.textContent=`⚠ Fel: ${e.message}`; }
   }
 }
 
-async function sendAllStoreReports(pdfMode) {
+async function sendSingleFromAdmin(storeId) {
+  const storeName = STORES[storeId];
+  const mode = document.querySelector('input[name=amode]:checked')?.value || 'week';
   const statusEl = document.getElementById('mail-all-status');
-  statusEl.style.display = 'block';
-  statusEl.style.background = '#f0f4ff';
-  statusEl.style.color = 'var(--ö-blue)';
-  const storeIds = Object.keys(STORES);
-  let sent=0, skipped=0;
-
-  for(const storeId of storeIds) {
+  if(statusEl){ statusEl.style.display='block'; statusEl.style.background='#f0f4ff'; statusEl.style.color='var(--ö-blue)'; statusEl.textContent=`Genererar PDF för ${storeName}...`; }
+  try {
     const emails = getSD(storeId).emails||[];
-    if(!emails.length){skipped++;continue;}
-    statusEl.textContent = `Skickar till ${STORES[storeId]}... (${sent+skipped+1}/${storeIds.length})`;
-    try {
-      const html = buildMailHTML(storeId, pdfMode);
-      const storeName = STORES[storeId];
-      const wksArr = [...selWeeks].sort();
-      const periodLabel = selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
-      const res = await fetch(EDGE_FUNCTION_URL, {
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
-        body:JSON.stringify({storeId,storeName,htmlReport:html,periodLabel,subject:`Veckorapport ${storeName} — ${periodLabel}`})
-      });
-      if(res.ok) sent++;
-    } catch(e){ console.error('Mail failed for',storeId,e); }
-  }
-
-  statusEl.style.background = '#e8f5e9';
-  statusEl.style.color = '#2e7d32';
-  statusEl.textContent = `✓ Klart — skickat till ${sent} butiker · ${skipped} saknade mailadresser`;
+    if(!emails.length){ toast(`⚠ Inga mailadresser för ${storeName}`); return; }
+    const pdfBase64 = generatePDFBase64(storeId, mode);
+    if(!pdfBase64) throw new Error('Kunde inte generera PDF');
+    const wksArr=[...selWeeks].sort();
+    const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
+    const fileName=`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel}.pdf`;
+    if(statusEl) statusEl.textContent=`Skickar till ${storeName}...`;
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
+      body:JSON.stringify({storeId,storeName,periodLabel,fileName,pdfBase64,subject:`Veckorapport ${storeName} — ${periodLabel}`})
+    });
+    const data = await res.json();
+    if(res.ok){ toast(`✓ Skickat till ${data.sent} mottagare på ${storeName}`); if(statusEl)statusEl.style.display='none'; }
+    else throw new Error(data.error);
+  } catch(e){ toast(`⚠ Fel: ${e.message}`); if(statusEl){ statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; statusEl.textContent=`⚠ ${e.message}`; } }
 }
+
 
 // ── BYGG HTML-MAIL ────────────────────────────────────
 function buildMailHTML(storeId, pdfMode) {
@@ -2494,7 +2533,7 @@ function buildMailHTML(storeId, pdfMode) {
 </body></html>`;
 }
 
-function generatePDF(storeId,pdfMode){
+function _buildPDFDoc(storeId,pdfMode){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
   const sd=getSD(storeId);
@@ -2744,8 +2783,26 @@ function generatePDF(storeId,pdfMode){
     doc.text(`Sida ${i} av ${pages}`,W-M,293,{align:'right'});
   }
 
+  return doc;
+}
+
+// Offentlig funktion — laddar ner PDF
+function generatePDF(storeId, pdfMode) {
+  const doc = _buildPDFDoc(storeId, pdfMode);
+  if(!doc) return;
+  const sd=getSD(storeId);
+  const storeName=STORES[storeId]||storeId;
+  const wksArr=[...selWeeks].sort();
+  const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
   doc.save(`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel.replace(/\s/g,'_')}.pdf`);
   toast('PDF nedladdad ✓');
+}
+
+// Returnerar PDF som base64-sträng (för mailbilaga)
+function generatePDFBase64(storeId, pdfMode) {
+  const doc = _buildPDFDoc(storeId, pdfMode);
+  if(!doc) return null;
+  return doc.output('datauristring').split(',')[1];
 }
 
 // ── KPI-ADMIN ─────────────────────────────────────────
