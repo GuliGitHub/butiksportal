@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 14:55</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 18:46</div>
 </div>
 </div>
 
@@ -252,7 +252,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 14:55</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 18:46</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -2215,28 +2215,284 @@ async function delPK(type,pk){
 // ── PDF ───────────────────────────────────────────────
 function renderPdfPanel(){
   const storeName=(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid),week=getWeekNum(new Date());
-  const opts=PERIODS.map(p=>`<option value="${p.id}">${p.name} (V${p.weekFrom}–V${p.weekTo} ${p.year})</option>`).join('');
+  const emails=getSD(sid).emails||[];
   document.getElementById('panel-pdf').innerHTML=`
-    <div class="ph"><div><div class="pt">Ladda ner PDF-rapport</div><div class="ps">${storeName}</div></div></div>
-    <div class="card"><div class="card-head"><div class="ct">Välj innehåll</div></div>
+    <div class="ph"><div><div class="pt">Rapport</div><div class="ps">${storeName}</div></div></div>
+
+    <div class="card"><div class="card-head"><div><div class="ct">Välj innehåll</div><div class="cs">Gäller för både PDF och mailutskick</div></div></div>
       <div style="padding:1rem;display:flex;flex-direction:column;gap:.875rem">
         <div style="display:flex;gap:.75rem;flex-wrap:wrap">
           ${[['week','Föregående vecka','Utfall senaste uppladdade vecka'],['period','Ackumulerat per period','Summerat utfall för vald period'],['both','Båda','Föregående vecka + ackumulerat']].map(([v,t,s])=>`
-          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.625rem .875rem;border:0.5px solid #e8e8e5;border-radius:8px;flex:1;min-width:160px">
+          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.625rem .875rem;border:0.5px solid var(--ö-border);border-radius:8px;flex:1;min-width:160px">
             <input type="radio" name="pmode" value="${v}" ${v==='week'?'checked':''} onchange="updPdfSel()">
-            <div><div style="font-size:13px;font-weight:500">${t}</div><div style="font-size:11px;color:#888;margin-top:2px">${s}</div></div>
+            <div><div style="font-size:13px;font-weight:500">${t}</div><div style="font-size:11px;color:var(--ö-muted);margin-top:2px">${s}</div></div>
           </label>`).join('')}
         </div>
         <div id="pdf-psel" style="display:none">
-          <div style="background:var(--ö-light);border-radius:8px;padding:.625rem .875rem;font-size:12px;color:var(--ö-green)">
-            ${selWeeks.size>0?`${selWeeks.size} ${selWeeks.size===1?'vecka':'veckor'} valda under Översikt — används för ackumulerat`:'Välj veckor under Översikt → Välj veckor innan du laddar ner'}
+          <div style="background:var(--ö-light);border-radius:8px;padding:.625rem .875rem;font-size:12px;color:var(--ö-blue)">
+            ${selWeeks.size>0?`${selWeeks.size} ${selWeeks.size===1?'vecka':'veckor'} valda — används för ackumulerat`:'Välj veckor under Översikt innan du skickar/laddar ner'}
           </div>
         </div>
-        <button class="btn-g" onclick="generatePDF('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week')" style="width:100%;padding:12px;font-size:15px">⬇ Ladda ner PDF-rapport</button>
       </div>
-    </div>`;
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.875rem;margin-top:.875rem">
+      <!-- PDF -->
+      <div class="card">
+        <div class="card-head"><div><div class="ct">⬇ Ladda ner PDF</div><div class="cs">Sparas lokalt på din dator</div></div></div>
+        <div style="padding:1rem">
+          <button class="btn-g" onclick="generatePDF('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week')" style="width:100%;padding:10px;font-size:14px">Ladda ner PDF-rapport</button>
+        </div>
+      </div>
+
+      <!-- Mail -->
+      <div class="card">
+        <div class="card-head"><div><div class="ct">✉ Skicka via mail</div><div class="cs">${emails.length} prenumerant${emails.length!==1?'er':''} registrerade</div></div></div>
+        <div style="padding:1rem">
+          ${emails.length
+            ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:.75rem">
+                ${emails.map(e=>`<span style="font-size:11px;background:var(--ö-light);color:var(--ö-blue);border-radius:20px;padding:2px 10px">${e}</span>`).join('')}
+               </div>
+               <button class="btn-g" onclick="sendStoreReport('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week')" style="width:100%;padding:10px;font-size:14px">Skicka rapport</button>`
+            : `<div style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">Inga mailadresser inlagda för denna butik.</div>
+               <button class="btn-sm" onclick="showTab('admin',document.querySelector('.ni'))" style="width:100%">Lägg till mailadresser →</button>`
+          }
+          <div id="mail-status" style="display:none;margin-top:.625rem;font-size:12px;padding:.5rem .75rem;border-radius:6px"></div>
+        </div>
+      </div>
+    </div>
+
+    ${role==='admin'?`
+    <div class="card" style="margin-top:.875rem">
+      <div class="card-head"><div><div class="ct">Skicka till alla butiker</div><div class="cs">Skickar rapport till samtliga butiker med registrerade mailadresser</div></div></div>
+      <div style="padding:1rem">
+        <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">
+          Skickar en anpassad rapport per butik. Butiker utan mailadresser hoppas över.
+        </div>
+        <button class="btn-g" onclick="sendAllStoreReports(document.querySelector('input[name=pmode]:checked')?.value||'week')" style="padding:10px 24px;font-size:14px">Skicka till alla butiker</button>
+        <div id="mail-all-status" style="display:none;margin-top:.625rem;font-size:12px;padding:.5rem .75rem;border-radius:6px"></div>
+      </div>
+    </div>`:''}`;
 }
 function updPdfSel(){const m=document.querySelector('input[name=pmode]:checked')?.value;document.getElementById('pdf-psel').style.display=(m==='period'||m==='both')?'block':'none';}
+
+// ── MAILUTSKICK ───────────────────────────────────────
+const EDGE_FUNCTION_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/send-store-report';
+
+async function sendStoreReport(storeId, pdfMode) {
+  const statusEl = document.getElementById('mail-status');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#f0f4ff';
+  statusEl.style.color = 'var(--ö-blue)';
+  statusEl.textContent = 'Förbereder och skickar rapport...';
+
+  try {
+    const html = buildMailHTML(storeId, pdfMode);
+    const storeName = STORES[storeId] || storeId;
+    const wksArr = [...selWeeks].sort();
+    const periodLabel = selWeeks.size===1 ? wksArr[0].replace('-V','V') : selWeeks.size>1 ? `${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}` : `V${getWeekNum(new Date())}`;
+
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization':`Bearer ${SB_KEY}`},
+      body: JSON.stringify({storeId, storeName, htmlReport:html, periodLabel, subject:`Veckorapport ${storeName} — ${periodLabel}`})
+    });
+    const data = await res.json();
+    if(res.ok) {
+      statusEl.style.background = '#e8f5e9';
+      statusEl.style.color = '#2e7d32';
+      statusEl.textContent = `✓ Skickat till ${data.sent} av ${data.total} prenumeranter`;
+    } else {
+      throw new Error(data.error || 'Okänt fel');
+    }
+  } catch(e) {
+    statusEl.style.background = '#fdecea';
+    statusEl.style.color = '#c62828';
+    statusEl.textContent = `⚠ Fel: ${e.message}`;
+  }
+}
+
+async function sendAllStoreReports(pdfMode) {
+  const statusEl = document.getElementById('mail-all-status');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#f0f4ff';
+  statusEl.style.color = 'var(--ö-blue)';
+  const storeIds = Object.keys(STORES);
+  let sent=0, skipped=0;
+
+  for(const storeId of storeIds) {
+    const emails = getSD(storeId).emails||[];
+    if(!emails.length){skipped++;continue;}
+    statusEl.textContent = `Skickar till ${STORES[storeId]}... (${sent+skipped+1}/${storeIds.length})`;
+    try {
+      const html = buildMailHTML(storeId, pdfMode);
+      const storeName = STORES[storeId];
+      const wksArr = [...selWeeks].sort();
+      const periodLabel = selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
+      const res = await fetch(EDGE_FUNCTION_URL, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
+        body:JSON.stringify({storeId,storeName,htmlReport:html,periodLabel,subject:`Veckorapport ${storeName} — ${periodLabel}`})
+      });
+      if(res.ok) sent++;
+    } catch(e){ console.error('Mail failed for',storeId,e); }
+  }
+
+  statusEl.style.background = '#e8f5e9';
+  statusEl.style.color = '#2e7d32';
+  statusEl.textContent = `✓ Klart — skickat till ${sent} butiker · ${skipped} saknade mailadresser`;
+}
+
+// ── BYGG HTML-MAIL ────────────────────────────────────
+function buildMailHTML(storeId, pdfMode) {
+  const sd = getSD(storeId);
+  const storeName = STORES[storeId]||storeId;
+  const wData = getLatestWeekData(storeId);
+  const aData = (pdfMode==='period'||pdfMode==='both') ? getAccDataFromWeeks(storeId,selWeeks) : null;
+  const wksArr = [...selWeeks].sort();
+  const periodLabel = selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')} – ${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
+  const wks = selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  const BLUE='#002F6D', RED='#E20000', BEIGE='#E9E5E0', GR='#6b6860';
+
+  function colorFor(val,mål,lb){
+    if(val==null||mål==null)return GR;
+    const r=val/(mål/100);
+    if(lb)return r<=1.0?'#2e7d32':r<=1.3?'#b45309':'#c62828';
+    return r>=0.95?'#2e7d32':r>=0.80?'#b45309':'#c62828';
+  }
+
+  function kpiRow(data, label) {
+    const kpis = KPI_LIBRARY.filter(k=>KPI_CONFIG[k.key]?.visible);
+    const cells = kpis.map(k=>{
+      const val = getKPIVal(k.key,storeId,selWeeks);
+      const goal = sd.storeGoals[k.key];
+      const disp = fmtKPIVal(k,val);
+      const col = colorFor(val,goal,k.lb);
+      return `<td style="background:${BEIGE};padding:12px;text-align:center;border-radius:6px;width:${Math.floor(100/Math.min(kpis.length,4))}%">
+        <div style="font-size:9px;color:${GR};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">${k.label}</div>
+        <div style="font-size:20px;font-weight:700;color:${col};font-family:monospace">${disp}</div>
+        <div style="font-size:10px;color:${GR};margin-top:2px">Mål: ${goal!=null?goal+(k.fmt==='kr'?' kr':k.fmt==='num'?' st':'%'):'—'}</div>
+      </td>`;
+    });
+    // Split into rows of 4
+    let rows='';
+    for(let i=0;i<cells.length;i+=4) rows+=`<tr>${cells.slice(i,i+4).map(c=>c).join('')}</tr>`;
+    return `<h3 style="color:${BLUE};font-size:13px;margin:20px 0 8px">${label}</h3>
+      <table width="100%" cellspacing="6" cellpadding="0" style="border-collapse:separate">${rows}</table>`;
+  }
+
+  function deptSection(d, rdW, rdA) {
+    const dg = sd.deptGoals[d.code];
+    const curD = pdfMode==='week'?rdW:rdA||rdW;
+    let totS=0,totF=0;
+    wks.forEach(pk=>{
+      (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if(r.deptCode===d.code)totS+=r.svinnKr||0;});
+      const rd=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);
+      if(rd)totF+=rd.forsaljning||0;
+    });
+    const svinnPct=totF>0?totS/totF:null;
+    const dKpis=[
+      {label:'Omsättning',val:curD?.forsaljningDelta,mål:dg.oms,fmt:'delta',lb:false},
+      {label:'Antal sålda',val:curD?.antalDelta,mål:dg.antal,fmt:'delta',lb:false},
+      {label:'Marginal BV%',val:curD?.bvPct,mål:dg.marginal,fmt:'pct',lb:false},
+      {label:'Känt svinn',val:svinnPct,mål:dg.svinn,fmt:'pct',lb:true},
+    ];
+    const kpiCells=dKpis.map(k=>{
+      const disp=k.val!=null?(k.fmt==='delta'?fmtDelta(k.val):fmtPct(k.val)):'—';
+      const col=colorFor(k.val,k.mål,k.lb);
+      return `<td style="padding:8px;text-align:center;background:#faf9f6;width:25%">
+        <div style="font-size:9px;color:${GR};text-transform:uppercase;margin-bottom:3px">${k.label}</div>
+        <div style="font-size:16px;font-weight:700;color:${col};font-family:monospace">${disp}</div>
+        <div style="font-size:9px;color:${GR}">Mål: ${k.mål}%</div>
+      </td>`;
+    }).join('');
+
+    const acts=sd.actions[d.code]||[];
+    const actsHTML=acts.length?`<div style="margin-top:10px">
+      <div style="font-size:10px;font-weight:700;color:${BLUE};text-transform:uppercase;margin-bottom:4px">Actions</div>
+      ${acts.map(a=>`<div style="padding:5px 8px;background:#fff;border-left:3px solid ${a.done?'#2e7d32':BLUE};margin-bottom:3px;font-size:12px">
+        ${a.done?'<b style="color:#2e7d32">✓</b>':'○'} ${a.text}${a.cond?`<em style="color:${GR}"> · ${a.cond}</em>`:''}
+      </div>`).join('')}
+    </div>`:'';
+
+    // Top 5 svinn
+    const svinnMap={};
+    wks.forEach(pk=>{(SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if((r.deptCode||null)!==d.code)return;const k=r.artNr||r.artName||r.ean;if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};svinnMap[k].svinnKr+=r.svinnKr||0;const bi=EAN_DEPT_MAP[r.artNr||r.ean];if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;});});
+    const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5).map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
+    const tbMap={};Object.entries(EAN_DEPT_MAP).forEach(([artnr,info])=>{if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};});
+    const tbRows=Object.values(tbMap).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
+
+    function miniTable(title,rows,col3,col4,col4Color,col5,getC5color) {
+      if(!rows.length)return'';
+      return`<div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:${GR};text-transform:uppercase;margin-bottom:4px">${title}</div>
+        <table width="100%" style="border-collapse:collapse;font-size:11px">
+          <tr style="border-bottom:1px solid ${BEIGE}"><th style="text-align:left;color:${GR};font-size:9px;padding:2px 4px 2px 0">#</th><th style="text-align:left;color:${GR};font-size:9px">Artikel</th><th style="text-align:right;color:${GR};font-size:9px;padding:2px 6px">Oms</th><th style="text-align:right;color:${GR};font-size:9px;padding:2px 6px">${col4}</th><th style="text-align:right;color:${GR};font-size:9px">${col5}</th></tr>
+          ${rows.map((r,i)=>`<tr style="border-bottom:0.5px solid ${BEIGE}"><td style="color:${GR};padding:3px 4px 3px 0">${i+1}</td><td>${r.artName}</td><td style="text-align:right;color:${GR};padding:3px 6px">${r[col3]>0?Math.round(r[col3]).toLocaleString('sv-SE')+' kr':'—'}</td><td style="text-align:right;font-weight:600;color:${col4Color};padding:3px 6px">${Math.round(r[col4Prop(col4)]).toLocaleString('sv-SE')} kr</td><td style="text-align:right;font-weight:600;color:${getC5color(r)}">${fmtCol5(r,col5)}</td></tr>`).join('')}
+        </table>
+      </div>`;
+    }
+    function col4Prop(h){return h==='Svinn kr'?'svinnKr':'bvKr';}
+    function fmtCol5(r,h){return h==='Svinn %'?(r.svinnPct!=null?(r.svinnPct*100).toFixed(1)+'%':'—'):(r.bvPct!=null?(r.bvPct*100).toFixed(1)+'%':'—');}
+
+    const listsHTML=(svinnRows.length||tbRows.length)?`<div style="display:flex;gap:16px;margin-top:10px">
+      ${svinnRows.length?miniTable('Top 5 svinn kr',svinnRows,'artOms','Svinn kr','#c62828','Svinn %',r=>r.svinnPct!=null?(r.svinnPct>0.02?'#c62828':r.svinnPct>0.01?'#b45309':'#2e7d32'):GR):''}
+      ${tbRows.length?miniTable('Top 5 TB kr',tbRows,'oms','TB kr','#2e7d32','TB %',r=>r.bvPct!=null?(r.bvPct>=0.28?'#2e7d32':r.bvPct>=0.20?'#b45309':'#c62828'):GR):''}
+    </div>`:'';
+
+    return `<div style="margin-bottom:16px;border:1px solid ${BEIGE};border-radius:6px;overflow:hidden">
+      <div style="background:${BLUE};color:#fff;padding:7px 12px;font-weight:700;font-size:12px">${d.name} — avd.${d.code}</div>
+      <table width="100%" cellspacing="0" style="border-collapse:collapse"><tr>${kpiCells}</tr></table>
+      <div style="padding:10px 12px">${actsHTML}${listsHTML}</div>
+    </div>`;
+  }
+
+  const activeDepts=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
+  const deptsHTML=activeDepts.map(d=>{
+    const rdW=wData?.depts?.find(x=>x.code===d.code);
+    const rdA=aData?.depts?.find(x=>x.code===d.code);
+    return deptSection(d,rdW,rdA);
+  }).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f2ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellspacing="0" cellpadding="0" style="background:#f5f2ec">
+<tr><td align="center" style="padding:20px 16px">
+<table width="600" cellspacing="0" cellpadding="0" style="max-width:600px;width:100%">
+
+  <!-- Header -->
+  <tr><td style="background:${BLUE};border-radius:8px 8px 0 0;padding:0">
+    <table width="100%" cellspacing="0" cellpadding="0"><tr>
+      <td style="background:#fff;padding:10px 20px;width:40%;border-radius:8px 0 0 0">
+        <div style="font-size:18px;font-weight:800;color:${RED}">Hemköp</div>
+        <div style="font-size:10px;font-weight:700;color:${BLUE};letter-spacing:.1em">ÖSTENSSONS</div>
+      </td>
+      <td style="padding:12px 20px;background:${BLUE}">
+        <div style="color:#fff;font-size:14px;font-weight:600">${storeName}</div>
+        <div style="color:rgba(255,255,255,.7);font-size:11px;margin-top:2px">${periodLabel}</div>
+      </td>
+    </tr></table>
+    <div style="background:${RED};height:3px"></div>
+  </td></tr>
+
+  <!-- Body -->
+  <tr><td style="background:#fff;padding:20px;border-radius:0 0 8px 8px">
+    ${(pdfMode==='week'||pdfMode==='both')?kpiRow(wData,`Nyckeltal — föregående vecka${wData?.pk?' ('+wData.pk+')':''}`):''}
+    ${(pdfMode==='period'||pdfMode==='both')&&aData?kpiRow(aData,`Nyckeltal — ackumulerat (${periodLabel})`):''}
+    <h3 style="color:${BLUE};font-size:13px;margin:20px 0 8px">Avdelningsöversikt</h3>
+    ${deptsHTML}
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="padding:12px 0;text-align:center;font-size:10px;color:${GR}">
+    Östenssons Butiksportal · Konfidentiell · ${new Date().toLocaleDateString('sv-SE')}
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
 
 function generatePDF(storeId,pdfMode){
   const{jsPDF}=window.jspdf;
