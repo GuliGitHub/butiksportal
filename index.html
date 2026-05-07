@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 14:22</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 14:36</div>
 </div>
 </div>
 
@@ -252,7 +252,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 14:22</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 14:36</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -1011,30 +1011,13 @@ function renderOverview(){
   const wData=getLatestWeekData(sid);
   const aData=viewMode==='period'?getAccDataFromWeeks(sid,selWeeks):null;
   const curData=viewMode==='week'?wData:aData;
-  const acts=Object.values(sd.actions).flat();
-  const done=acts.filter(a=>a.done).length;
-  const pending=acts.filter(a=>!a.done).slice(0,4);
   el.innerHTML=`
     <div class="ph"><div><div class="pt">Veckoöversikt</div><div class="ps">${(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid)}</div></div>
       <span style="font-size:11px;color:#aaa;background:#f8f8f6;border:0.5px solid #e8e8e5;border-radius:6px;padding:3px 8px">Senaste data: ${wData?.pk||'—'}</span>
     </div>
     ${viewToggle()}
     ${renderKPIGrid(sd,curData,sid)}
-    ${renderDeptTable(sd,wData,aData,viewMode)}
-    ${renderStoreSvinnTop10()}
-    <div class="card">
-      <div class="card-head"><div class="ct">Veckans actions</div><span class="pill ${done===acts.length&&acts.length>0?'pg':done>0?'pa':'pn'}">${done}/${acts.length} klara</span></div>
-      ${pending.length?pending.map(a=>{
-        const code=Object.entries(sd.actions).find(([c,as])=>as.some(x=>x.id===a.id))?.[0]||'';
-        const dn=DEPTS.find(d=>d.code===code)?.name||'';
-        return`<div class="act-row" style="cursor:pointer" onclick="qToggle('${code}',${a.id})">
-          <div class="act-check ${a.done?'on':''}"></div>
-          <div class="act-body"><div style="font-size:11px;color:#aaa;margin-bottom:2px">${dn}</div>
-            <div style="font-size:13px">${a.text}</div>${a.cond?`<div style="font-size:11px;color:#aaa">${a.cond}</div>`:''}
-          </div><span class="act-type ${a.type==='fixed'?'at-fix':'at-goal'}">${a.type==='fixed'?'Fast':'Mål'}</span>
-        </div>`;}).join('')
-      :'<div style="padding:1rem;font-size:13px;color:#aaa;text-align:center">Alla actions klara denna vecka! 🎉</div>'}
-    </div>`;
+    ${renderDeptTable(sd,wData,aData,viewMode)}`;
 }
 
 function getKPIVal(key, storeId, weeks) {
@@ -1203,8 +1186,6 @@ function renderDeptTable(sd,wData,aData,mode){
   }
 
   // ── Top 5 Svinn kr per avdelning ─────────────────────
-  // Summerar svinnKr per artikel över valda veckor
-  // artOms: hämtas från EAN_DEPT_MAP (senaste BIB) som proxy för vecko-oms
   function top5Svinn(code) {
     const m={};
     wks.forEach(pk=>{
@@ -1213,229 +1194,170 @@ function renderDeptTable(sd,wData,aData,mode){
         const k=r.artNr||r.artName||r.ean;
         if(!m[k])m[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};
         m[k].svinnKr+=r.svinnKr||0;
-        // Hämta omsättning från EAN_DEPT_MAP via artikelnummer
         const bibInfo=EAN_DEPT_MAP[r.artNr||r.ean];
         if(bibInfo?.oms>m[k].artOms)m[k].artOms=bibInfo.oms*wks.size;
       });
     });
     return Object.values(m)
-      .filter(a=>a.svinnKr>0)
-      .sort((a,b)=>b.svinnKr-a.svinnKr)
-      .slice(0,5)
-      .map(a=>({...a, svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
+      .filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5)
+      .map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
   }
 
-  // ── Top 5 TB kr per avdelning ────────────────────────
-  // Summerar bvKr per artikel över ALLA valda veckor från REPORT_DB artikeldata
-  // Faller tillbaka på EAN_DEPT_MAP om artikeldata saknas i REPORT_DB
+  // ── Top 5 TB kr per avdelning ─────────────────────────
   function top5TB(code) {
     const m={};
-    // Försök summera per vecka från REPORT_DB artikeldata
-    // (artikeldata lagras i EAN_DEPT_MAP från senaste BIB-uppladdning)
-    // För ackumulerat: multiplicera med antal veckor som proxyvärde
     Object.entries(EAN_DEPT_MAP).forEach(([artnr,info])=>{
       if(info.dept!==code||!info.bvKr||info.bvKr<=0)return;
-      // Multiplicera med antal veckor för ackumulerat värde
-      const bvKrAcc = info.bvKr * wks.size;
-      const omsAcc  = (info.oms||0) * wks.size;
-      const antalProxy = null; // antal sålda per artikel ej tillgängligt direkt
-      m[artnr]={
-        artName: info.namn||artnr,
-        bvKr:   bvKrAcc,
-        oms:    omsAcc,
-        bvPct:  omsAcc>0?bvKrAcc/omsAcc:null,
-      };
+      m[artnr]={artName:info.namn||artnr, bvKr:info.bvKr*wks.size, oms:info.oms*wks.size, bvPct:info.oms>0?info.bvKr/info.oms:null};
     });
-    return Object.values(m)
-      .sort((a,b)=>b.bvKr-a.bvKr)
-      .slice(0,5);
+    return Object.values(m).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
   }
 
-  // ── KPI-cell ─────────────────────────────────────────
-  function kpiCell(utfall, mål, unit, lb, accUtfall) {
-    const hasVal=utfall!=null,hasMål=mål!=null;
+  // ── KPI-cell (kompakt box-stil) ───────────────────────
+  function kpiBox(label, utfall, mål, unit, lb, accUtfall) {
+    const hasVal=utfall!=null, hasMål=mål!=null;
     const col=hasVal&&hasMål?pctColor(utfall,mål/100,lb):'var(--ö-muted)';
-    const barW=hasVal&&hasMål&&mål!==0?Math.min(Math.abs(utfall/(mål/100))*100,100):0;
     const dispUtfall=hasVal?(unit==='delta'?fmtDelta(utfall):fmtPct(utfall)):'—';
+    const dispMål=hasMål?mål+'%':'—';
     const dispAcc=accUtfall!=null?(unit==='delta'?fmtDelta(accUtfall):fmtPct(accUtfall)):null;
-    return `<td style="padding:8px 10px;text-align:right;vertical-align:top">
-      <div style="font-size:12px;font-weight:600;color:${col}">${dispUtfall}</div>
-      <div style="font-size:10px;color:var(--ö-muted)">mål ${hasMål?mål+'%':'—'}</div>
-      ${hasVal&&hasMål?`<div style="width:44px;height:2.5px;background:var(--ö-border);border-radius:2px;margin-top:3px;margin-left:auto"><div style="height:100%;width:${barW}%;background:${col};border-radius:2px"></div></div>`:''}
-      ${showAcc&&dispAcc?`<div style="font-size:10px;color:var(--ö-muted);margin-top:1px">ack. ${dispAcc}</div>`:''}
-    </td>`;
-  }
-
-  // ── Svinn-lista ───────────────────────────────────────
-  function svinnListHTML(rows) {
-    if(!rows.length)return'';
-    return`<div>
-      <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Top 5 svinn kr</div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 4px 4px 0;text-align:left">#</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 0 4px;text-align:left">Artikel</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 6px 4px;text-align:right">Oms kr</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 6px 4px;text-align:right">Svinn kr</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 0 4px 6px;text-align:right">Svinn %</th>
-        </tr></thead>
-        <tbody>${rows.map((a,i)=>{
-          const pctStr=a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':'—';
-          const pctCol=a.svinnPct!=null?(a.svinnPct>0.02?'#A32D2D':a.svinnPct>0.01?'#BA7517':'#3B6D11'):'var(--ö-muted)';
-          return`<tr style="border-bottom:0.5px solid var(--ö-border)">
-            <td style="padding:3px 4px 3px 0;font-size:10px;color:var(--ö-muted)">${i+1}</td>
-            <td style="padding:3px 0;font-size:11px;color:var(--ö-text);max-width:160px">${a.artName}</td>
-            <td style="padding:3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;color:var(--ö-muted)">${a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE')+' kr':'—'}</td>
-            <td style="padding:3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:#A32D2D">${Math.round(a.svinnKr).toLocaleString('sv-SE')} kr</td>
-            <td style="padding:3px 0 3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:${pctCol}">${pctStr}</td>
-          </tr>`;}).join('')}
-        </tbody>
-      </table>
+    const barW=hasVal&&hasMål&&mål!==0?Math.min(Math.abs(utfall/(mål/100))*100,100):0;
+    return `<div style="flex:1;padding:.625rem .875rem;border-left:1px solid var(--ö-border)">
+      <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${label}</div>
+      <div style="font-size:20px;font-weight:700;color:${col};font-family:'SF Mono',monospace;line-height:1">${dispUtfall}</div>
+      <div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Mål: ${dispMål}</div>
+      ${showAcc&&dispAcc?`<div style="font-size:10px;color:var(--ö-muted)">Ack: ${dispAcc}</div>`:''}
+      <div style="height:2.5px;background:var(--ö-border);border-radius:2px;margin-top:5px"><div style="height:100%;width:${barW}%;background:${col};border-radius:2px"></div></div>
     </div>`;
   }
 
-  // ── TB-lista ──────────────────────────────────────────
-  function tbListHTML(rows) {
-    if(!rows.length)return'';
-    return`<div>
-      <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Top 5 TB kr${wks.size>1?' (ack. '+wks.size+' v)':''}</div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 4px 4px 0;text-align:left">#</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 0 4px;text-align:left">Artikel</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 6px 4px;text-align:right">Oms kr</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 6px 4px;text-align:right">TB kr</th>
-          <th style="font-size:9px;color:var(--ö-muted);font-weight:600;text-transform:uppercase;padding:2px 0 4px 6px;text-align:right">TB %</th>
-        </tr></thead>
-        <tbody>${rows.map((a,i)=>{
-          const tbPctStr=a.bvPct!=null?(a.bvPct*100).toFixed(1)+'%':'—';
-          const tbCol=a.bvPct!=null?(a.bvPct>=0.28?'#3B6D11':a.bvPct>=0.20?'#BA7517':'#A32D2D'):'var(--ö-muted)';
-          return`<tr style="border-bottom:0.5px solid var(--ö-border)">
-            <td style="padding:3px 4px 3px 0;font-size:10px;color:var(--ö-muted)">${i+1}</td>
-            <td style="padding:3px 0;font-size:11px;color:var(--ö-text);max-width:160px">${a.artName}</td>
-            <td style="padding:3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;color:var(--ö-muted)">${a.oms>0?Math.round(a.oms).toLocaleString('sv-SE')+' kr':'—'}</td>
-            <td style="padding:3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:#3B6D11">${Math.round(a.bvKr).toLocaleString('sv-SE')} kr</td>
-            <td style="padding:3px 0 3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:${tbCol}">${tbPctStr}</td>
-          </tr>`;}).join('')}
-        </tbody>
-      </table>
-    </div>`;
+  // ── Tabell-rad helper ─────────────────────────────────
+  function artTableRow(i, name, col1, col1Color, col2, col2Color, col3, col3Color) {
+    return`<tr style="border-bottom:0.5px solid var(--ö-border)">
+      <td style="padding:3px 4px 3px 0;font-size:10px;color:var(--ö-muted);width:14px">${i+1}</td>
+      <td style="padding:3px 6px 3px 0;font-size:11px;color:var(--ö-text)">${name}</td>
+      <td style="padding:3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;color:${col1Color||'var(--ö-muted)'};white-space:nowrap">${col1||'—'}</td>
+      <td style="padding:3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:${col2Color||'var(--ö-text)'};white-space:nowrap">${col2||'—'}</td>
+      <td style="padding:3px 0 3px 6px;text-align:right;font-size:11px;font-family:'SF Mono',monospace;font-weight:600;color:${col3Color||'var(--ö-muted)'};white-space:nowrap">${col3||'—'}</td>
+    </tr>`;
   }
 
-  // Räkna totaler per KPI för avdelningsnivå-summary
-  const deptTotals = {
-    oms: active.map(d=>(showAcc?aData:wData)?.depts?.find(x=>x.code===d.code)?.forsaljningDelta).filter(v=>v!=null),
-    bv:  active.map(d=>(showAcc?aData:wData)?.depts?.find(x=>x.code===d.code)?.bvPct).filter(v=>v!=null),
-    antal: active.map(d=>(showAcc?aData:wData)?.depts?.find(x=>x.code===d.code)?.antalDelta).filter(v=>v!=null),
-  };
-  const avgOms   = deptTotals.oms.length   ? deptTotals.oms.reduce((a,b)=>a+b,0)/deptTotals.oms.length   : null;
-  const avgBv    = deptTotals.bv.length    ? deptTotals.bv.reduce((a,b)=>a+b,0)/deptTotals.bv.length     : null;
-  const avgAntal = deptTotals.antal.length ? deptTotals.antal.reduce((a,b)=>a+b,0)/deptTotals.antal.length : null;
-  const totSvinnPctVal = deptSvinnPct(active.map(d=>d.code).join(',')) ?? null;
-  // Per-avdelning svinn summerat
-  let allSvinnKr=0, allFors=0;
-  wks.forEach(pk=>{
-    (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{allSvinnKr+=r.svinnKr||0;});
-    const bibStore=REPORT_DB[pk]?.[sid];
-    if(bibStore)allFors+=bibStore.forsaljning||0;
-  });
-  const avgSvinn = allFors>0?allSvinnKr/allFors:null;
+  function artTableHead(h1,h2,h3,h4,h5) {
+    return`<tr style="border-bottom:1px solid var(--ö-border)">
+      <th style="padding:3px 4px 4px 0;font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;text-align:left">#</th>
+      <th style="padding:3px 6px 4px 0;font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;text-align:left">${h1}</th>
+      <th style="padding:3px 6px 4px;font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;text-align:right">${h2}</th>
+      <th style="padding:3px 6px 4px;font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;text-align:right">${h3}</th>
+      <th style="padding:3px 0 4px 6px;font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;text-align:right">${h4}</th>
+    </tr>`;
+  }
 
-  return`<div class="card">
-    <div class="card-head"><div><div class="ct">Avdelningsöversikt</div><div class="cs">${label}</div></div></div>
-
-    <!-- KPI-sammanfattning för aktiva avdelningar -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--ö-border)">
-      ${[
-        {label:'Omsättning', val:avgOms,   fmt:'delta', mål:sd.storeGoals.oms,      lb:false},
-        {label:'Antal sålda',val:avgAntal, fmt:'delta', mål:sd.storeGoals.antal,    lb:false},
-        {label:'Marginal BV%',val:avgBv,   fmt:'pct',   mål:sd.storeGoals.marginal, lb:false},
-        {label:'Känt Svinn',  val:avgSvinn,fmt:'pct',   mål:sd.storeGoals.svinn_k,  lb:true},
-      ].map((k,i)=>{
-        const col = k.val!=null&&k.mål ? pctColor(k.val,k.mål/100,k.lb) : 'var(--ö-muted)';
-        const disp = k.val!=null?(k.fmt==='delta'?fmtDelta(k.val):fmtPct(k.val)):'—';
-        return`<div style="padding:.75rem 1rem;${i<3?'border-right:1px solid var(--ö-border)':''}">
-          <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">${k.label}</div>
-          <div style="font-size:18px;font-weight:700;color:${col};font-family:'SF Mono',monospace">${disp}</div>
-          <div style="font-size:10px;color:var(--ö-muted);margin-top:2px">Mål: ${k.mål}%</div>
-          ${k.val!=null&&k.mål?`<div style="height:3px;background:var(--ö-border);border-radius:2px;margin-top:5px"><div style="height:100%;width:${Math.min(Math.abs(k.val/(k.mål/100))*100,100)}%;background:${col};border-radius:2px"></div></div>`:''}
-        </div>`;
-      }).join('')}
+  return`<div style="display:flex;flex-direction:column;gap:0">
+    <div style="padding:.5rem 1rem;background:var(--ö-bkg);border-bottom:1px solid var(--ö-border)">
+      <div style="font-size:12px;font-weight:600;color:var(--ö-blue)">Avdelningsöversikt</div>
+      <div style="font-size:11px;color:var(--ö-muted)">${label}</div>
     </div>
 
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px">
-      <thead><tr style="background:var(--ö-bkg)">
-        <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Avdelning</th>
-        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Omsättning</th>
-        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Antal sålda</th>
-        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Marginal BV%</th>
-        <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--ö-border)">Känt Svinn</th>
-      </tr></thead>
-      <tbody>${active.map(d=>{
-        const dg=sd.deptGoals[d.code];
-        const rw=wData?.depts?.find(x=>x.code===d.code);
-        const ra=showAcc?aData?.depts?.find(x=>x.code===d.code):null;
-        const curD=showAcc?ra:rw;  // aktuell data baserat på visningsläge
-        const acts=sd.actions[d.code]||[];
-        const fixed=acts.filter(a=>a.type==='fixed');
-        const goalActs=acts.filter(a=>a.type==='goal');
+    ${active.map(d=>{
+      const dg=sd.deptGoals[d.code];
+      const rw=wData?.depts?.find(x=>x.code===d.code);
+      const ra=showAcc?aData?.depts?.find(x=>x.code===d.code):null;
+      const acts=sd.actions[d.code]||[];
 
-        // Statusdott baseras på omsättning
-        const omsVal=curD?.forsaljningDelta,omsMål=dg.oms/100;
-        let dotColor='#888';
-        if(omsVal!=null)dotColor=omsVal>=omsMål*0.95?'#3B6D11':omsVal>=omsMål*0.80?'#BA7517':'#A32D2D';
+      const omsVal=rw?.forsaljningDelta,omsMål=dg.oms/100;
+      let dotColor='#999';
+      if(omsVal!=null)dotColor=omsVal>=omsMål*0.95?'#3B6D11':omsVal>=omsMål*0.80?'#BA7517':'#C62828';
 
-        // KPI-värden för aktuell vecka och ackumulerat
-        const omsUtfall=rw?.forsaljningDelta??null, omsAcc=ra?.forsaljningDelta??null;
-        const bvUtfall=rw?.bvPct??null,             bvAcc=ra?.bvPct??null;
-        const svinnUtfall=deptSvinnPct(d.code);
-        const antalUtfall=rw?.antalDelta??null,      antalAcc=ra?.antalDelta??null;
+      const omsUtfall=rw?.forsaljningDelta??null,  omsAcc=ra?.forsaljningDelta??null;
+      const bvUtfall=rw?.bvPct??null,              bvAcc=ra?.bvPct??null;
+      const svinnUtfall=deptSvinnPct(d.code);
+      const antalUtfall=rw?.antalDelta??null,       antalAcc=ra?.antalDelta??null;
 
-        // Top 5 listor
-        const svinnRows=top5Svinn(d.code);
-        const tbRows=top5TB(d.code);
-        const hasSvinn=svinnRows.length>0;
-        const hasTB=tbRows.length>0;
-        const hasSubContent=acts.length>0||hasSvinn||hasTB;
+      const svinnRows=top5Svinn(d.code);
+      const tbRows=top5TB(d.code);
+      const hasSvinn=svinnRows.length>0;
+      const hasTB=tbRows.length>0;
 
-        return`<tr style="border-bottom:${hasSubContent?'none':'1px solid var(--ö-border)'}">
-          <td style="padding:8px 12px;vertical-align:middle">
-            <div style="display:flex;align-items:center;gap:8px">
-              <div style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
-              <div>
-                <div style="font-size:13px;font-weight:500;color:var(--ö-text)">${d.name}</div>
-                <div style="font-size:10px;color:var(--ö-muted)">avd.${d.code}</div>
-              </div>
+      return`<div style="background:var(--ö-card);border-bottom:2px solid var(--ö-border)">
+
+        <!-- Avdelningsrad: namn + 4 KPI-boxar -->
+        <div style="display:flex;align-items:stretch">
+
+          <!-- Avdelningsnamn -->
+          <div style="min-width:160px;max-width:180px;padding:.875rem 1rem;display:flex;align-items:center;gap:8px;border-right:1px solid var(--ö-border);flex-shrink:0">
+            <div style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;margin-top:2px"></div>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--ö-text)">${d.name}</div>
+              <div style="font-size:11px;color:var(--ö-muted)">avd.${d.code}</div>
             </div>
-          </td>
-          ${kpiCell(omsUtfall,dg.oms,'delta',false,omsAcc)}
-          ${kpiCell(antalUtfall,dg.antal??null,'delta',false,antalAcc)}
-          ${kpiCell(bvUtfall,dg.marginal,'pct',false,bvAcc)}
-          ${kpiCell(svinnUtfall,dg.svinn,'pct',true,null)}
-        </tr>
-        ${hasSubContent?`<tr style="border-bottom:1px solid var(--ö-border)">
-          <td colspan="5" style="padding:4px 12px 12px 27px">
-            ${acts.length?`<div style="margin:6px 0 8px">
-              <div style="font-size:10px;font-weight:700;color:var(--ö-blue);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Actions</div>
-              <div style="display:flex;flex-direction:column;gap:4px">
-                ${[...fixed,...goalActs].map(a=>`
-                  <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 8px;background:#f5f2ec;border-radius:6px;border-left:3px solid ${a.done?'#3B6D11':'var(--ö-blue)'}">
-                    <div style="width:14px;height:14px;border-radius:3px;border:1.5px solid ${a.done?'#3B6D11':'var(--ö-border)'};background:${a.done?'#3B6D11':'transparent'};flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="qToggle('${d.code}',${a.id})">
-                      ${a.done?'<svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 4l2 2 4-4" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>':''}
-                    </div>
-                    <span style="font-size:12px;color:var(--ö-text);flex:1">${a.text}${a.cond?`<em style="color:var(--ö-muted);font-size:11px"> · ${a.cond}</em>`:''}</span>
-                    <span style="font-size:10px;color:${a.done?'#3B6D11':'var(--ö-muted)'}">${a.done?'✓ Klar':'○'}</span>
-                  </div>`).join('')}
-              </div>
+          </div>
+
+          <!-- 4 KPI-boxar -->
+          <div style="display:flex;flex:1;min-width:0">
+            ${kpiBox('Omsättning',   omsUtfall,   dg.oms,      'delta', false, omsAcc)}
+            ${kpiBox('Antal sålda',  antalUtfall, dg.antal??null, 'delta', false, antalAcc)}
+            ${kpiBox('Marginal BV%', bvUtfall,    dg.marginal, 'pct',   false, bvAcc)}
+            ${kpiBox('Känt svinn',   svinnUtfall, dg.svinn,    'pct',   true,  null)}
+          </div>
+        </div>
+
+        <!-- Actions + Top 5-listor -->
+        ${acts.length||hasSvinn||hasTB?`
+        <div style="padding:.75rem 1rem 1rem 1rem;border-top:1px solid var(--ö-border);background:#faf9f6">
+
+          ${acts.length?`
+          <div style="margin-bottom:${hasSvinn||hasTB?'12px':'0'}">
+            <div style="font-size:10px;font-weight:700;color:var(--ö-blue);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              ${acts.map(a=>`
+                <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 8px;background:var(--ö-card);border-radius:5px;border-left:3px solid ${a.done?'#3B6D11':'var(--ö-blue)'}">
+                  <div style="width:13px;height:13px;border-radius:3px;border:1.5px solid ${a.done?'#3B6D11':'#ccc'};background:${a.done?'#3B6D11':'transparent'};flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="qToggle('${d.code}',${a.id})">
+                    ${a.done?'<svg width="7" height="7" viewBox="0 0 7 7"><path d="M1 3.5l1.5 1.5 3-3" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>':''}
+                  </div>
+                  <span style="font-size:12px;color:var(--ö-text);flex:1">${a.text}${a.cond?`<em style="color:var(--ö-muted);font-size:11px"> · ${a.cond}</em>`:''}</span>
+                  <span style="font-size:10px;color:${a.done?'#3B6D11':'var(--ö-muted)'}">${a.done?'✓':''}</span>
+                </div>`).join('')}
+            </div>
+          </div>`:''}
+
+          ${hasSvinn||hasTB?`
+          <div style="display:grid;grid-template-columns:${hasSvinn&&hasTB?'1fr 1fr':'1fr'};gap:20px">
+
+            ${hasSvinn?`
+            <div>
+              <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Top 5 svinn kr</div>
+              <table style="width:100%;border-collapse:collapse">
+                <thead>${artTableHead('Artikel','Oms kr','Svinn kr','Svinn %')}</thead>
+                <tbody>${svinnRows.map((a,i)=>{
+                  const pctCol=a.svinnPct!=null?(a.svinnPct>0.02?'#C62828':a.svinnPct>0.01?'#BA7517':'#3B6D11'):'var(--ö-muted)';
+                  return artTableRow(i,a.artName,
+                    a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE')+' kr':null,'var(--ö-muted)',
+                    Math.round(a.svinnKr).toLocaleString('sv-SE')+' kr','#C62828',
+                    a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':null,pctCol);
+                }).join('')}</tbody>
+              </table>
             </div>`:''}
-            ${(hasSvinn||hasTB)?`<div style="display:grid;grid-template-columns:${hasSvinn&&hasTB?'1fr 1fr':'1fr'};gap:20px;margin-top:${acts.length?'4px':'0'}">
-              ${hasSvinn?svinnListHTML(svinnRows):''}
-              ${hasTB?tbListHTML(tbRows):''}
+
+            ${hasTB?`
+            <div>
+              <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Top 5 TB kr${wks.size>1?` (ack. ${wks.size} v)`:''}</div>
+              <table style="width:100%;border-collapse:collapse">
+                <thead>${artTableHead('Artikel','Oms kr','TB kr','TB %')}</thead>
+                <tbody>${tbRows.map((a,i)=>{
+                  const tbCol=a.bvPct!=null?(a.bvPct>=0.28?'#3B6D11':a.bvPct>=0.20?'#BA7517':'#C62828'):'var(--ö-muted)';
+                  return artTableRow(i,a.artName,
+                    a.oms>0?Math.round(a.oms).toLocaleString('sv-SE')+' kr':null,'var(--ö-muted)',
+                    Math.round(a.bvKr).toLocaleString('sv-SE')+' kr','#3B6D11',
+                    a.bvPct!=null?(a.bvPct*100).toFixed(1)+'%':null,tbCol);
+                }).join('')}</tbody>
+              </table>
             </div>`:''}
-          </td>
-        </tr>`:''}`;
-      }).join('')}</tbody>
-    </table></div></div>`;
+
+          </div>`:''}
+
+        </div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 function renderAdminOv(el){
