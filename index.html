@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 14:36</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-07 14:44</div>
 </div>
 </div>
 
@@ -252,7 +252,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 14:36</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-07 14:44</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -320,7 +320,12 @@ async function loadAllFromSupabase() {
       if(!DB[row.store_id]) DB[row.store_id] = defaultSD();
       // Merga med defaults så att nya KPI-nycklar alltid finns
       DB[row.store_id].storeGoals = {...defaultSD().storeGoals, ...(row.store_goals||{})};
-      DB[row.store_id].deptGoals  = row.dept_goals  || DB[row.store_id].deptGoals;
+      // Merga deptGoals per avdelning så nya fält (antal) alltid finns
+      const defDG = defaultSD().deptGoals;
+      const loadedDG = row.dept_goals || {};
+      DB[row.store_id].deptGoals = Object.fromEntries(
+        DEPTS.map(d=>[d.code, {...defDG[d.code], ...(loadedDG[d.code]||{})}])
+      );
       DB[row.store_id].emails     = row.emails       || [];
     });
   });
@@ -532,7 +537,7 @@ let role=null, sid=null, viewMode='week', selPeriodId=null;
 function defaultSD() {
   return {
     storeGoals:{oms:7, marginal:26.2, svinn_k:0.7, antal:5, kvitton:5, snittKop:180, driftlackage:3.5, kundkorg:8, medlems:80, emv:20, eko:5},
-    deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,marginal:28,svinn:1.0}])),
+    deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,antal:5,marginal:28,svinn:1.0}])),
     actions:{
       '01':[{id:1,type:'fixed',text:'Fyll på färskt bröd senast kl 08:00',cond:'',done:false},{id:2,type:'goal',text:'Justera beställning vid högt svinn',cond:'Om svinn > 1,5%',done:false}],
       '02':[{id:1,type:'fixed',text:'Packade munkar alltid i displayen',cond:'',done:false},{id:2,type:'fixed',text:'Minst 40% TB på exponeringar',cond:'',done:false},{id:3,type:'goal',text:'Gå igenom svinnlistan',cond:'Om svinn > 1%',done:false}],
@@ -1429,22 +1434,44 @@ function renderDeptMål(){
   const sd=getSD(sid);
   document.getElementById('panel-deptmål').innerHTML=`
     <div class="ph"><div><div class="pt">Avdelningsmål</div><div class="ps">${(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid)}</div></div><button class="btn-sm green" onclick="saveDeptMål()">Spara alla</button></div>
-    <p style="font-size:12px;color:#888;margin-bottom:.875rem">Aktivera avdelningar ni vill följa upp. Inaktiva syns inte i rapporten.</p>
-    <div class="card" style="overflow-x:auto"><table class="dtbl" style="min-width:520px">
-      <thead><tr><th style="width:44px">Aktiv</th><th>Avdelning</th><th class="num">Oms. ökning %</th><th class="num">Marginal %</th><th class="num">Känt svinn %</th></tr></thead>
-      <tbody>${DEPTS.map(d=>{const dg=sd.deptGoals[d.code]||{active:false,oms:5,marginal:28,svinn:1.0};return`<tr>
-        <td><button class="toggle-btn ${dg.active?'on':'off'}" id="tog-${d.code}" onclick="toggleDept('${d.code}')"></button></td>
-        <td><div class="dept-name">${d.name}</div><div class="dept-code">Avd. ${d.code}</div></td>
-        <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-oms-${d.code}" value="${dg.oms}" ${dg.active?'':'disabled'}></td>
-        <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-mar-${d.code}" value="${dg.marginal}" ${dg.active?'':'disabled'}></td>
-        <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-svi-${d.code}" value="${dg.svinn}" ${dg.active?'':'disabled'}></td>
-      </tr>`;}).join('')}</tbody>
+    <p style="font-size:12px;color:var(--ö-muted);margin-bottom:.875rem">Aktivera avdelningar ni vill följa upp. Inaktiva syns inte i rapporten.</p>
+    <div class="card" style="overflow-x:auto"><table class="dtbl" style="min-width:620px">
+      <thead><tr><th style="width:44px">Aktiv</th><th>Avdelning</th><th class="num">Oms %</th><th class="num">Antal sålda %</th><th class="num">Marginal %</th><th class="num">Känt svinn %</th></tr></thead>
+      <tbody>${DEPTS.map(d=>{
+        const dg=sd.deptGoals[d.code]||{active:false,oms:5,antal:5,marginal:28,svinn:1.0};
+        return`<tr>
+          <td><button class="toggle-btn ${dg.active?'on':'off'}" id="tog-${d.code}" onclick="toggleDept('${d.code}')"></button></td>
+          <td><div class="dept-name">${d.name}</div><div class="dept-code">Avd. ${d.code}</div></td>
+          <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-oms-${d.code}" value="${dg.oms??5}" ${dg.active?'':'disabled'}></td>
+          <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-ant-${d.code}" value="${dg.antal??5}" ${dg.active?'':'disabled'}></td>
+          <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-mar-${d.code}" value="${dg.marginal??28}" ${dg.active?'':'disabled'}></td>
+          <td class="num"><input class="num-inp" type="number" step="0.1" id="dm-svi-${d.code}" value="${dg.svinn??1.0}" ${dg.active?'':'disabled'}></td>
+        </tr>`;}).join('')}
+      </tbody>
     </table></div>`;
 }
-function toggleDept(code){const sd=getSD(sid);sd.deptGoals[code].active=!sd.deptGoals[code].active;const on=sd.deptGoals[code].active;document.getElementById('tog-'+code).className='toggle-btn '+(on?'on':'off');['oms','mar','svi'].forEach(k=>{const el=document.getElementById(`dm-${k}-${code}`);if(el)el.disabled=!on;});}
+function toggleDept(code){
+  const sd=getSD(sid);
+  sd.deptGoals[code].active=!sd.deptGoals[code].active;
+  const on=sd.deptGoals[code].active;
+  document.getElementById('tog-'+code).className='toggle-btn '+(on?'on':'off');
+  ['oms','ant','mar','svi'].forEach(k=>{
+    const el=document.getElementById(`dm-${k}-${code}`);
+    if(el)el.disabled=!on;
+  });
+}
 async function saveDeptMål(){
   const sd=getSD(sid);
-  DEPTS.forEach(d=>{const o=parseFloat(document.getElementById(`dm-oms-${d.code}`)?.value),m=parseFloat(document.getElementById(`dm-mar-${d.code}`)?.value),s=parseFloat(document.getElementById(`dm-svi-${d.code}`)?.value);if(!isNaN(o))sd.deptGoals[d.code].oms=o;if(!isNaN(m))sd.deptGoals[d.code].marginal=m;if(!isNaN(s))sd.deptGoals[d.code].svinn=s;});
+  DEPTS.forEach(d=>{
+    const o=parseFloat(document.getElementById(`dm-oms-${d.code}`)?.value);
+    const a=parseFloat(document.getElementById(`dm-ant-${d.code}`)?.value);
+    const m=parseFloat(document.getElementById(`dm-mar-${d.code}`)?.value);
+    const s=parseFloat(document.getElementById(`dm-svi-${d.code}`)?.value);
+    if(!isNaN(o))sd.deptGoals[d.code].oms=o;
+    if(!isNaN(a))sd.deptGoals[d.code].antal=a;
+    if(!isNaN(m))sd.deptGoals[d.code].marginal=m;
+    if(!isNaN(s))sd.deptGoals[d.code].svinn=s;
+  });
   await saveStoreSettings(sid);
   toast('Avdelningsmål sparade ✓');
 }
