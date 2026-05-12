@@ -406,6 +406,7 @@ async function load(){
         // svinn_data: data-objektet har storeId som nyckel
         (svinnRows[0].data?.[currentStore]||[]).forEach(r=>svinnData.push(r));
     }
+    }
 
     const name=currentStore==='all'?'Östenssons Totalt':STORES[currentStore]||currentStore;
     document.getElementById('store-name').textContent=name;
