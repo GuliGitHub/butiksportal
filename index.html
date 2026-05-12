@@ -239,7 +239,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <input type="password" id="pin-in" placeholder="••••" maxlength="4" onkeydown="if(event.key==='Enter')login()">
   </div>
   <button class="btn-g full" onclick="login()">Logga in</button>
-  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-12 11:26</div>
+  <div class="hint" style="margin-top:.875rem;font-family:'SF Mono',monospace;letter-spacing:.03em">v2026-05-12 12:47</div>
 </div>
 </div>
 
@@ -252,7 +252,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
       <span class="spill"><span class="sdot"></span><span id="store-lbl"></span></span>
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
-      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-12 11:26</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace">v2026-05-12 12:47</span>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -2601,26 +2601,178 @@ function _buildPDFDoc(storeId,pdfMode){
     y+=rows*(tH+3)+5;
   }
 
-  if(pdfMode==='week'||pdfMode==='both') kpiTiles(`Nyckeltal — föregående vecka${wData?.pk?' ('+wData.pk+')':''}`);
-  if((pdfMode==='period'||pdfMode==='both')&&aData) kpiTiles(`Nyckeltal — ackumulerat (${periodLabel}) · ${aData.found} veckor`);
+  // Ackumulerat ÖVERST (om tillgängligt och valt)
+  if((pdfMode==='period'||pdfMode==='both')&&aData&&selWeeks.size>0){
+    const wksArr2=[...selWeeks].sort();
+    const accLabel=selWeeks.size===1
+      ?wksArr2[0].replace('-V',' V')
+      :`${wksArr2[0].replace('-V',' V')} – ${wksArr2[wksArr2.length-1].replace('-V',' V')}`;
+    doc.setFillColor(...LBLUE);doc.rect(M,y,W-2*M,9,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...BLUE);
+    doc.text('Ackumulerat — '+accLabel,M+4,y+6.2);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+    doc.text((aData.found||selWeeks.size)+' veckor',W-M-2,y+6.2,{align:'right'});
+    y+=11;
+    kpiTiles('');
+    if(y>220){doc.addPage();y=20;}
+  }
+
+  // Senaste veckan
+  if(pdfMode==='week'||pdfMode==='both'){
+    const weekLabel=wData?.pk||'Senaste veckan';
+    doc.setFillColor(...BEIGE);doc.rect(M,y,W-2*M,8,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...BLUE);
+    doc.text('Senaste veckan — '+weekLabel,M+4,y+5.5);
+    y+=10;
+    kpiTiles('');
+    if(y>220){doc.addPage();y=20;}
+  }
 
   if(y>240){doc.addPage();y=20;}
 
   // ── AVDELNINGSÖVERSIKT ────────────────────────────────
+  // ── HJÄLP: Estimera höjd för en avdelning ────────────
+  function estimateDeptHeight(acts, hasSvinn, hasTB) {
+    let h = 7 + 16; // rubrik + 4 KPI-boxar
+    if(acts.length) h += 5.5 + acts.length * 6; // actions
+    if(hasSvinn || hasTB) h += 5 + Math.max(hasSvinn?5:0, hasTB?5:0) * 5 + 10; // top5 tabeller
+    return h + 6; // marginal
+  }
+
+  // ── HJÄLP: Rita en avdelning ─────────────────────────
+  function drawDept(d, curD, svinnPct, acts, svinnRows, tbRows) {
+    const dg = sd.deptGoals[d.code];
+    const hasSvinn = svinnRows.length > 0, hasTB = tbRows.length > 0;
+
+    // Estimera total höjd och bryt sida om nödvändigt
+    const estH = estimateDeptHeight(acts, hasSvinn, hasTB);
+    if(y + estH > 278) { doc.addPage(); y = 20; }
+
+    // Avdelningsrubrik
+    doc.setFillColor(...BLUE);doc.rect(M,y,W-2*M,7,'F');
+    doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(8);
+    doc.text(d.name+'  (avd.'+d.code+')',M+3,y+4.8);
+    y+=7;
+
+    // 4 KPI-boxar
+    const dKpis=[
+      {label:'Omsättning',   val:curD?.forsaljningDelta, mål:dg.oms,      fmt:'delta', lb:false},
+      {label:'Antal sålda',  val:curD?.antalDelta,       mål:dg.antal,    fmt:'delta', lb:false},
+      {label:'Marginal BV%', val:curD?.bvPct,            mål:dg.marginal, fmt:'pct',   lb:false},
+      {label:'Känt svinn',   val:svinnPct,               mål:dg.svinn,    fmt:'pct',   lb:true},
+    ];
+    const bW=(W-2*M)/4, bH=16;
+    dKpis.forEach((k,i)=>{
+      const tx=M+i*bW;
+      doc.setFillColor(...LTGRAY);doc.rect(tx,y,bW,bH,'F');
+      if(i>0){doc.setDrawColor(...BEIGE);doc.setLineWidth(0.3);doc.line(tx,y,tx,y+bH);}
+      doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(6);
+      doc.text(k.label.toUpperCase(),tx+3,y+4.5);
+      const disp=k.val!=null?(k.fmt==='delta'?((k.val>=0?'+':'')+(k.val*100).toFixed(1)+'%'):(k.val*100).toFixed(1)+'%'):'—';
+      const vc=k.val!=null&&k.mål!=null?colorForVal(k.val,k.mål,k.lb):GR;
+      doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...vc);
+      doc.text(disp,tx+3,y+11);
+      doc.setFont('helvetica','normal');doc.setFontSize(6);doc.setTextColor(...GR);
+      doc.text(k.mål!=null?'Mål: '+k.mål+'%':'',tx+3,y+15);
+    });
+    y+=bH;
+
+    // Actions
+    if(acts.length>0){
+      doc.setFillColor(...BEIGE);doc.rect(M,y,W-2*M,5.5,'F');
+      doc.setTextColor(...BLUE);doc.setFont('helvetica','bold');doc.setFontSize(7);
+      doc.text('ACTIONS',M+3,y+3.8);
+      y+=5.5;
+      acts.forEach(a=>{
+        doc.setFillColor(250,249,246);doc.rect(M,y,W-2*M,6,'F');
+        doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);doc.rect(M,y,W-2*M,6);
+        doc.setTextColor(a.done?GREEN[0]:BLUE[0],a.done?GREEN[1]:BLUE[1],a.done?GREEN[2]:BLUE[2]);
+        doc.setFont('helvetica','bold');doc.setFontSize(8);
+        doc.text(a.done?'✓':'○',M+3,y+4.2);
+        doc.setFont('helvetica','normal');doc.setTextColor(...DK);
+        const txt=a.text+(a.cond?'  ·  '+a.cond:'');
+        doc.text(txt,M+9,y+4.2,{maxWidth:W-2*M-12});
+        y+=6;
+      });
+    }
+
+    // Top 5 Svinn + TB
+    if(hasSvinn||hasTB){
+      const hStyle={fontStyle:'bold',fontSize:6,textColor:GR,fillColor:LTGRAY,cellPadding:1.5};
+      const bStyle={fontSize:7,textColor:DK,fillColor:WHITE,cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15};
+      const colW=(W-2*M-4)/2;
+
+      if(hasSvinn){
+        doc.setFillColor(...PINK);doc.rect(M,y,hasTB?colW:W-2*M,5,'F');
+        doc.setTextColor(...REDD);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
+        doc.text('TOP 5 SVINN KR',M+3,y+3.5);
+      }
+      if(hasTB){
+        const tx2=hasSvinn?M+colW+4:M, tw2=hasSvinn?colW:W-2*M;
+        doc.setFillColor(214,237,219);doc.rect(tx2,y,tw2,5,'F');
+        doc.setTextColor(...GREEN);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
+        doc.text('TOP 5 TB KR',tx2+3,y+3.5);
+      }
+      y+=5;
+
+      if(hasSvinn&&hasTB){
+        const maxR=Math.max(svinnRows.length,tbRows.length);
+        const tableRows=Array.from({length:maxR+1},(_,ri)=>{
+          if(ri===0) return [
+            {content:'#',styles:{...hStyle,cellWidth:5}},{content:'Artikel',styles:{...hStyle}},
+            {content:'Oms',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'Svinn kr',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'%',styles:{...hStyle,halign:'right',cellWidth:10}},
+            {content:'',styles:{...hStyle,cellWidth:3,fillColor:WHITE}},
+            {content:'#',styles:{...hStyle,cellWidth:5}},{content:'Artikel',styles:{...hStyle}},
+            {content:'Oms',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'TB kr',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'%',styles:{...hStyle,halign:'right',cellWidth:10}},
+          ];
+          const s=svinnRows[ri-1],t=tbRows[ri-1];
+          const sc=s?.svinnPct!=null?(s.svinnPct>0.02?REDD:s.svinnPct>0.01?AMBER:GREEN):GR;
+          const tc=t?.bvPct!=null?(t.bvPct>=0.28?GREEN:t.bvPct>=0.20?AMBER:REDD):GR;
+          return [
+            {content:s?ri:'',styles:{...bStyle,cellWidth:5,textColor:GR}},
+            {content:s?.artName||'',styles:{...bStyle}},
+            {content:s&&s.artOms>0?Math.round(s.artOms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:14,textColor:GR}},
+            {content:s?Math.round(s.svinnKr).toLocaleString('sv-SE'):'',styles:{...bStyle,halign:'right',cellWidth:14,textColor:s?REDD:DK,fontStyle:s?'bold':'normal'}},
+            {content:s?.svinnPct!=null?(s.svinnPct*100).toFixed(1)+'%':'',styles:{...bStyle,halign:'right',cellWidth:10,textColor:sc,fontStyle:'bold'}},
+            {content:'',styles:{...bStyle,cellWidth:3,lineWidth:0,fillColor:[245,243,239]}},
+            {content:t?ri:'',styles:{...bStyle,cellWidth:5,textColor:GR}},
+            {content:t?.artName||'',styles:{...bStyle}},
+            {content:t&&t.oms>0?Math.round(t.oms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:14,textColor:GR}},
+            {content:t?Math.round(t.bvKr).toLocaleString('sv-SE'):'',styles:{...bStyle,halign:'right',cellWidth:14,textColor:t?GREEN:DK,fontStyle:t?'bold':'normal'}},
+            {content:t?.bvPct!=null?(t.bvPct*100).toFixed(1)+'%':'',styles:{...bStyle,halign:'right',cellWidth:10,textColor:tc,fontStyle:'bold'}},
+          ];
+        });
+        doc.autoTable({startY:y,margin:{left:M,right:M},body:tableRows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
+      } else if(hasSvinn){
+        const rows=[[{content:'#',styles:{...hStyle,cellWidth:6}},{content:'Artikel',styles:hStyle},{content:'Oms kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'Svinn kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'Svinn %',styles:{...hStyle,halign:'right',cellWidth:18}}],
+          ...svinnRows.map((a,i)=>{const sc=a.svinnPct!=null?(a.svinnPct>0.02?REDD:a.svinnPct>0.01?AMBER:GREEN):GR;return[{content:i+1,styles:{...bStyle,cellWidth:6,textColor:GR}},{content:a.artName,styles:bStyle},{content:a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:22,textColor:GR}},{content:Math.round(a.svinnKr).toLocaleString('sv-SE'),styles:{...bStyle,halign:'right',cellWidth:22,textColor:REDD,fontStyle:'bold'}},{content:a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':'—',styles:{...bStyle,halign:'right',cellWidth:18,textColor:sc,fontStyle:'bold'}}];})];
+        doc.autoTable({startY:y,margin:{left:M,right:M},body:rows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
+      } else {
+        const rows=[[{content:'#',styles:{...hStyle,cellWidth:6}},{content:'Artikel',styles:hStyle},{content:'Oms kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'TB kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'TB %',styles:{...hStyle,halign:'right',cellWidth:18}}],
+          ...tbRows.map((a,i)=>{const tc=a.bvPct!=null?(a.bvPct>=0.28?GREEN:a.bvPct>=0.20?AMBER:REDD):GR;return[{content:i+1,styles:{...bStyle,cellWidth:6,textColor:GR}},{content:a.artName,styles:bStyle},{content:a.oms>0?Math.round(a.oms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:22,textColor:GR}},{content:Math.round(a.bvKr).toLocaleString('sv-SE'),styles:{...bStyle,halign:'right',cellWidth:22,textColor:GREEN,fontStyle:'bold'}},{content:a.bvPct!=null?(a.bvPct*100).toFixed(1)+'%':'—',styles:{...bStyle,halign:'right',cellWidth:18,textColor:tc,fontStyle:'bold'}}];})];
+        doc.autoTable({startY:y,margin:{left:M,right:M},body:rows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
+      }
+      y=doc.lastAutoTable.finalY+4;
+    } else {
+      y+=4;
+    }
+  }
+
+  // ── AVDELNINGSSEKTION ─────────────────────────────────
   const active=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
   if(active.length>0){
+    if(y>240){doc.addPage();y=20;}
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...DK);
     doc.text('Avdelningsöversikt',M,y);y+=5;
 
     active.forEach(d=>{
-      if(y>250){doc.addPage();y=20;}
       const dg=sd.deptGoals[d.code];
       const rdW=wData?.depts?.find(x=>x.code===d.code);
       const rdA=aData?.depts?.find(x=>x.code===d.code);
-      const curD=pdfMode==='week'?rdW:rdA||rdW;
+      // Ackumulerat visas om tillgängligt, annars senaste veckan
+      const curD=(pdfMode==='week')?rdW:(rdA||rdW);
       const acts=sd.actions[d.code]||[];
 
-      // Svinn%
       const wks=selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
       let totS=0,totF=0;
       wks.forEach(pk=>{
@@ -2630,56 +2782,6 @@ function _buildPDFDoc(storeId,pdfMode){
       });
       const svinnPct=totF>0?totS/totF:null;
 
-      // ── Avdelningsrubrik (blå rad) ────────────────────
-      doc.setFillColor(...BLUE);doc.rect(M,y,W-2*M,7,'F');
-      doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(8);
-      doc.text(`${d.name}  (avd.${d.code})`,M+3,y+4.8);
-      y+=7;
-
-      // ── 4 KPI-boxar per avdelning ─────────────────────
-      const dKpis=[
-        {label:'Omsättning',    val:curD?.forsaljningDelta, mål:dg.oms,     fmt:'delta', lb:false},
-        {label:'Antal sålda',   val:curD?.antalDelta,      mål:dg.antal,   fmt:'delta', lb:false},
-        {label:'Marginal BV%',  val:curD?.bvPct,           mål:dg.marginal,fmt:'pct',   lb:false},
-        {label:'Känt svinn',    val:svinnPct,              mål:dg.svinn,   fmt:'pct',   lb:true},
-      ];
-      const bW=(W-2*M)/4,bH=16;
-      dKpis.forEach((k,i)=>{
-        const tx=M+i*bW;
-        doc.setFillColor(...LTGRAY);doc.rect(tx,y,bW,bH,'F');
-        if(i>0){doc.setDrawColor(...BEIGE);doc.setLineWidth(0.3);doc.line(tx,y,tx,y+bH);}
-        doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(6);
-        doc.text(k.label.toUpperCase(),tx+3,y+4.5);
-        const disp=k.val!=null?(k.fmt==='delta'?((k.val>=0?'+':'')+(k.val*100).toFixed(1)+'%'):(k.val*100).toFixed(1)+'%'):'—';
-        const vc=k.val!=null&&k.mål!=null?colorForVal(k.val,k.mål,k.lb):GR;
-        doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...vc);
-        doc.text(disp,tx+3,y+11);
-        doc.setFont('helvetica','normal');doc.setFontSize(6);doc.setTextColor(...GR);
-        doc.text(k.mål!=null?`Mål: ${k.mål}%`:'',tx+3,y+15);
-      });
-      y+=bH;
-
-      // ── Actions ───────────────────────────────────────
-      if(acts.length>0){
-        doc.setFillColor(...BEIGE);doc.rect(M,y,W-2*M,5.5,'F');
-        doc.setTextColor(...BLUE);doc.setFont('helvetica','bold');doc.setFontSize(7);
-        doc.text('ACTIONS',M+3,y+3.8);
-        y+=5.5;
-        acts.forEach(a=>{
-          if(y>270){doc.addPage();y=20;}
-          doc.setFillColor(250,249,246);doc.rect(M,y,W-2*M,6,'F');
-          doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);doc.rect(M,y,W-2*M,6);
-          doc.setTextColor(a.done?GREEN[0]:BLUE[0],a.done?GREEN[1]:BLUE[1],a.done?GREEN[2]:BLUE[2]);
-          doc.setFont('helvetica','bold');doc.setFontSize(8);
-          doc.text(a.done?'✓':'○',M+3,y+4.2);
-          doc.setFont('helvetica','normal');doc.setTextColor(...DK);
-          const txt=a.text+(a.cond?`  ·  ${a.cond}`:'');
-          doc.text(txt,M+9,y+4.2,{maxWidth:W-2*M-12});
-          y+=6;
-        });
-      }
-
-      // ── Top 5 Svinn + Top 5 TB (två kolumner) ────────
       const svinnMap={};
       wks.forEach(pk=>{
         (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{
@@ -2693,7 +2795,6 @@ function _buildPDFDoc(storeId,pdfMode){
       });
       const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5)
         .map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
-
       const tbMap={};
       Object.entries(EAN_DEPT_MAP).forEach(([artnr,info])=>{
         if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;
@@ -2701,75 +2802,7 @@ function _buildPDFDoc(storeId,pdfMode){
       });
       const tbRows=Object.values(tbMap).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
 
-      const hasSvinn=svinnRows.length>0, hasTB=tbRows.length>0;
-      if(hasSvinn||hasTB){
-        if(y>245){doc.addPage();y=20;}
-        const colW=(W-2*M-4)/2;
-
-        // Svinn rubrik
-        if(hasSvinn){
-          doc.setFillColor(...PINK);doc.rect(M,y,hasTB?colW:W-2*M,5,'F');
-          doc.setTextColor(...REDD);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
-          doc.text('TOP 5 SVINN KR',M+3,y+3.5);
-        }
-        // TB rubrik
-        if(hasTB){
-          const tx2=hasSvinn?M+colW+4:M;
-          const tw2=hasSvinn?colW:W-2*M;
-          doc.setFillColor(214,237,219);doc.rect(tx2,y,tw2,5,'F');
-          doc.setTextColor(...GREEN);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
-          doc.text('TOP 5 TB KR',tx2+3,y+3.5);
-        }
-        y+=5;
-
-        // Kolumnrubriker
-        const hStyle={fontStyle:'bold',fontSize:6,textColor:GR,fillColor:LTGRAY,cellPadding:1.5};
-        const bStyle={fontSize:7,textColor:DK,fillColor:WHITE,cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15};
-
-        if(hasSvinn&&hasTB){
-          // Dubbla kolumner
-          const maxRows=Math.max(svinnRows.length,tbRows.length);
-          const tableRows=Array.from({length:maxRows+1},(_,ri)=>{
-            if(ri===0) return [
-              {content:'#',styles:{...hStyle,cellWidth:5}},{content:'Artikel',styles:{...hStyle}},
-              {content:'Oms',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'Svinn kr',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'%',styles:{...hStyle,halign:'right',cellWidth:10}},
-              {content:'',styles:{...hStyle,cellWidth:3,fillColor:WHITE}},
-              {content:'#',styles:{...hStyle,cellWidth:5}},{content:'Artikel',styles:{...hStyle}},
-              {content:'Oms',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'TB kr',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'%',styles:{...hStyle,halign:'right',cellWidth:10}},
-            ];
-            const s=svinnRows[ri-1],t=tbRows[ri-1];
-            const sc=s?.svinnPct!=null?(s.svinnPct>0.02?REDD:s.svinnPct>0.01?AMBER:GREEN):GR;
-            const tc=t?.bvPct!=null?(t.bvPct>=0.28?GREEN:t.bvPct>=0.20?AMBER:REDD):GR;
-            return [
-              {content:s?ri:'',styles:{...bStyle,cellWidth:5,textColor:GR}},
-              {content:s?.artName||'',styles:{...bStyle}},
-              {content:s&&s.artOms>0?Math.round(s.artOms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:14,textColor:GR}},
-              {content:s?Math.round(s.svinnKr).toLocaleString('sv-SE'):'',styles:{...bStyle,halign:'right',cellWidth:14,textColor:s?REDD:DK,fontStyle:s?'bold':'normal'}},
-              {content:s?.svinnPct!=null?(s.svinnPct*100).toFixed(1)+'%':'',styles:{...bStyle,halign:'right',cellWidth:10,textColor:sc,fontStyle:'bold'}},
-              {content:'',styles:{...bStyle,cellWidth:3,lineWidth:0,fillColor:[245,243,239]}},
-              {content:t?ri:'',styles:{...bStyle,cellWidth:5,textColor:GR}},
-              {content:t?.artName||'',styles:{...bStyle}},
-              {content:t&&t.oms>0?Math.round(t.oms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:14,textColor:GR}},
-              {content:t?Math.round(t.bvKr).toLocaleString('sv-SE'):'',styles:{...bStyle,halign:'right',cellWidth:14,textColor:t?GREEN:DK,fontStyle:t?'bold':'normal'}},
-              {content:t?.bvPct!=null?(t.bvPct*100).toFixed(1)+'%':'',styles:{...bStyle,halign:'right',cellWidth:10,textColor:tc,fontStyle:'bold'}},
-            ];
-          });
-          doc.autoTable({startY:y,margin:{left:M,right:M},body:tableRows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
-        } else if(hasSvinn){
-          const rows=[[{content:'#',styles:{...hStyle,cellWidth:6}},{content:'Artikel',styles:hStyle},{content:'Oms kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'Svinn kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'Svinn %',styles:{...hStyle,halign:'right',cellWidth:18}}],
-            ...svinnRows.map((a,i)=>{const sc=a.svinnPct!=null?(a.svinnPct>0.02?REDD:a.svinnPct>0.01?AMBER:GREEN):GR;return[{content:i+1,styles:{...bStyle,cellWidth:6,textColor:GR}},{content:a.artName,styles:bStyle},{content:a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:22,textColor:GR}},{content:Math.round(a.svinnKr).toLocaleString('sv-SE'),styles:{...bStyle,halign:'right',cellWidth:22,textColor:REDD,fontStyle:'bold'}},{content:a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':'—',styles:{...bStyle,halign:'right',cellWidth:18,textColor:sc,fontStyle:'bold'}}];})];
-          doc.autoTable({startY:y,margin:{left:M,right:M},body:rows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
-        } else {
-          const rows=[[{content:'#',styles:{...hStyle,cellWidth:6}},{content:'Artikel',styles:hStyle},{content:'Oms kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'TB kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'TB %',styles:{...hStyle,halign:'right',cellWidth:18}}],
-            ...tbRows.map((a,i)=>{const tc=a.bvPct!=null?(a.bvPct>=0.28?GREEN:a.bvPct>=0.20?AMBER:REDD):GR;return[{content:i+1,styles:{...bStyle,cellWidth:6,textColor:GR}},{content:a.artName,styles:bStyle},{content:a.oms>0?Math.round(a.oms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:22,textColor:GR}},{content:Math.round(a.bvKr).toLocaleString('sv-SE'),styles:{...bStyle,halign:'right',cellWidth:22,textColor:GREEN,fontStyle:'bold'}},{content:a.bvPct!=null?(a.bvPct*100).toFixed(1)+'%':'—',styles:{...bStyle,halign:'right',cellWidth:18,textColor:tc,fontStyle:'bold'}}];})];
-          doc.autoTable({startY:y,margin:{left:M,right:M},body:rows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
-        }
-        y=doc.lastAutoTable.finalY+4;
-      } else {
-        y+=4;
-      }
-
-      if(y>265){doc.addPage();y=20;}
+      drawDept(d, curD, svinnPct, acts, svinnRows, tbRows);
     });
   }
 
