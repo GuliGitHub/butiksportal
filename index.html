@@ -1593,7 +1593,80 @@ function renderAdminOv(el){
           <button class="btn-sm green" onclick="event.stopPropagation();sid='${id}';generatePDF('${id}','week',null)">⬇ PDF</button>
           ${sd.emails?.length?`<button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendSingleFromAdmin('${id}')">✉</button>`:''}
         </div>
+      ${(()=>{
+        const tD=getTotalData(viewMode==='period'&&selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1)));
+        const totalSD=getSD(TOTAL_ID)||{emails:[]};
+        return`<div class="sc" style="border:2px solid var(--ö-blue);background:#eef2fa" onclick="adminViewTotal()">
+          <div class="sc-name" style="color:var(--ö-blue)">⬛ Östenssons Totalt</div>
+          <div class="sc-kpis">
+            <div class="sc-kpi"><div class="sc-kl">Oms utfall</div>
+              <div class="sc-kv" style="color:${tD?.forsaljningDelta!=null?pctColor(tD.forsaljningDelta,0.07,false):'var(--ö-muted)'}">
+                ${tD?.forsaljningDelta!=null?(tD.forsaljningDelta*100).toFixed(1)+'%':'—'}</div></div>
+            <div class="sc-kpi"><div class="sc-kl">BV%</div>
+              <div class="sc-kv" style="color:${tD?.bvPct!=null?pctColor(tD.bvPct,0.262,false):'var(--ö-muted)'}">
+                ${tD?.bvPct!=null?(tD.bvPct*100).toFixed(1)+'%':'—'}</div></div>
+            <div class="sc-kpi"><div class="sc-kl">Förs. kr</div>
+              <div class="sc-kv" style="font-size:11px">${tD?.forsaljning!=null?fmtKr(tD.forsaljning):'—'}</div></div>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:7px">📧 ${(totalSD.emails||[]).length} mottagare</div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();adminViewTotal()">Redigera</button>
+            <button class="btn-sm green" onclick="event.stopPropagation();sid=TOTAL_ID;generatePDF(TOTAL_ID,'week')">PDF</button>
+            <button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendTotalReport()">✉</button>
+          </div>
+        </div>`;
+      })()}
       </div>`;}).join('')}</div>`;
+}
+
+
+// ── ÖSTENSSONS TOTAL — ADMIN-VY ──────────────────────────────────────
+function adminViewTotal(){
+  sid = TOTAL_ID;
+  document.getElementById('store-lbl').textContent = TOTAL_NAME+' (admin)';
+  document.getElementById('nav').innerHTML=`
+    <div class="ni" onclick="backAdmin()">← Alla butiker</div>
+    <div class="ni active" onclick="showTab('overview',this)">Översikt</div>
+    <div class="ni" onclick="showTab('pdf',this)">Ladda ner PDF</div>
+    <div class="ni" onclick="showTab('butiksinst',this)">Prenumeration</div>`;
+  showTab('overview', document.querySelectorAll('.ni')[1]);
+}
+
+async function sendTotalReport(pdfMode) {
+  pdfMode = pdfMode || document.querySelector('input[name=amode]:checked')?.value || 'week';
+  const sd = getSD(TOTAL_ID);
+  const emails = sd.emails || [];
+  if(!emails.length){
+    toast('⚠ Inga mailadresser för Östenssons Totalt — lägg till i Prenumeration');
+    return;
+  }
+  const statusEl = document.getElementById('mail-all-status');
+  if(statusEl){ statusEl.style.display='flex'; statusEl.textContent='Skickar totalrapport...'; statusEl.style.background='#e8eef7'; statusEl.style.color='var(--ö-blue)'; }
+  try {
+    const pdfBase64 = generatePDFBase64(TOTAL_ID, pdfMode);
+    const wData = getTotalData(new Set(Object.keys(REPORT_DB).sort().slice(-1)));
+    const pk = wData?.pk || Object.keys(REPORT_DB).sort().pop() || '—';
+    const resp = await fetch('https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/send-store-report', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNuaWZyaXpkaW9pd2x2Z2J4c3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzU5NjQsImV4cCI6MjA5MzQ1MTk2NH0.Eerq42ACQ9UhCsnTdBji8VNv4OggbOdUHxityXNIk9g'},
+      body: JSON.stringify({
+        to: emails,
+        storeName: TOTAL_NAME,
+        periodKey: pk,
+        pdfBase64: pdfBase64.split(',')[1]
+      })
+    });
+    if(resp.ok){
+      toast('✓ Totalrapport skickad till '+emails.length+' mottagare');
+      if(statusEl){ statusEl.textContent='✓ Skickad'; statusEl.style.background='#e8f5e9'; statusEl.style.color='#1e6b2e'; }
+    } else {
+      const err = await resp.text();
+      toast('⚠ Fel vid utskick: '+err);
+      if(statusEl){ statusEl.textContent='⚠ Fel'; statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; }
+    }
+  } catch(e) {
+    toast('⚠ '+e.message);
+  }
 }
 
 function adminViewStore(storeId){
@@ -2693,10 +2766,11 @@ function buildMailHTML(storeId, pdfMode) {
 function _buildPDFDoc(storeId,pdfMode){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const sd=getSD(storeId);
-  const storeName=STORES[storeId]||storeId;
-  const wData=getLatestWeekData(storeId);
-  const aData=(pdfMode==='period'||pdfMode==='both')?getAccDataFromWeeks(storeId,selWeeks):null;
+  const sd=isTotal ? {storeGoals:Object.values(DB)[0]?.storeGoals||{},deptGoals:{},actions:{},emails:[]} : getSD(storeId);
+  const isTotal = storeId === TOTAL_ID;
+  const storeName=isTotal?TOTAL_NAME:(STORES[storeId]||storeId);
+  const wData=isTotal ? getTotalData(new Set(Object.keys(REPORT_DB).sort().slice(-1))) : getLatestWeekData(storeId);
+  const aData=(pdfMode==='period'||pdfMode==='both')?(isTotal?getTotalData(selWeeks):getAccDataFromWeeks(storeId,selWeeks)):null;
   const wksArr=[...selWeeks].sort();
   const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
   const W=210,M=14;
@@ -2916,32 +2990,63 @@ function _buildPDFDoc(storeId,pdfMode){
   }
 
   // ── AVDELNINGSSEKTION ─────────────────────────────────
-  const active=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
+  // For total: aggregera avdelningsdata över alla butiker
+  let active;
+  if(isTotal){
+    // Alla avdelningar som är aktiva i minst en butik
+    const activeCodes = new Set();
+    Object.values(DB).forEach(s=>{
+      Object.entries(s.deptGoals||{}).forEach(([code,dg])=>{if(dg.active)activeCodes.add(code);});
+    });
+    active = DEPTS.filter(d=>activeCodes.has(d.code));
+  } else {
+    active = DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
+  }
   if(active.length>0){
     if(y>240){doc.addPage();y=20;}
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...DK);
     doc.text('Avdelningsöversikt',M,y);y+=5;
 
     active.forEach(d=>{
-      const dg=sd.deptGoals[d.code];
+      // Deptgoals: för total, ta snitt av alla butiker som har avdelningen aktiv
+      let dg;
+      if(isTotal){
+        const vals={oms:[],marginal:[],svinn:[],antal:[]};
+        Object.values(DB).forEach(s=>{
+          const g=s.deptGoals?.[d.code];
+          if(g?.active){Object.keys(vals).forEach(k=>{if(g[k]!=null)vals[k].push(g[k]);});}
+        });
+        dg={oms:vals.oms.length?vals.oms.reduce((a,b)=>a+b,0)/vals.oms.length:null,
+            marginal:vals.marginal.length?vals.marginal.reduce((a,b)=>a+b,0)/vals.marginal.length:null,
+            svinn:vals.svinn.length?vals.svinn.reduce((a,b)=>a+b,0)/vals.svinn.length:null,
+            antal:vals.antal.length?vals.antal.reduce((a,b)=>a+b,0)/vals.antal.length:null};
+      } else {
+        dg=sd.deptGoals[d.code];
+      }
       const rdW=wData?.depts?.find(x=>x.code===d.code);
       const rdA=aData?.depts?.find(x=>x.code===d.code);
-      // Ackumulerat visas om tillgängligt, annars senaste veckan
       const curD=(pdfMode==='week')?rdW:(rdA||rdW);
-      const acts=sd.actions[d.code]||[];
+      // Actions: för total, samla actions från alla butiker för denna avdelning
+      const acts=isTotal
+        ? Object.values(DB).flatMap(s=>s.actions?.[d.code]||[]).filter((a,i,arr)=>arr.findIndex(b=>b.text===a.text)===i)
+        : (sd.actions[d.code]||[]);
 
       const wks=selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
       let totS=0,totF=0;
+      const storeLoop=isTotal?Object.keys(STORES):[storeId];
       wks.forEach(pk=>{
-        (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if(r.deptCode===d.code)totS+=r.svinnKr||0;});
-        const rd=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);
-        if(rd)totF+=rd.forsaljning||0;
+        storeLoop.forEach(sid=>{
+          (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{if(r.deptCode===d.code)totS+=r.svinnKr||0;});
+          const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);
+          if(rd)totF+=rd.forsaljning||0;
+        });
       });
       const svinnPct=totF>0?totS/totF:null;
 
       const svinnMap={};
       wks.forEach(pk=>{
-        (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{
+        storeLoop.forEach(sid=>{
+        (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
           if((r.deptCode||null)!==d.code)return;
           const k=r.artNr||r.artName||r.ean;
           if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};
@@ -2949,6 +3054,7 @@ function _buildPDFDoc(storeId,pdfMode){
           const bi=EAN_DEPT_MAP[r.artNr||r.ean];
           if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;
         });
+        }); // storeLoop
       });
       const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5)
         .map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
