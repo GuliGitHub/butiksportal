@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blomsteradmin Ostenssons</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--blue:#002F6D;--red:#E20000;--beige:#E9E5E0;--card:#fff;--text:#1a1a18;--muted:#6b6860;--border:#dedad2;--green:#1e6b2e;--amber:#b45309;--redd:#c62828;--bkg:#f0ede8;--lg:#e8f5e9;--lr:#fdecea;--la:#fff8e1;--li:#e8eef7;}
+html,body{min-height:100%;background:var(--bkg);font-family:'DM Sans',sans-serif;color:var(--text)}
+.topbar{background:var(--blue);height:56px;display:flex;align-items:stretch;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.t-logo{background:#fff;padding:8px 20px;display:flex;align-items:center;border-right:3px solid rgba(0,47,109,.35);flex-shrink:0}
+.t-logo-top{color:var(--red);font-size:16px;font-weight:800;line-height:1}
+.t-logo-bot{color:var(--blue);font-size:9px;letter-spacing:.15em;font-weight:700}
+.t-info{display:flex;align-items:center;padding:0 1.25rem;flex:1;gap:1rem}
+.t-title{font-size:15px;font-weight:700;color:#fff}
+.t-sub{font-size:11px;color:rgba(255,255,255,.5)}
+.t-right{margin-left:auto;padding:0 1.25rem;display:flex;align-items:center}
+.db-badge{font-size:10px;padding:3px 10px;border-radius:20px;font-family:'DM Mono',monospace;font-weight:600}
+.db-badge.ok{background:rgba(76,175,80,.2);color:#81c784;border:1px solid rgba(76,175,80,.3)}
+.db-badge.loading{background:rgba(255,193,7,.15);color:#ffd54f;border:1px solid rgba(255,193,7,.2)}
+.db-badge.err{background:rgba(244,67,54,.15);color:#ef9a9a;border:1px solid rgba(244,67,54,.2)}
+.content{max-width:1100px;margin:0 auto;padding:1.5rem}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:1rem}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:.875rem 1.25rem;border-bottom:1px solid var(--border);background:var(--bkg)}
+.card-title{font-size:13px;font-weight:600;color:var(--blue)}
+.card-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.card-body{padding:1.25rem}
+.uzone{border:2px dashed var(--border);border-radius:10px;padding:2rem;text-align:center;cursor:pointer;transition:all .15s;background:#faf9f6}
+.uzone:hover,.uzone.drag{border-color:var(--blue);background:var(--li)}
+.btn{display:inline-flex;align-items:center;gap:.375rem;padding:8px 18px;border-radius:7px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-green{background:var(--green);color:#fff}.btn-green:hover{background:#155220}
+.btn-ghost{background:transparent;color:var(--blue);border:1px solid var(--border)}.btn-ghost:hover{border-color:var(--blue)}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.status{display:flex;align-items:center;gap:.5rem;padding:.625rem 1rem;border-radius:8px;font-size:12px;margin-bottom:.75rem}
+.status.ok{background:var(--lg);color:var(--green);border:1px solid #c8e6c9}
+.status.warn{background:var(--la);color:var(--amber);border:1px solid #ffe082}
+.status.err{background:var(--lr);color:var(--redd);border:1px solid #ffcdd2}
+.status.info{background:var(--li);color:var(--blue);border:1px solid #c5cae9}
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:1.5rem}
+.tab{padding:.625rem 1.25rem;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.rtable{width:100%;border-collapse:collapse;font-size:12px}
+.rtable th{padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;background:var(--bkg);border-bottom:1px solid var(--border)}
+.rtable td{padding:7px 10px;border-bottom:.5px solid var(--border)}
+.rtable tr:last-child td{border-bottom:none}
+.rtable tr:hover td{background:#faf9f6}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+.badge-ok{background:var(--lg);color:var(--green)}
+.missing-row td{background:var(--la)}
+.artnr-input{border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-family:'DM Mono',monospace;font-size:12px;width:130px;outline:none}
+.artnr-input:focus{border-color:var(--blue)}
+.artnr-input.filled{border-color:var(--green);background:#f1f8e9}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1.25rem}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.875rem 1rem}
+.stat-val{font-size:28px;font-weight:700;font-family:'DM Mono',monospace;line-height:1}
+.stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:4px}
+.dl-section{background:linear-gradient(135deg,var(--li),var(--bkg));border:1px solid var(--border);border-radius:10px;padding:1.5rem;text-align:center}
+.mono{font-family:'DM Mono',monospace}
+.price-pos{color:var(--green);font-weight:600}
+.inp{width:100%;border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:13px;outline:none;font-family:'DM Sans',sans-serif}
+.inp-mono{font-family:'DM Mono',monospace}
+.inp:focus{border-color:var(--blue)}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="t-logo">
+    <div><div class="t-logo-top">Hemkop</div><div class="t-logo-bot">OSTENSSONS</div></div>
+  </div>
+  <div class="t-info">
+    <div class="t-title">Blomsteradmin</div>
+    <div class="t-sub">Artikeladministration for blommor</div>
+  </div>
+  <div class="t-right">
+    <div class="db-badge loading" id="db-badge">Ansluter...</div>
+  </div>
+</div>
+<div class="content">
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('import')">Importera leverantorsfil</div>
+    <div class="tab" onclick="showTab('mapping')">EAN-mappning</div>
+  </div>
+
+  <div class="tab-panel active" id="tab-import">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Ladda upp leverantorsfil</div>
+          <div class="card-sub">eanexport_ostenssons_vX.xlsx fran Blomsterboda</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="uzone" id="uzone"
+          onclick="document.getElementById('fileinput').click()"
+          ondragover="event.preventDefault();this.classList.add('drag')"
+          ondragleave="this.classList.remove('drag')"
+          ondrop="handleDrop(event)">
+          <div style="font-size:28px;margin-bottom:.5rem">&#128202;</div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och slapp leverantorsfilen har</div>
+          <div style="font-size:12px;color:var(--muted)">eanexport_ostenssons_v*.xlsx</div>
+        </div>
+        <input type="file" id="fileinput" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
+        <div id="file-status" style="display:none;margin-top:.75rem"></div>
+      </div>
+    </div>
+
+    <div id="result-section" style="display:none">
+      <div class="stats" id="stats-grid"></div>
+
+      <!-- Priskonflikter -->
+      <div id="conflict-section" style="display:none">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">&#9888; Priskonflikter</div>
+              <div class="card-sub">Samma artikelnummer har olika inpriser - valj vilket pris som ska anvandas</div>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="rtable">
+              <thead><tr>
+                <th>Artikelnr</th><th>Produkt / EAN-koder</th><th>Prisintervall</th><th>Valj pris</th>
+              </tr></thead>
+              <tbody id="conflict-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="missing-section" style="display:none">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Saknade EAN-mappningar</div>
+              <div class="card-sub">Fyll i Axfood-artikelnummer och spara till databasen</div>
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-ghost btn-sm" onclick="skipAllMissing()">Hoppa over alla</button>
+              <button class="btn btn-green btn-sm" id="save-missing-btn" onclick="saveNewMappings()">Spara till databas</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="rtable">
+              <thead><tr>
+                <th>EAN-kod</th><th>Produkt</th><th>Konsumentpris</th>
+                <th>Inpris (exkl moms)</th><th>Axfood artikelnr</th><th>Inkludera</th>
+              </tr></thead>
+              <tbody id="missing-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title" id="matched-title">Matchade artiklar</div>
+            <div class="card-sub">Inkluderas i importfilen</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="toggleEl('matched-wrap')">Visa/dolj</button>
+        </div>
+        <div id="matched-wrap" style="overflow-x:auto">
+          <table class="rtable">
+            <thead><tr>
+              <th>Artikelnr</th><th>Produkt</th>
+              <th>Inpris (exkl moms)</th><th>Utpris (inkl moms)</th><th>Status</th>
+            </tr></thead>
+            <tbody id="matched-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="dl-section">
+        <div style="font-size:32px;margin-bottom:.625rem">&#11015;&#65039;</div>
+        <div style="font-size:16px;font-weight:600;color:var(--blue);margin-bottom:.375rem">Generera importfil</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:1rem" id="dl-sub">Redo</div>
+        <button class="btn btn-green" onclick="downloadImport()" style="font-size:14px;padding:11px 32px">
+          Ladda ner importfil (.xlsx)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="tab-mapping">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">EAN Axfood artikelnummer</div>
+          <div class="card-sub" id="mapping-count">Laddar...</div>
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input type="text" id="search-input" placeholder="Sok EAN, artikelnr eller namn..."
+            class="inp" style="width:250px;padding:6px 10px;font-size:12px"
+            oninput="filterMapping(this.value)">
+          <button class="btn btn-ghost btn-sm" onclick="toggleEl('add-dialog')">+ Lagg till</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportMapping()">Exportera</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;max-height:520px;overflow-y:auto">
+        <table class="rtable">
+          <thead><tr>
+            <th>EAN-kod</th><th>Axfood artikelnr</th><th>Produktnamn</th><th>Kalla</th><th></th>
+          </tr></thead>
+          <tbody id="mapping-tbody">
+            <tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--muted)">Laddar...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="add-dialog" style="display:none">
+      <div class="card-head"><div class="card-title">Lagg till ny EAN-mappning</div></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:.75rem;align-items:end">
+          <div>
+            <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">EAN-KOD</label>
+            <input id="new-ean" type="text" placeholder="7315809000513" class="inp inp-mono">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">AXFOOD ARTIKELNR</label>
+            <input id="new-artnr" type="text" placeholder="101234567" class="inp inp-mono">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">PRODUKTNAMN (valfritt)</label>
+            <input id="new-namn" type="text" placeholder="PELARGON ZONALE" class="inp">
+          </div>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:.875rem">
+          <button class="btn btn-green" onclick="addMapping()">Spara till databas</button>
+          <button class="btn btn-ghost" onclick="toggleEl('add-dialog')">Avbryt</button>
+        </div>
+        <div id="add-status" style="display:none;margin-top:.625rem"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+var SB_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co';
+var SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNuaWZyaXpkaW9pd2x2Z2J4c3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzU5NjQsImV4cCI6MjA5MzQ1MTk2NH0.Eerq42ACQ9UhCsnTdBji8VNv4OggbOdUHxityXNIk9g';
+var RATIO = 1.5625;
+var BUILTIN_MAP = {"5708869123117": {"artnr": "100002471", "namn": "PLÄTTAR I LUFTEN"}, "5708869123179": {"artnr": "100002471", "namn": "PLÄTTAR I LUFTEN"}, "5708869357796": {"artnr": "100002471", "namn": "PLÄTTAR I LUFTEN"}, "5708870101036": {"artnr": "100173036", "namn": "ROSOR 10-PACK 40CM"}, "5708870102002": {"artnr": "100173036", "namn": "ROSOR 10-PACK 40CM"}, "7315800120692": {"artnr": "100186479", "namn": "BEGONIA  12CM"}, "2024-10-14 00:00:00": {"artnr": "101666943", "namn": ""}, "7315800120739": {"artnr": "100268808", "namn": "KRYSANTEMUM 3-PLANT"}, "7315800966313": {"artnr": "100268808", "namn": "KRYSANTEMUM 3-PLANT"}, "8717191001441": {"artnr": "100283881", "namn": "FREDSKALLA 11-13CM"}, "7315808895684": {"artnr": "100287734", "namn": "ROSBUKETT MIXADE FÄRGER"}, "7315808881335": {"artnr": "100287734", "namn": "ROSBUKETT MIXADE FÄRGER"}, "7315808950086": {"artnr": "100323534", "namn": "CYKLAMEN 12CM"}, "7315800123082": {"artnr": "100323534", "namn": "CYKLAMEN 12CM"}, "5708869100323": {"artnr": "100359283", "namn": "AMPELLILJA"}, "7315808517456": {"artnr": "100377744", "namn": "TULPAN 7-PACK"}, "7315808917126": {"artnr": "100377744", "namn": "TULPAN 7-PACK"}, "7315800721059": {"artnr": "100402921", "namn": "MONSTERA"}, "7315800721004": {"artnr": "100432211", "namn": "SAINTPAULIA 10,5CM"}, "5708869712588": {"artnr": "100432211", "namn": "SAINTPAULIA 10,5CM"}, "8713626105548": {"artnr": "100554641", "namn": "ROS I KRUKA"}, "8713626206283": {"artnr": "100554641", "namn": "ROS I KRUKA"}, "8713626207143": {"artnr": "100554641", "namn": "ROS I KRUKA"}, "8713626188619": {"artnr": "100554641", "namn": "ROS I KRUKA"}, "8713626232787": {"artnr": "100554641", "namn": "ROS I KRUKA"}, "3462235455777": {"artnr": "100562945", "namn": "ORKIDE MULTI VIT"}, "8713626104541": {"artnr": "100562945", "namn": "ORKIDE MULTI VIT"}, "7315808890177": {"artnr": "100875670", "namn": "BIEDERMEIER BUKETT"}, "8711186804949": {"artnr": "100875670", "namn": "BIEDERMEIER BUKETT"}, "8718226121578": {"artnr": "101021760", "namn": "BRUDORKIDÉ 2-GRENAD"}, "4011261001152": {"artnr": "101173454", "namn": "KNOPPLJUNG"}, "4011261001251": {"artnr": "101173454", "namn": "KNOPPLJUNG"}, "4029395077325": {"artnr": "101173454", "namn": "KNOPPLJUNG"}, "2024-10-21 00:00:00": {"artnr": "101653216", "namn": ""}, "4011261009523": {"artnr": "101175961", "namn": "HÖSTLJUNG"}, "4011261009783": {"artnr": "101175961", "namn": "HÖSTLJUNG"}, "4011261009912": {"artnr": "101175961", "namn": "HÖSTLJUNG"}, "4011261068933": {"artnr": "101175961", "namn": "HÖSTLJUNG"}, "7315808890641": {"artnr": "101213022", "namn": "ALSTROMERIA BUNT"}, "7330023443434": {"artnr": "101213024", "namn": "CHRYSS I BUNT"}, "7315808882110": {"artnr": "101213024", "namn": "CHRYSS I BUNT"}, "7315808882127": {"artnr": "101213024", "namn": "CHRYSS I BUNT"}, "7315808882141": {"artnr": "101213024", "namn": "CHRYSS I BUNT"}, "7315808882158": {"artnr": "101213024", "namn": "CHRYSS I BUNT"}, "5708869228478": {"artnr": "101229079", "namn": "MURGRÖNA HESTOR"}, "5707697401282": {"artnr": "101229079", "namn": "MURGRÖNA HESTOR"}, "7315800945554": {"artnr": "101229155", "namn": "PRYDNADSKÅL 12CM"}, "5708869004744": {"artnr": "101229682", "namn": "NOVEMBERKAKTUS"}, "5708869120758": {"artnr": "101229682", "namn": "NOVEMBERKAKTUS"}, "5708869335879": {"artnr": "101229682", "namn": "NOVEMBERKAKTUS"}, "2024-10-17 00:00:00": {"artnr": "101502122", "namn": ""}, "8713626033735": {"artnr": "101247103", "namn": "PARAPLYARALIA"}, "5415030079790": {"artnr": "101247382", "namn": "ÄDELCYPRESS 21 CM"}, "5415030369051": {"artnr": "101247382", "namn": "ÄDELCYPRESS 21 CM"}, "8713626039041": {"artnr": "101247382", "namn": "ÄDELCYPRESS 21 CM"}, "8713626169632": {"artnr": "101247382", "namn": "ÄDELCYPRESS 21 CM"}, "8713626186875": {"artnr": "101247382", "namn": "ÄDELCYPRESS 21 CM"}, "7315808912022": {"artnr": "101248048", "namn": "LILJA I BUNT 2P"}, "7340003824221": {"artnr": "101248599", "namn": "BRUDSLÖJA BUNT"}, "7315808890252": {"artnr": "101248599", "namn": "BRUDSLÖJA BUNT"}, "7330023152954": {"artnr": "101248599", "namn": "BRUDSLÖJA BUNT"}, "7315808897374": {"artnr": "101248610", "namn": "LILJA BUNT"}, "8713626003110": {"artnr": "101250575", "namn": "ROSENKALLA 50 CM"}, "8713626212062": {"artnr": "101250575", "namn": "ROSENKALLA 50 CM"}, "7315808889829": {"artnr": "101252603", "namn": "BLANDBUKETT OLIKA FÄRGER"}, "8711186804956": {"artnr": "101252603", "namn": "BLANDBUKETT OLIKA FÄRGER"}, "5708869646098": {"artnr": "101254383", "namn": "CALANDIVA 12CM"}, "5708869724376": {"artnr": "101254383", "namn": "CALANDIVA 12CM"}, "5708869646111": {"artnr": "101254383", "namn": "CALANDIVA 12CM"}, "5708869646081": {"artnr": "101254383", "namn": "CALANDIVA 12CM"}, "4011261001404": {"artnr": "101259527", "namn": "CALLUNA BAMSE"}, "4011261001213": {"artnr": "101259527", "namn": "CALLUNA BAMSE"}, "4011261080287": {"artnr": "101259785", "namn": "ERICA BEAUTY QUEENS"}, "7340003810057": {"artnr": "101260147", "namn": "ELEGANS 7-PACK FT"}, "5707697200069": {"artnr": "101261933", "namn": "RUMSAZALEA"}, "7315800904292": {"artnr": "101262924", "namn": "RUMSAZALEA"}, "5708869618354": {"artnr": "101289259", "namn": "KALANCHOE MINI"}, "5708869618439": {"artnr": "101289259", "namn": "KALANCHOE MINI"}, "5708869618279": {"artnr": "101289259", "namn": "KALANCHOE MINI"}, "5708869646210": {"artnr": "101295276", "namn": "KALANCHOE 13CM"}, "7315800121200": {"artnr": "101310256", "namn": "MURGRÖNA 12CM"}, "7315808885906": {"artnr": "101310256", "namn": "MURGRÖNA 12CM"}, "7315808911841": {"artnr": "101313953", "namn": "EUKALYPTUS LÅNG MED BÄR"}, "7315808890511": {"artnr": "101328367", "namn": "ROSBUKETT"}, "8711186804789": {"artnr": "101328367", "namn": "ROSBUKETT"}, "8711186000426": {"artnr": "101414846", "namn": "CHRYSS 2P"}, "7315808921673": {"artnr": "101414846", "namn": "CHRYSS 2P"}, "8711186700012": {"artnr": "101415696", "namn": "LILJA I BUNT"}, "7315808895363": {"artnr": "101415696", "namn": "LILJA I BUNT"}, "7315808898111": {"artnr": "101415702", "namn": "VIDE I BUNT"}, "8713626107979": {"artnr": "101415710", "namn": "BRUDORKIDÉ 3-STÄNGLAR MIX"}, "5708870101838": {"artnr": "101415821", "namn": "EKBLAD I BUNT"}, "7315808916402": {"artnr": "101415821", "namn": "EKBLAD I BUNT"}, "7315808887290": {"artnr": "101415946", "namn": "CHRYSS BUNT 3P"}, "8711186000457": {"artnr": "101416009", "namn": "CHRYSS RÖDA 2P"}, "8711186004943": {"artnr": "101416010", "namn": "CHRYSS VITA 2P"}, "7315808921284": {"artnr": "101416130", "namn": "CHRYSS VITA 2P"}, "5708869727315": {"artnr": "101416278", "namn": "KALANCHOE MINI VIT"}, "7340003809280": {"artnr": "101416470", "namn": "BUKETTFYLLNAD BLOMMA"}, "8713626103513": {"artnr": "101416471", "namn": "DECOCHRYSS"}, "8713626206313": {"artnr": "101416471", "namn": "DECOCHRYSS"}, "8713626211102": {"artnr": "101416471", "namn": "DECOCHRYSS"}, "7315808917645": {"artnr": "101416507", "namn": "KALANCHOE I PÅSE PRESENT"}, "7315808907394": {"artnr": "101416647", "namn": "PRESENTBUKETT"}, "8711186000419": {"artnr": "101416650", "namn": "CHRYSS CHERRY 2P"}, "7315808886507": {"artnr": "101416661", "namn": "HORTENSIA BUNT"}, "7315808919922": {"artnr": "101416684", "namn": "CHRYSANTHEMUM I BUNT M GR"}, "7315808919199": {"artnr": "101416722", "namn": "BRUDORKIDÉ PRESENT"}, "7315808899378": {"artnr": "101416728", "namn": "ROSBUKETT ORANGE"}, "7315808921291": {"artnr": "101416732", "namn": "HYPERICUM BUNT"}, "5714747100224": {"artnr": "101416743", "namn": "ROSOR 40CM FT 10P"}, "7315808920058": {"artnr": "101416769", "namn": "HÖSTBUKETT CHERRY"}, "8711186700081": {"artnr": "101416771", "namn": "LILJOR ASIAT MIX"}, "7315808908285": {"artnr": "101416786", "namn": "3 VÄXTER I SKÅL"}, "7315808890160": {"artnr": "101416811", "namn": "HELGBUKETT"}, "7315808899842": {"artnr": "101416873", "namn": "KRYSANTEMUM I BUNT"}, "7330840001305": {"artnr": "101416876", "namn": "ALUNROT"}, "8713626056116": {"artnr": "101416933", "namn": "MURGRÖNA I AMPEL"}, "7315808891976": {"artnr": "101417092", "namn": "PREMIUMBUKETT ORANGE"}, "8718226122261": {"artnr": "101417110", "namn": "GULLRANKA MOSSTOCK"}, "8717746057770": {"artnr": "101417110", "namn": "GULLRANKA MOSSTOCK"}, "8713626034176": {"artnr": "101417132", "namn": "PARAPLYARALIA"}, "8713626034169": {"artnr": "101417132", "namn": "PARAPLYARALIA"}, "7315808920089": {"artnr": "101417137", "namn": "PRESENTGRUPP ORKIDE"}, "7315808909947": {"artnr": "101417150", "namn": "PLANTERING"}, "7315808902276": {"artnr": "101417243", "namn": "ROSBUKETT BLANDAD"}, "8713626148729": {"artnr": "101417245", "namn": "ORKIDE MULTI VIT"}, "7315808913494": {"artnr": "101417248", "namn": "BUKETT PREMIUM"}, "7391679934615": {"artnr": "101417255", "namn": "HEDERA BÅGE"}, "7315808917515": {"artnr": "101417257", "namn": "LILJA BUNT"}, "8713626083105": {"artnr": "101417267", "namn": "MONSTERA"}, "7315808882240": {"artnr": "101426522", "namn": "BUKETT BLANDAD"}, "7330023336668": {"artnr": "101429193", "namn": "PRYDNADSKÅL I BUNT"}, "5708870103481": {"artnr": "101429193", "namn": "PRYDNADSKÅL I BUNT"}, "7315808882349": {"artnr": "101429193", "namn": "PRYDNADSKÅL I BUNT"}, "8711186004714": {"artnr": "101429193", "namn": "PRYDNADSKÅL I BUNT"}, "8711186004721": {"artnr": "101429193", "namn": "PRYDNADSKÅL I BUNT"}, "5708870101029": {"artnr": "101429198", "namn": "ROSOR 10P 35CM"}, "7340003822609": {"artnr": "101429877", "namn": "LYXROSOR 9P 60CM RÖD"}, "7315808912886": {"artnr": "101430712", "namn": "KRÄFTBUKETT"}, "7315808950055": {"artnr": "101430713", "namn": "CYKLAMEN MINI"}, "4011261188600": {"artnr": "101432506", "namn": "CALLUNA HIGH FIVE"}, "4011261190153": {"artnr": "101432506", "namn": "CALLUNA HIGH FIVE"}, "4030013009840": {"artnr": "101432506", "namn": "CALLUNA HIGH FIVE"}, "7391679236405": {"artnr": "101432506", "namn": "CALLUNA HIGH FIVE"}, "7391679047896": {"artnr": "101432820", "namn": "MURGRÖNA HESTOR HIBERN"}, "7340217900056": {"artnr": "101432820", "namn": "MURGRÖNA HESTOR HIBERN"}, "7330840003699": {"artnr": "101435207", "namn": "HÖSTPLANTERING"}, "8717191287050": {"artnr": "101435211", "namn": "CROTON EXCELLENT"}, "7315808880109": {"artnr": "101435311", "namn": "UTEPL CALLUNA & MURG"}, "7315808880116": {"artnr": "101435312", "namn": "UTEPL CALLUNA & ALUN"}, "8713626008108": {"artnr": "101435335", "namn": "CROTON PETRA"}, "7315808897886": {"artnr": "101435335", "namn": "CROTON PETRA"}, "8713626008061": {"artnr": "101435335", "namn": "CROTON PETRA"}, "8713626061585": {"artnr": "101435335", "namn": "CROTON PETRA"}, "7315808890610": {"artnr": "101435947", "namn": "BUKETT MÅNADENS"}, "7315808881113": {"artnr": "101435947", "namn": "BUKETT MÅNADENS"}, "3538722012720": {"artnr": "101445723", "namn": "GOLDCREST WILMA"}, "5407003460018": {"artnr": "101445723", "namn": "GOLDCREST WILMA"}, "5411266209000": {"artnr": "101445723", "namn": "GOLDCREST WILMA"}, "5411266213007": {"artnr": "101445723", "namn": "GOLDCREST WILMA"}, "5412662130073": {"artnr": "101445723", "namn": "GOLDCREST WILMA"}, "8717191065283": {"artnr": "101445723", "namn": "GOLDCREST WILMA"}, "5415030012582": {"artnr": "101456881", "namn": "ELLWOODII 11CM"}, "5415030137742": {"artnr": "101456882", "namn": "ELLWOODDII 13CM 55CM HÖG"}, "8717191220507": {"artnr": "101456882", "namn": "ELLWOODDII 13CM 55CM HÖG"}, "8713626149122": {"artnr": "101462946", "namn": "ROSENKALLA 12CM"}, "5708869002511": {"artnr": "101469886", "namn": "MURGRÖNA PÅ BÅGE 12CM"}, "5708869750931": {"artnr": "101488546", "namn": "PHILODENDRON WHITE MEASUR"}, "8711186006107": {"artnr": "101514810", "namn": "ROSBUKETT RÖD"}, "4011261001350": {"artnr": "101516782", "namn": "CALLUNA TWIN"}, "4011261179387": {"artnr": "101516804", "namn": "CALLUNA SKYLINE"}, "7315808916648": {"artnr": "101519181", "namn": "KALANCHOE I KRUKA CELLOF"}, "5712873422548": {"artnr": "101524142", "namn": "ROSOR 10-P 40CM FT"}, "5712875328299": {"artnr": "101524142", "namn": "ROSOR 10-P 40CM FT"}, "7315809001206": {"artnr": "101524146", "namn": "LILJOR I BUNT ORIENTALE"}, "7315800822435": {"artnr": "101539907", "namn": "HÖSTSTJÄRNA AUTUM LEAVES"}, "7315808897664": {"artnr": "101540729", "namn": "BUKETT CHERRY"}, "5411266200328": {"artnr": "101540742", "namn": "THUJA/CYPRESS MIX 13CM"}, "5415030066714": {"artnr": "101540742", "namn": "THUJA/CYPRESS MIX 13CM"}, "7315808897770": {"artnr": "101542102", "namn": "CHRYSANTHEMUM SAN BUNT 3P"}, "5708870103405": {"artnr": "101542103", "namn": "GERMINI I BUNT 5P MIX"}, "5714747721405": {"artnr": "101542103", "namn": "GERMINI I BUNT 5P MIX"}, "7340003826195": {"artnr": "101542870", "namn": "BLANDBUKETT ROS NEJLIKA"}, "7315808919380": {"artnr": "101543860", "namn": "SANTINI I BUNT MIX 3P"}, "8713626145544": {"artnr": "101591544", "namn": "ECHEVERIA 10,5CM"}, "7340003828403": {"artnr": "101618373", "namn": "ROSOR 9P 40CM RÖD"}, "7340003828373": {"artnr": "101628560", "namn": "ROSOR 9P 40CM APRIKOS"}, "8711186804932": {"artnr": "101644039", "namn": "ROSBUKETT ORANGE"}, "7315808882042": {"artnr": "101644040", "namn": "CHRYSSBUKETT VARMMIX"}, "7330840003705": {"artnr": "101646338", "namn": "HÖSTPLANTERING"}, "7350111381806": {"artnr": "101646339", "namn": "MONSTERA 14CM"}, "5714747101795": {"artnr": "101649551", "namn": "KVISTROSOR I BUNT FT 50CM"}, "5708869438495": {"artnr": "101656458", "namn": "ALOCASIA POLLY"}, "8713626101397": {"artnr": "101656459", "namn": "SKIMMIA"}, "7340003828380": {"artnr": "101659574", "namn": "ROSOR 9P 2FÄRGAD ORANGE"}, "2024-10-24 00:00:00": {"artnr": "101516757", "namn": ""}, "2024-11-04 00:00:00": {"artnr": "101231133", "namn": "7340099300654"}, "2024-11-07 00:00:00": {"artnr": "101680714", "namn": "7315808882608"}, "2024-11-11 00:00:00": {"artnr": "101688923", "namn": "8711186000747"}, "2024-11-14 00:00:00": {"artnr": "101175118", "namn": "7315800121118"}, "2024-11-22 00:00:00": {"artnr": "101542098", "namn": "7333104211151"}, "2024-11-25 00:00:00": {"artnr": "101415873", "namn": "7315808880086"}, "2024-11-28 00:00:00": {"artnr": "101457665", "namn": "7331618097117"}, "2024-12-02 00:00:00": {"artnr": "101441072", "namn": "7315808918666"}, "2024-12-05 00:00:00": {"artnr": "101460977", "namn": "7315808907332"}, "2024-12-09 00:00:00": {"artnr": "101457661", "namn": "7331618274709"}, "2024-12-12 00:00:00": {"artnr": "101457668", "namn": "7331618308848"}, "2024-12-19 00:00:00": {"artnr": "101459147", "namn": "7315808920850"}, "2024-12-23 00:00:00": {"artnr": "101417104", "namn": "8713626076442"}, "2024-12-27 00:00:00": {"artnr": "101551669", "namn": "7331618347045"}, "2025-01-02 00:00:00": {"artnr": "101254823", "namn": "5708870101388"}, "2025-01-03 00:00:00": {"artnr": "101417096", "namn": "7315808921239"}, "2025-01-07 00:00:00": {"artnr": "101708390", "namn": "7315808882363"}, "2025-01-13 00:00:00": {"artnr": "101416471", "namn": "8713626059407"}, "2025-01-16 00:00:00": {"artnr": "100075419", "namn": "8713626209734"}, "2025-01-23 00:00:00": {"artnr": "101289259", "namn": "5708869618361"}, "2025-01-27 00:00:00": {"artnr": "100075419", "namn": "8713626043888"}, "2025-02-10 00:00:00": {"artnr": "101415755", "namn": "7315808918178"}, "2025-02-13 00:00:00": {"artnr": "101191682", "namn": "7340003808924"}, "2025-02-20 00:00:00": {"artnr": "101539614", "namn": "7331618350403"}, "2025-02-27 00:00:00": {"artnr": "100202344", "namn": "7315800822084"}, "2025-03-03 00:00:00": {"artnr": "101735945", "namn": "7315808883667"}, "2025-03-06 00:00:00": {"artnr": "101743639", "namn": "5708869331406"}, "2025-03-10 00:00:00": {"artnr": "101191686", "namn": "5708869219223"}, "2025-03-13 00:00:00": {"artnr": "101254383", "namn": "5708869646074"}, "2025-03-17 00:00:00": {"artnr": "100402921", "namn": "8713626084355"}, "2025-03-20 00:00:00": {"artnr": "101394211", "namn": "7316350712429"}, "2025-03-25 00:00:00": {"artnr": "101417280", "namn": "8713626061219"}, "2025-03-27 00:00:00": {"artnr": "101383616", "namn": "7316350712023"}, "2025-03-31 00:00:00": {"artnr": "101749469", "namn": "7315809001671"}, "2025-04-14 00:00:00": {"artnr": "101416097", "namn": "7340003817919"}, "2025-04-24 00:00:00": {"artnr": "101225134", "namn": "7391679051817"}, "2025-04-28 00:00:00": {"artnr": "101773210", "namn": "7315809001435"}, "2025-04-30 00:00:00": {"artnr": "101773707", "namn": "4011261021471"}, "2025-06-05 00:00:00": {"artnr": "101213024", "namn": "7315808886361"}, "2025-05-06 00:00:00": {"artnr": "101524142", "namn": "5712875328299"}, "2025-05-20 00:00:00": {"artnr": "101510848", "namn": "7315809001145"}, "2025-06-09 00:00:00": {"artnr": "101251852", "namn": "7315800821599"}, "2025-06-16 00:00:00": {"artnr": "101415981", "namn": "7315808896742"}, "2025-06-18 00:00:00": {"artnr": "101804850", "namn": "7315808899057"}, "2025-06-23 00:00:00": {"artnr": "101346089", "namn": "5708869129874"}, "2025-06-30 00:00:00": {"artnr": "101805155", "namn": "7315808952813"}, "2025-08-04 00:00:00": {"artnr": "101499826", "namn": "5708869661879"}, "2025-08-07 00:00:00": {"artnr": "100268808", "namn": "7315800945530"}, "2025-08-11 00:00:00": {"artnr": "101806180", "namn": "7391679166870"}, "2025-08-14 00:00:00": {"artnr": "100306651", "namn": "7315800123075"}, "2025-08-18 00:00:00": {"artnr": "101435331", "namn": "8711186803911"}, "2025-08-25 00:00:00": {"artnr": "101199708", "namn": "5708869120093"}, "2025-08-28 00:00:00": {"artnr": "100306651", "namn": "7315800815116"}, "2025-09-03 00:00:00": {"artnr": "101435292", "namn": "7350111380793"}, "2025-09-04 00:00:00": {"artnr": "101224854", "namn": "7315809000759"}, "2025-10-03 00:00:00": {"artnr": "101543900", "namn": "7315800123181"}, "2025-10-20 00:00:00": {"artnr": "101474958", "namn": "8713626713934"}, "2025-11-06 00:00:00": {"artnr": "101541483", "namn": ""}, "2025-12-08 00:00:00": {"artnr": "101845389", "namn": "8719322665942"}, "2025-12-11 00:00:00": {"artnr": "101273779", "namn": "5708869001675"}, "2026-01-15 00:00:00": {"artnr": "101416471", "namn": "8713626002090"}, "2026-02-09 00:00:00": {"artnr": "101857333", "namn": ""}, "2026-02-12 00:00:00": {"artnr": "101254383", "namn": "5708869369874"}, "2026-03-16 00:00:00": {"artnr": "101416875", "namn": "7315808896513"}, "2026-03-23 00:00:00": {"artnr": "101281363", "namn": "7315800121453"}, "2026-03-26 00:00:00": {"artnr": "101253032", "namn": "7350111380779"}, "2026-04-07 00:00:00": {"artnr": "101253032", "namn": "7315809001886"}, "2026-04-09 00:00:00": {"artnr": "100113583", "namn": "7391679044864"}, "2026-04-20 00:00:00": {"artnr": "101580367", "namn": "8718819840381"}, "2026-04-23 00:00:00": {"artnr": "101430647", "namn": "7315800903912"}, "2026-04-29 00:00:00": {"artnr": "100113583", "namn": "7315808501004"}, "2026-05-04 00:00:00": {"artnr": "101295194", "namn": "7391679034698"}, "2026-05-07 00:00:00": {"artnr": "101241115", "namn": "7058782329744"}, "2026-05-18 00:00:00": {"artnr": "101498899", "namn": "5708869211289"}};
+
+var EAN_MAP = {};
+var supplierData = [];
+var matchedRows = [];
+var missingRows = [];
+var allMappings = [];
+var mappingFilter = '';
+
+async function sbGet(table, query) {
+  query = query || '';
+  var r = await fetch(SB_URL+'/rest/v1/'+table+'?'+query, {
+    headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY}
+  });
+  if(!r.ok) throw new Error(table+': '+r.status);
+  return r.json();
+}
+
+async function sbUpsert(table, row) {
+  var r = await fetch(SB_URL+'/rest/v1/'+table, {
+    method:'POST',
+    headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY,
+      'Content-Type':'application/json', 'Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify(row)
+  });
+  if(!r.ok){var e=await r.text();throw new Error(e);}
+}
+
+async function sbDelete(table, ean) {
+  var r = await fetch(SB_URL+'/rest/v1/'+table+'?ean=eq.'+encodeURIComponent(ean), {
+    method:'DELETE',
+    headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY}
+  });
+  if(!r.ok) throw new Error('Delete failed: '+r.status);
+}
+
+async function loadMapping() {
+  setDbBadge('loading','Ansluter...');
+  try {
+    EAN_MAP = Object.assign({}, BUILTIN_MAP);
+    var rows = await sbGet('ean_mappning','select=*&order=ean');
+    rows.forEach(function(r){EAN_MAP[r.ean]={artnr:r.artnr,namn:r.namn||''};});
+    allMappings = Object.entries(EAN_MAP).map(function(e){return{ean:e[0],artnr:e[1].artnr,namn:e[1].namn};});
+    allMappings.sort(function(a,b){return a.ean.localeCompare(b.ean);});
+    setDbBadge('ok','Databas ansluten '+allMappings.length+' EAN-koder');
+    document.getElementById('mapping-count').textContent = allMappings.length+' poster ('+rows.length+' i databas)';
+    renderMappingTable();
+  } catch(e) {
+    setDbBadge('err','Databasfel');
+    EAN_MAP = Object.assign({}, BUILTIN_MAP);
+    allMappings = Object.entries(EAN_MAP).map(function(e){return{ean:e[0],artnr:e[1].artnr,namn:e[1].namn};});
+    document.getElementById('mapping-count').textContent = Object.keys(BUILTIN_MAP).length+' poster (inbyggda, databas otillganglig)';
+    renderMappingTable();
+  }
+}
+
+function setDbBadge(cls,txt){var e=document.getElementById('db-badge');e.className='db-badge '+cls;e.textContent=txt;}
+
+function showTab(id){
+  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',['import','mapping'][i]===id);});
+  document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('tab-'+id).classList.add('active');
+}
+
+function handleDrop(ev){ev.preventDefault();document.getElementById('uzone').classList.remove('drag');if(ev.dataTransfer.files[0])processFile(ev.dataTransfer.files[0]);}
+function handleFile(ev){if(ev.target.files[0])processFile(ev.target.files[0]);}
+
+function processFile(file){
+  setStatus('file-status','info','Laser '+file.name+'...');
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var wb=XLSX.read(e.target.result,{type:'array'});
+      var sn=wb.SheetNames.find(function(n){return n.toLowerCase().includes('export')||n.toLowerCase().includes('ean');});
+      if(!sn) throw new Error('Hittade ingen Export EAN-flik');
+      var rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
+      var hi=-1;
+      for(var i=0;i<5;i++) if(rows[i]&&rows[i].some(function(c){return c&&String(c).includes('EAN');})){hi=i;break;}
+      if(hi<0) throw new Error('Hittade inga kolumnrubriker');
+      supplierData=[];
+      for(var j=hi+1;j<rows.length;j++){
+        var r=rows[j];
+        if(!r||!r[0]) continue;
+        var ean=r[1]?String(Math.round(Number(r[1]))):null;
+        if(!ean||ean==='0'||ean==='null') continue;
+        supplierData.push({ean:ean,produkt:r[2]||'',konsumentpris:parseFloat(r[3])||0,inpris:parseFloat(r[4])||0});
+      }
+      setStatus('file-status','ok',''+file.name+' - '+supplierData.length+' artiklar inlasta');
+      processData();
+    }catch(err){setStatus('file-status','err','Fel: '+err.message);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+var conflictRows = [];
+
+function processData(){
+  matchedRows=[];missingRows=[];conflictRows=[];
+  var artnrMap = {};
+  supplierData.forEach(function(item){
+    var mapped = EAN_MAP[item.ean];
+    if(mapped){
+      if(!artnrMap[mapped.artnr]) artnrMap[mapped.artnr]=[];
+      artnrMap[mapped.artnr].push({ean:item.ean,produkt:item.produkt,inpris:item.inpris,namn:mapped.namn});
+    } else {
+      var exists = missingRows.some(function(r){return r.ean===item.ean;});
+      if(!exists) missingRows.push({ean:item.ean,produkt:item.produkt,inpris:item.inpris,
+        konsumentpris:item.konsumentpris,inkludera:false,nyArtnr:''});
+    }
+  });
+
+  Object.entries(artnrMap).forEach(function(entry){
+    var artnr=entry[0], items=entry[1];
+    var priser=items.map(function(i){return i.inpris;});
+    var minPris=Math.min.apply(null,priser), maxPris=Math.max.apply(null,priser);
+    var harKonflikt=Math.abs(maxPris-minPris)>0.001;
+    var valdPris=maxPris;
+    if(harKonflikt) conflictRows.push({artnr:artnr,namn:items[0].namn,eans:items,minPris:minPris,maxPris:maxPris,valdPris:valdPris});
+    var anvandPris=harKonflikt?valdPris:items[0].inpris;
+    matchedRows.push({artnr:artnr,namn:items[0].namn,eans:items,produkt:items[0].produkt,
+      inpris:anvandPris,utpris:parseFloat((anvandPris*RATIO).toFixed(2)),harKonflikt:harKonflikt});
+  });
+  renderResults();
+}
+
+function setConflictPrice(artnr,inpris){
+  var p=parseFloat(inpris);
+  matchedRows.forEach(function(r){
+    if(r.artnr===artnr){r.inpris=p;r.utpris=parseFloat((p*RATIO).toFixed(2));}
+  });
+  var inEl=document.getElementById('in-'+artnr);
+  var utEl=document.getElementById('ut-'+artnr);
+  if(inEl) inEl.textContent=p.toFixed(3)+' kr';
+  if(utEl) utEl.textContent=(p*RATIO).toFixed(2)+' kr';
+}
+
+function renderResults(){
+  document.getElementById('result-section').style.display='block';
+  var nK=conflictRows.length;
+  var sD=[
+    {v:supplierData.length, l:'Artiklar i fil',       c:'var(--blue)'},
+    {v:matchedRows.length,  l:'Unika artikelnummer',  c:'var(--green)'},
+    {v:nK,                  l:'Priskonflikter',        c:nK>0?'var(--amber)':'var(--green)'},
+    {v:missingRows.length,  l:'Saknar mappning',       c:missingRows.length>0?'var(--amber)':'var(--green)'},
+  ];
+  document.getElementById('stats-grid').innerHTML=sD.map(function(s){
+    return '<div class="stat"><div class="stat-val" style="color:'+s.c+'">'+s.v+'</div><div class="stat-lbl">'+s.l+'</div></div>';
+  }).join('');
+
+  var ksec=document.getElementById('conflict-section');
+  if(conflictRows.length>0){
+    ksec.style.display='block';
+    document.getElementById('conflict-tbody').innerHTML=conflictRows.map(function(r){
+      var unikaPriser=[];
+      r.eans.forEach(function(e){
+        if(!unikaPriser.some(function(p){return Math.abs(p-e.inpris)<0.001;})) unikaPriser.push(e.inpris);
+      });
+      var opts=unikaPriser.map(function(p){
+        return '<option value="'+p+'" '+(Math.abs(p-r.valdPris)<0.001?'selected':'')+'>Inpris: '+p.toFixed(3)+' kr  /  Utpris: '+(p*RATIO).toFixed(2)+' kr</option>';
+      }).join('');
+      var eanLista=r.eans.map(function(e){
+        return '<div style="font-size:10px;color:var(--muted);font-family:monospace">'+e.ean+' - '+e.produkt+' ('+e.inpris.toFixed(3)+' kr)</div>';
+      }).join('');
+      return '<tr>'
+        +'<td class="mono">'+r.artnr+'</td>'
+        +'<td>'+r.namn+'<div style="margin-top:4px">'+eanLista+'</div></td>'
+        +'<td style="color:var(--redd);font-family:monospace">'+r.minPris.toFixed(3)+' - '+r.maxPris.toFixed(3)+' kr</td>'
+        +'<td><select class="inp" style="width:auto;padding:4px 8px;font-size:12px;font-family:monospace"'
+        +' onchange="setConflictPrice(this.getAttribute(\'data-artnr\'),this.value)" data-artnr="'+r.artnr+'">'+opts+'</select></td>'
+        +'</tr>';
+    }).join('');
+  } else {ksec.style.display='none';}
+
+  var ms=document.getElementById('missing-section');
+  if(missingRows.length>0){
+    ms.style.display='block';
+    document.getElementById('missing-tbody').innerHTML=missingRows.map(function(r,i){
+      return '<tr class="missing-row"><td class="mono">'+r.ean+'</td><td>'+r.produkt+'</td>'
+        +'<td class="mono">'+r.konsumentpris.toFixed(2)+' kr</td>'
+        +'<td class="mono">'+r.inpris.toFixed(3)+' kr</td>'
+        +'<td><input class="artnr-input" id="ai-'+i+'" type="text" placeholder="101234567"'
+        +' oninput="onArtnrInput('+i+',this.value)" value="'+r.nyArtnr+'"></td>'
+        +'<td><input type="checkbox" id="ic-'+i+'" onchange="missingRows['+i+'].inkludera=this.checked;updateDlSub()"></td></tr>';
+    }).join('');
+  } else {ms.style.display='none';}
+
+  document.getElementById('matched-title').textContent=matchedRows.length+' artiklar i importfilen';
+  document.getElementById('matched-tbody').innerHTML=matchedRows.map(function(r){
+    var antalEan=r.eans?r.eans.length:1;
+    var eBadge=antalEan>1?'<span class="badge badge-ok" style="margin-left:4px">'+antalEan+' EAN</span>':'';
+    var sBadge=r.harKonflikt
+      ?'<span class="badge" style="background:var(--la);color:var(--amber)">Priskonflikt</span>'
+      :'<span class="badge badge-ok">OK</span>';
+    return '<tr>'
+      +'<td class="mono">'+r.artnr+'</td>'
+      +'<td>'+r.produkt+eBadge+'</td>'
+      +'<td class="mono" id="in-'+r.artnr+'">'+r.inpris.toFixed(3)+' kr</td>'
+      +'<td class="mono price-pos" id="ut-'+r.artnr+'">'+r.utpris.toFixed(2)+' kr</td>'
+      +'<td>'+sBadge+'</td>'
+      +'</tr>';
+  }).join('');
+  updateDlSub();
+  document.getElementById('result-section').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function onArtnrInput(i,val){
+  missingRows[i].nyArtnr=val.trim();
+  document.getElementById('ai-'+i).className='artnr-input'+(val.trim()?' filled':'');
+  if(val.trim()){missingRows[i].inkludera=true;document.getElementById('ic-'+i).checked=true;}
+  updateDlSub();
+}
+function updateDlSub(){
+  var extra=missingRows.filter(function(r){return r.inkludera&&r.nyArtnr;}).length;
+  document.getElementById('dl-sub').textContent=(matchedRows.length+extra)+' artiklar redo';
+}
+function skipAllMissing(){missingRows.forEach(function(_,i){missingRows[i].inkludera=false;document.getElementById('ic-'+i).checked=false;});updateDlSub();}
+
+async function saveNewMappings(){
+  var toSave=missingRows.filter(function(r){return r.nyArtnr&&r.inkludera;});
+  if(!toSave.length){alert('Inga artikelnummer att spara.');return;}
+  var btn=document.getElementById('save-missing-btn');
+  btn.disabled=true;btn.textContent='Sparar...';
+  var saved=0;
+  for(var i=0;i<toSave.length;i++){
+    var r=toSave[i];
+    try{
+      await sbUpsert('ean_mappning',{ean:r.ean,artnr:r.nyArtnr,namn:r.produkt.toUpperCase()});
+      EAN_MAP[r.ean]={artnr:r.nyArtnr,namn:r.produkt.toUpperCase()};
+      saved++;
+    }catch(e){console.error('Spara misslyckades',r.ean,e);}
+  }
+  btn.disabled=false;btn.textContent='Spara till databas';
+  await loadMapping();processData();
+  alert(saved+' nya EAN-mappningar sparade till databasen!');
+}
+
+function downloadImport(){
+  var rows=matchedRows.slice();
+  missingRows.forEach(function(r){
+    if(r.inkludera&&r.nyArtnr) rows.push({artnr:r.nyArtnr,inpris:r.inpris,utpris:parseFloat((r.inpris*RATIO).toFixed(2))});
+  });
+  if(!rows.length){alert('Inga artiklar att exportera!');return;}
+  var wb=XLSX.utils.book_new();
+  var data=[['Artikelnr','Enhet','Uppdatera lokalt inpris','Uppdatera lokalt utpris']];
+  rows.forEach(function(r){data.push([r.artnr,'ST',r.inpris,r.utpris]);});
+  var ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:14},{wch:6},{wch:24},{wch:24}];
+  XLSX.utils.book_append_sheet(wb,ws,'Blad1');
+  var date=new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb,'import_'+date+'.xlsx');
+}
+
+function renderMappingTable(){
+  var q=mappingFilter.toLowerCase();
+  var filtered=allMappings.filter(function(r){
+    return !q||r.ean.includes(q)||r.artnr.includes(q)||r.namn.toLowerCase().includes(q);
+  });
+  var src=function(ean){return BUILTIN_MAP[ean]?'Inbyggd':'Databas';};
+  document.getElementById('mapping-tbody').innerHTML=filtered.length
+    ?filtered.map(function(r){
+      return '<tr><td class="mono">'+r.ean+'</td><td class="mono">'+r.artnr+'</td><td>'+r.namn+'</td>'
+        +'<td style="color:var(--muted);font-size:11px">'+src(r.ean)+'</td>'
+        +'<td><button class="btn btn-ghost btn-sm" style="color:var(--redd);border-color:var(--redd);padding:3px 8px"'
+        +' onclick="deleteMapping(this.dataset.ean)" data-ean="'+r.ean+'">X</button></td></tr>';
+    }).join('')
+    :'<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--muted)">Inga traffar</td></tr>';
+}
+function filterMapping(val){mappingFilter=val;renderMappingTable();}
+
+async function deleteMapping(ean){
+  if(!confirm('Ta bort mappning for EAN '+ean+'?')) return;
+  try{
+    if(!BUILTIN_MAP[ean]) await sbDelete('ean_mappning',ean);
+    delete EAN_MAP[ean];
+    allMappings=allMappings.filter(function(r){return r.ean!==ean;});
+    document.getElementById('mapping-count').textContent=allMappings.length+' poster';
+    renderMappingTable();
+  }catch(e){alert('Fel vid borttagning: '+e.message);}
+}
+
+async function addMapping(){
+  var ean=document.getElementById('new-ean').value.trim();
+  var artnr=document.getElementById('new-artnr').value.trim();
+  var namn=document.getElementById('new-namn').value.trim().toUpperCase();
+  if(!ean||!artnr){setStatus('add-status','warn','Fyll i EAN-kod och artikelnummer');return;}
+  try{
+    await sbUpsert('ean_mappning',{ean:ean,artnr:artnr,namn:namn});
+    EAN_MAP[ean]={artnr:artnr,namn:namn};
+    allMappings=allMappings.filter(function(r){return r.ean!==ean;});
+    allMappings.push({ean:ean,artnr:artnr,namn:namn});
+    allMappings.sort(function(a,b){return a.ean.localeCompare(b.ean);});
+    document.getElementById('mapping-count').textContent=allMappings.length+' poster';
+    renderMappingTable();
+    setStatus('add-status','ok','Sparad i databasen');
+    document.getElementById('new-ean').value='';
+    document.getElementById('new-artnr').value='';
+    document.getElementById('new-namn').value='';
+  }catch(e){setStatus('add-status','err','Fel: '+e.message);}
+}
+
+function exportMapping(){
+  var wb=XLSX.utils.book_new();
+  var data=[['EAN-kod','Axfood artikelnr','Produktnamn']];
+  allMappings.forEach(function(r){data.push([r.ean,r.artnr,r.namn]);});
+  var ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:16},{wch:14},{wch:30}];
+  XLSX.utils.book_append_sheet(wb,ws,'EAN-mappning');
+  XLSX.writeFile(wb,'ean_mappning_ostenssons.xlsx');
+}
+
+function toggleEl(id){var e=document.getElementById(id);e.style.display=e.style.display==='none'?'':'none';}
+
+function setStatus(elId,type,msg){
+  var el=document.getElementById(elId);
+  el.className='status '+type;el.textContent=msg;el.style.display='flex';
+}
+
+loadMapping();
+</script>
+</body>
+</html>
