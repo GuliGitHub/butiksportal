@@ -1523,12 +1523,64 @@ function renderDeptTable(sd,wData,aData,mode){
 }
 
 function renderAdminOv(el){
-  const storesSummary = Object.entries(STORES).map(([id,name])=>{
-    const emails = getSD(id).emails||[];
-    return {id, name, emails};
-  });
+  const storesSummary = Object.entries(STORES).map(([id,name])=>({id,name,emails:getSD(id).emails||[]}));
   const withMail = storesSummary.filter(s=>s.emails.length>0);
   const noMail   = storesSummary.filter(s=>s.emails.length===0);
+
+  // Bygg butikskort-HTML
+  const storeCards = storesSummary.map(({id,name})=>{
+    const sd=getSD(id);
+    const wD=getLatestWeekData(id);
+    const aD=viewMode==='period'?getAccDataFromWeeks(id,selWeeks):null;
+    const data=viewMode==='week'?wD:aD;
+    const ad=Object.values(sd.deptGoals).filter(d=>d.active).length;
+    const mailBtn = sd.emails?.length
+      ? `<button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendSingleFromAdmin('${id}')">✉</button>`
+      : '';
+    return `<div class="sc" onclick="adminViewStore('${id}')">
+      <div class="sc-name">${name.replace('Hemköp ','')}</div>
+      <div class="sc-kpis">
+        <div class="sc-kpi"><div class="sc-kl">Oms utfall</div>
+          <div class="sc-kv" style="color:${data?.forsaljningDelta!=null?pctColor(data.forsaljningDelta,sd.storeGoals.oms/100,false):'var(--ö-muted)'}">
+            ${data?.forsaljningDelta!=null?(data.forsaljningDelta*100).toFixed(1)+'%':'—'}</div></div>
+        <div class="sc-kpi"><div class="sc-kl">BV% utfall</div>
+          <div class="sc-kv" style="color:${data?.bvPct!=null?pctColor(data.bvPct,sd.storeGoals.marginal/100,false):'var(--ö-muted)'}">
+            ${data?.bvPct!=null?(data.bvPct*100).toFixed(1)+'%':'—'}</div></div>
+        <div class="sc-kpi"><div class="sc-kl">Aktiva avd.</div><div class="sc-kv">${ad}</div></div>
+        <div class="sc-kpi"><div class="sc-kl">${viewMode==='period'?'Ack. förs.':'Förs. kr'}</div>
+          <div class="sc-kv" style="font-size:11px">${data?.forsaljning!=null?fmtKr(data.forsaljning):'—'}</div></div>
+      </div>
+      ${sd.emails?.length?`<div style="font-size:11px;color:#888;margin-top:7px">📧 ${sd.emails.length} mottagare</div>`:''}
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();adminViewStore('${id}')">Redigera →</button>
+        <button class="btn-sm green" onclick="event.stopPropagation();sid='${id}';generatePDF('${id}','week',null)">⬇ PDF</button>
+        ${mailBtn}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Total-kort
+  const tD = getTotalData(viewMode==='period'&&selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1)));
+  const totalSD = getSD(TOTAL_ID)||{emails:[]};
+  const totalCard = `<div class="sc" style="border:2px solid var(--ö-blue);background:#eef2fa;cursor:pointer" onclick="adminViewTotal()">
+    <div class="sc-name" style="color:var(--ö-blue)">⬛ Östenssons Totalt</div>
+    <div class="sc-kpis">
+      <div class="sc-kpi"><div class="sc-kl">Oms utfall</div>
+        <div class="sc-kv" style="color:${tD?.forsaljningDelta!=null?pctColor(tD.forsaljningDelta,0.07,false):'var(--ö-muted)'}">
+          ${tD?.forsaljningDelta!=null?(tD.forsaljningDelta*100).toFixed(1)+'%':'—'}</div></div>
+      <div class="sc-kpi"><div class="sc-kl">BV%</div>
+        <div class="sc-kv" style="color:${tD?.bvPct!=null?pctColor(tD.bvPct,0.262,false):'var(--ö-muted)'}">
+          ${tD?.bvPct!=null?(tD.bvPct*100).toFixed(1)+'%':'—'}</div></div>
+      <div class="sc-kpi"><div class="sc-kl">Förs. kr</div>
+        <div class="sc-kv" style="font-size:11px">${tD?.forsaljning!=null?fmtKr(tD.forsaljning):'—'}</div></div>
+    </div>
+    <div style="font-size:11px;color:#888;margin-top:7px">📧 ${(totalSD.emails||[]).length} mottagare</div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();adminViewTotal()">Redigera / Prenumeration</button>
+      <button class="btn-sm green" onclick="event.stopPropagation();generatePDF(TOTAL_ID,'week')">⬇ PDF</button>
+      <button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendTotalReport()">✉</button>
+    </div>
+  </div>`;
 
   el.innerHTML=`<div class="ph"><div><div class="pt">Alla butiker</div><div class="ps">Östenssons — översikt</div></div></div>
     ${viewToggle()}
@@ -1536,32 +1588,27 @@ function renderAdminOv(el){
     <!-- Mailutskick-panel -->
     <div class="card" style="margin-bottom:.875rem">
       <div class="card-head">
-        <div><div class="ct">✉ Skicka veckorapport</div><div class="cs">${withMail.length} av 9 butiker har mailadresser registrerade</div></div>
+        <div><div class="ct">✉ Skicka veckorapport</div><div class="cs">${withMail.length} av 9 butiker har mailadresser</div></div>
       </div>
       <div style="padding:1rem">
-        <!-- Lägesväljare -->
         <div style="display:flex;gap:.625rem;margin-bottom:.875rem;flex-wrap:wrap">
           ${[['week','Föregående vecka'],['period','Ackumulerat'],['both','Båda']].map(([v,t])=>`
-          <label style="display:flex;align-items:center;gap:.375rem;cursor:pointer;padding:.5rem .875rem;border:1px solid var(--ö-border);border-radius:7px;font-size:13px">
+          <label style="display:flex;align-items:center;gap:.375rem;cursor:pointer;padding:.5rem .875rem;border-radius:7px;border:1px solid var(--ö-border);font-size:13px">
             <input type="radio" name="amode" value="${v}" ${v==='week'?'checked':''}> ${t}
           </label>`).join('')}
         </div>
-
-        <!-- Butiksöversikt med mailadresser -->
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;margin-bottom:.875rem">
           ${storesSummary.map(s=>`
-          <div style="padding:8px 10px;background:${s.emails.length?'#f0f4ff':'#fff8f8'};border:1px solid ${s.emails.length?'var(--ö-lblue)':'var(--ö-pink)'};border-radius:7px;font-size:12px">
+          <div style="padding:8px 10px;background:${s.emails.length?'#f0f4ff':'#fff8f8'};border:1px solid ${s.emails.length?'#c5d5f5':'#ffd0d0'};border-radius:7px">
             <div style="font-weight:500;color:var(--ö-text);margin-bottom:2px">${s.name.replace('Hemköp ','')}</div>
             ${s.emails.length
               ? `<div style="color:var(--ö-blue);font-size:11px">📧 ${s.emails.length} mottagare</div>`
               : `<div style="color:#c62828;font-size:11px">⚠ Ingen mailadress</div>`}
           </div>`).join('')}
         </div>
-
-        ${noMail.length?`<div style="font-size:11px;color:var(--ö-muted);margin-bottom:.75rem">⚠ ${noMail.length} butiker saknar mailadresser och hoppas över. Lägg till via Butiksinställningar.</div>`:''}
-
+        ${noMail.length?`<div style="font-size:11px;color:var(--ö-muted);margin-bottom:.75rem">⚠ ${noMail.length} butiker saknar mailadress</div>`:''}
         <div style="display:flex;gap:.625rem;align-items:center">
-          <button class="btn-g" onclick="sendAllStoreReports(document.querySelector('input[name=amode]:checked')?.value||'week')" style="padding:10px 28px;font-size:14px">
+          <button class="btn-g" onclick="sendAllStoreReports(document.querySelector('input[name=amode]:checked')?.value||'week')" style="padding:10px 24px;font-size:14px">
             Skicka till ${withMail.length} butikers prenumeranter
           </button>
           <div id="mail-all-status" style="display:none;font-size:12px;padding:.5rem .875rem;border-radius:6px"></div>
@@ -1570,54 +1617,12 @@ function renderAdminOv(el){
     </div>
 
     <!-- Butiksgrid -->
-    <div class="store-grid">${Object.entries(STORES).map(([id,name])=>{
-      const sd=getSD(id);
-      const wD=getLatestWeekData(id);
-      const aD=viewMode==='period'?getAccDataFromWeeks(id,selWeeks):null;
-      const data=viewMode==='week'?wD:aD;
-      const ad=Object.values(sd.deptGoals).filter(d=>d.active).length;
-      return`<div class="sc" onclick="adminViewStore('${id}')">
-        <div class="sc-name">${name.replace('Hemköp ','')}</div>
-        <div class="sc-kpis">
-          <div class="sc-kpi"><div class="sc-kl">Oms utfall</div>
-            <div class="sc-kv" style="color:${data?.forsaljningDelta!=null?pctColor(data.forsaljningDelta,sd.storeGoals.oms/100,false):'#aaa'}">${data?.forsaljningDelta!=null?fmtDelta(data.forsaljningDelta):'—'}</div></div>
-          <div class="sc-kpi"><div class="sc-kl">BV% utfall</div>
-            <div class="sc-kv" style="color:${data?.bvPct!=null?pctColor(data.bvPct,sd.storeGoals.marginal/100,false):'#aaa'}">${data?.bvPct!=null?fmtPct(data.bvPct):'—'}</div></div>
-          <div class="sc-kpi"><div class="sc-kl">Aktiva avd.</div><div class="sc-kv">${ad}</div></div>
-          <div class="sc-kpi"><div class="sc-kl">${viewMode==='period'?'Ack. förs.':'Förs. kr'}</div>
-            <div class="sc-kv" style="font-size:11px">${data?.forsaljning!=null?fmtKr(data.forsaljning):'—'}</div></div>
-        </div>
-        ${sd.emails?.length?`<div style="font-size:11px;color:#888;margin-top:7px">📧 ${sd.emails.length} mottagare</div>`:`<div style="font-size:11px;color:#c62828;margin-top:7px">⚠ Ingen mailadress</div>`}
-        <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();adminViewStore('${id}')">Redigera →</button>
-          <button class="btn-sm green" onclick="event.stopPropagation();sid='${id}';generatePDF('${id}','week',null)">⬇ PDF</button>
-          ${sd.emails?.length?`<button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendSingleFromAdmin('${id}')">✉</button>`:''}
-        </div>
-      ${(()=>{
-        const tD=getTotalData(viewMode==='period'&&selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1)));
-        const totalSD=getSD(TOTAL_ID)||{emails:[]};
-        return`<div class="sc" style="border:2px solid var(--ö-blue);background:#eef2fa" onclick="adminViewTotal()">
-          <div class="sc-name" style="color:var(--ö-blue)">⬛ Östenssons Totalt</div>
-          <div class="sc-kpis">
-            <div class="sc-kpi"><div class="sc-kl">Oms utfall</div>
-              <div class="sc-kv" style="color:${tD?.forsaljningDelta!=null?pctColor(tD.forsaljningDelta,0.07,false):'var(--ö-muted)'}">
-                ${tD?.forsaljningDelta!=null?(tD.forsaljningDelta*100).toFixed(1)+'%':'—'}</div></div>
-            <div class="sc-kpi"><div class="sc-kl">BV%</div>
-              <div class="sc-kv" style="color:${tD?.bvPct!=null?pctColor(tD.bvPct,0.262,false):'var(--ö-muted)'}">
-                ${tD?.bvPct!=null?(tD.bvPct*100).toFixed(1)+'%':'—'}</div></div>
-            <div class="sc-kpi"><div class="sc-kl">Förs. kr</div>
-              <div class="sc-kv" style="font-size:11px">${tD?.forsaljning!=null?fmtKr(tD.forsaljning):'—'}</div></div>
-          </div>
-          <div style="font-size:11px;color:#888;margin-top:7px">📧 ${(totalSD.emails||[]).length} mottagare</div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="btn-sm" style="flex:1" onclick="event.stopPropagation();adminViewTotal()">Redigera</button>
-            <button class="btn-sm green" onclick="event.stopPropagation();sid=TOTAL_ID;generatePDF(TOTAL_ID,'week')">PDF</button>
-            <button class="btn-sm" style="background:var(--ö-blue);color:#fff;border-color:var(--ö-blue)" onclick="event.stopPropagation();sendTotalReport()">✉</button>
-          </div>
-        </div>`;
-      })()}
-      </div>`;}).join('')}</div>`;
+    <div class="store-grid">${storeCards}</div>
+
+    <!-- Total-kort -->
+    <div class="store-grid" style="margin-top:.75rem">${totalCard}</div>`;
 }
+
 
 
 // ── ÖSTENSSONS TOTAL — ADMIN-VY ──────────────────────────────────────
