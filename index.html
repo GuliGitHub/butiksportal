@@ -1177,9 +1177,9 @@ function renderOverview(){
     </div>
     ${viewToggle()}
     ${renderKPIGrid(sd,curData,sid)}
-    ${ratShowInReport ? renderStoreTrendCharts(sid) : ''}
+    ${renderStoreTrendCharts(sid)}
     ${renderDeptTable(sd,wData,aData,viewMode)}`;
-  if(ratShowInReport) setTimeout(()=>drawStoreTrendCharts(sid), 50);
+  setTimeout(()=>drawStoreTrendCharts(sid), 50);
 }
 
 function getKPIVal(key, storeId, weeks) {
@@ -3155,6 +3155,129 @@ function _buildPDFDoc(storeId,pdfMode){
 
 // Offentlig funktion — laddar ner PDF
 
+// ── LÄGG TILL TRENDSIDA I BUTIKS-PDF ─────────────────────────────────
+async function _appendStoreTrendPage(doc, storeId) {
+  try {
+    const data = await loadRatData();
+    if(!data || !Object.keys(data).length) return;
+
+    const allPeriods = Object.keys(data).sort();
+    const currentYear = new Date().getFullYear();
+    const prevYear = currentYear - 1;
+    const showYears = [prevYear, currentYear].filter(yr =>
+      allPeriods.some(k => data[k].year === yr && data[k].stores[storeId])
+    );
+    if(!showYears.length) return;
+
+    // Rita dolda canvaser och snapshotta
+    const offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:fixed;left:-9999px;top:0;width:560px;height:180px;background:#fff';
+    document.body.appendChild(offscreen);
+
+    const chartConfigs = [
+      {id:`pdf-s-oms-${storeId}`,   metric:'oms',   label:'Omsättning (Mkr årstakt)',    unit:'Mkr', dec:1, scale:v=>Math.round(v/1000000*10)/10},
+      {id:`pdf-s-antal-${storeId}`, metric:'antal', label:'Antal sålda (st årstakt)',     unit:'st',  dec:0, scale:v=>Math.round(v)},
+      {id:`pdf-s-bv-${storeId}`,    metric:'bvpct', label:'Bruttovinst % (viktat medel)', unit:'%',   dec:1, scale:v=>Math.round(v*10)/10},
+    ];
+
+    const chartImages = {};
+    for(const cfg of chartConfigs) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 540; canvas.height = 170;
+      offscreen.appendChild(canvas);
+
+      const datasets = showYears.map(yr => {
+        const col = RAT_YEAR_COLORS[yr] || '#888';
+        const pts = allPeriods
+          .filter(k => data[k].year === yr)
+          .map(key => {
+            const idx = allPeriods.indexOf(key);
+            const val = getRolling8(allPeriods, data, idx, [storeId], cfg.metric);
+            if(val === null) return null;
+            return {x: data[key].week, y: cfg.scale(val)};
+          }).filter(Boolean);
+
+        return {
+          label: String(yr), data: pts,
+          borderColor: col, backgroundColor: 'transparent',
+          borderWidth: yr===currentYear ? 2.5 : 1.5,
+          borderDash: yr===prevYear ? [5,3] : [],
+          pointRadius: 0, tension: 0.35, parsing: false
+        };
+      });
+
+      await new Promise(resolve => {
+        const ch = new Chart(canvas, {
+          type: 'line', data: {datasets},
+          options: {
+            responsive: false,
+            animation: {onComplete: resolve},
+            plugins: {legend:{display:false}},
+            scales: {
+              x: {type:'linear', min:1, max:52, ticks:{stepSize:8,font:{size:9}}, grid:{color:'rgba(0,0,0,.05)'}},
+              y: {ticks:{font:{size:9}, callback:v=>v.toFixed(cfg.dec)}, grid:{color:'rgba(0,0,0,.05)'}}
+            }
+          }
+        });
+        setTimeout(resolve, 700);
+      });
+
+      chartImages[cfg.id] = canvas.toDataURL('image/png');
+      Chart.getChart(canvas)?.destroy();
+    }
+    document.body.removeChild(offscreen);
+
+    // Lägg till ny sida i PDF
+    const W=210, M=14;
+    const BLUE=[0,47,109], RED=[226,0,0], GR=[107,104,96], DK=[26,26,24], BEIGE=[233,229,224], WHITE=[255,255,255];
+    doc.addPage();
+    let y = 0;
+
+    // Sidhuvud (matchar övriga sidor)
+    doc.setFillColor(...BLUE); doc.rect(0,0,W,18,'F');
+    doc.setFillColor(...RED);  doc.rect(0,16,W,2,'F');
+    doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text(STORES[storeId]||storeId, W-M, 8, {align:'right'});
+    doc.text(`Genererad ${new Date().toLocaleDateString('sv-SE')}`, W-M, 13.5, {align:'right'});
+    y = 26;
+
+    // Sektion-titel
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
+    doc.text('Omsättningstrender', M, y); y += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
+    doc.text(`Rullande 8-veckors medel × 52 · ${currentYear} vs ${prevYear}`, M, y); y += 5;
+
+    // Legend
+    showYears.forEach((yr, i) => {
+      const col = RAT_YEAR_COLORS[yr] || '#888';
+      const rgb = col.match(/[0-9a-f]{2}/gi).map(h=>parseInt(h,16));
+      doc.setFillColor(...rgb); doc.rect(M + i*35, y, 10, 2.5, 'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...rgb);
+      doc.text(String(yr), M+12+i*35, y+2);
+    });
+    y += 8;
+
+    // Tre diagram
+    chartConfigs.forEach(cfg => {
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...DK);
+      doc.text(cfg.label, M, y); y += 3;
+      doc.setFillColor(250,249,246); doc.rect(M, y, W-2*M, 52, 'F');
+      doc.setDrawColor(...BEIGE); doc.setLineWidth(0.3); doc.rect(M, y, W-2*M, 52);
+      if(chartImages[cfg.id]) {
+        doc.addImage(chartImages[cfg.id], 'PNG', M+1, y+1, W-2*M-2, 50);
+      }
+      y += 57;
+    });
+
+  } catch(e) {
+    console.error('Trend page error:', e);
+    // Fortsätt utan trendsida om något går fel
+  }
+}
+
+
 // ── TOTAL PDF MED TRENDDIAGRAM ───────────────────────────────────────
 async function _generateTotalPDF(pdfMode) {
   pdfMode = pdfMode || 'week';
@@ -3274,15 +3397,17 @@ async function generatePDF(storeId, pdfMode) {
   const storeName=storeId===TOTAL_ID?TOTAL_NAME:(STORES[storeId]||storeId);
   const wksArr=[...selWeeks].sort();
   const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
+  await _appendStoreTrendPage(doc, storeId);
   doc.save(`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel.replace(/\s/g,'_')}.pdf`);
   toast('PDF nedladdad ✓');
 }
 
 // Returnerar PDF som base64-sträng (för mailbilaga)
-function generatePDFBase64(storeId, pdfMode) {
+async function generatePDFBase64(storeId, pdfMode) {
   try {
     const doc = _buildPDFDoc(storeId, pdfMode);
     if(!doc) return null;
+    if(storeId !== TOTAL_ID) await _appendStoreTrendPage(doc, storeId);
     return doc.output('datauristring').split(',')[1];
   } catch(e) {
     console.error('PDF error:', e);
@@ -3353,8 +3478,8 @@ function renderKPIAdmin(){
 
     <div class="card">
       <div class="card-head">
-        <div><div class="ct">Trenddiagram i KPI-rapporter</div>
-        <div class="cs">Visa omsättning, antal sålda och BV% som trenddiagram i butikens rapport</div></div>
+        <div><div class="ct">Trenddiagram i PDF-rapporter</div>
+        <div class="cs">Inkludera omsättning, antal sålda och BV% som trenddiagram i PDF-utskick (visas alltid i portalen)</div></div>
         <button class="toggle-btn ${ratShowInReport?'on':'off'}" id="rat-report-toggle"
           onclick="saveRatReportSetting(!ratShowInReport).then(()=>renderKPIAdmin())">
           ${ratShowInReport ? 'PÅ' : 'AV'}
