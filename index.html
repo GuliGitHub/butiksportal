@@ -3092,7 +3092,8 @@ async function loadRatData() {
   if(ratAllData) return ratAllData;
   showLoadingOverlay('Laddar omsättningsdata...');
   try {
-    const rows = await sbGet('os20_data','select=period_key,data&order=period_key&limit=500');
+    const {data:rows, error:ratErr} = await sb.from('os20_data').select('period_key,data').order('period_key').limit(500);
+    if(ratErr) throw new Error(ratErr.message);
     ratAllData = {};
     rows.forEach(r => {
       const parsed = parseWeek(r.period_key);
