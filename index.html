@@ -217,6 +217,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <select id="role-sel" onchange="roleChange()">
       <option value="">— Välj roll —</option>
       <option value="admin">Admin / Central</option>
+      <option value="blommor">🌸 Blomsteradmin</option>
       <option value="store">Butik / Avdelningsansvarig</option>
     </select>
   </div>
@@ -253,7 +254,6 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     </div>
     <div style="display:flex;align-items:center;gap:.875rem">
       <span style="font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.05em;font-family:'SF Mono',monospace" id="topbar-version">...</span>
-      <button class="ghost" onclick="openBlommor()" style="display:flex;align-items:center;gap:5px">🌸 Blomsteradmin</button>
       <button class="ghost" onclick="logout()">Logga ut</button>
     </div>
   </div>
@@ -699,6 +699,15 @@ async function login(){
   const r=document.getElementById('role-sel').value,pin=document.getElementById('pin-in').value,s=document.getElementById('store-sel').value;
   if(!r){toast('Välj en roll');return;}
   if(r==='store'&&!s){toast('Välj butik');return;}
+
+  // Blomsteradmin — verifiera PIN och öppna direkt
+  if(r==='blommor'){
+    if(pin!=='9999'){toast('Fel PIN-kod');return;}
+    window.open('blommor.html','_blank');
+    document.getElementById('pin-in').value='';
+    document.getElementById('role-sel').value='';
+    return;
+  }
 
   // Hämta PINs från Supabase för verifiering
   showLoadingOverlay('Kontrollerar...');
@@ -3052,24 +3061,5 @@ async function rmEmail(id,email){
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
 </script>
 
-<!-- Blomsteradmin PIN-dialog -->
-<div id="blommor-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:14px;padding:2rem;width:320px;box-shadow:0 8px 40px rgba(0,0,0,.25);text-align:center">
-    <div style="font-size:28px;margin-bottom:.5rem">&#127800;</div>
-    <div style="font-size:16px;font-weight:700;color:#002F6D;margin-bottom:.25rem">Blomsteradmin</div>
-    <div style="font-size:12px;color:#6b6860;margin-bottom:1.25rem">Ange PIN-kod for att fortsatta</div>
-    <input id="blommor-pin" type="password" inputmode="numeric" maxlength="4"
-      placeholder="&#8226; &#8226; &#8226; &#8226;"
-      style="width:100%;text-align:center;font-size:28px;letter-spacing:.5em;padding:10px;border:1.5px solid #dedad2;border-radius:8px;outline:none;font-family:'SF Mono',monospace;margin-bottom:.75rem"
-      onkeydown="if(event.key==='Enter')checkBlommorPin()">
-    <div id="blommor-pin-err" style="display:none;font-size:12px;color:#E20000;margin-bottom:.625rem">Fel PIN-kod</div>
-    <div style="display:flex;gap:.5rem">
-      <button onclick="document.getElementById('blommor-overlay').style.display='none';document.getElementById('blommor-pin').value='';document.getElementById('blommor-pin-err').style.display='none'"
-        style="flex:1;padding:10px;border:1px solid #dedad2;border-radius:7px;background:#fff;font-family:inherit;font-size:13px;cursor:pointer">Avbryt</button>
-      <button onclick="checkBlommorPin()"
-        style="flex:1;padding:10px;background:#002F6D;color:#fff;border:none;border-radius:7px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">Oppna</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>
