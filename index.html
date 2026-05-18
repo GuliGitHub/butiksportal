@@ -3089,7 +3089,8 @@ function parseWeek(key) {
 }
 
 async function loadRatData() {
-  if(ratAllData) return ratAllData;
+  if(ratAllData && Object.keys(ratAllData).length > 0) return ratAllData;
+  ratAllData = null;
   showLoadingOverlay('Laddar omsättningsdata...');
   try {
     const {data:rows, error:ratErr} = await sb.from('os20_data').select('period_key,data').order('period_key').limit(500);
@@ -3250,6 +3251,11 @@ function updateRatChart() {
   if(!canvas) return;
   if(ratChart) { ratChart.destroy(); ratChart = null; }
 
+  if(typeof Chart === 'undefined'){
+    console.error('Chart.js not loaded');
+    canvas.parentElement.innerHTML = '<div style="padding:2rem;text-align:center;color:red">Chart.js kunde inte laddas</div>';
+    return;
+  }
   ratChart = new Chart(canvas, {
     type: 'line',
     data: {datasets},
@@ -3375,5 +3381,6 @@ function buildRatKpiCards(data, storeId, activeYears) {
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
 </script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </body>
 </html>
