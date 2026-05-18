@@ -266,6 +266,7 @@ body{font-family:var(--ö-sans);background:var(--ö-bkg);color:var(--ö-text);fo
     <div class="panel" id="panel-pdf"></div>
     <div class="panel" id="panel-upload-försäljning"></div>
     <div class="panel" id="panel-upload-svinn"></div>
+    <div class="panel" id="panel-rat"></div>
     <div class="panel" id="panel-kpi-admin"></div>
     <div class="panel" id="panel-perioder"></div>
     <div class="panel" id="panel-admin"></div>
@@ -921,6 +922,7 @@ function buildNav(){
       <div class="ni" onclick="showTab('upload-svinn',this)">🗑 Svinn</div>
       <div class="ni" onclick="showTab('perioder',this)">📅 Perioder</div>
       <div class="ni" onclick="showTab('kpi-admin',this)">KPI-inställningar</div>
+      <div class="ni" onclick="showTab('rat',this)">&#128200; Omsättningstrend</div>
       <div class="ni" onclick="showTab('admin',this)">Butiksinställningar</div>`
     :`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
@@ -938,7 +940,7 @@ function showTab(tab,el){
 function renderPanel(tab){
   ({overview:renderOverview,storemål:renderStoreMål,deptmål:renderDeptMål,actions:renderActions,
     pdf:renderPdfPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,
-    perioder:renderPerioder,'kpi-admin':renderKPIAdmin,admin:renderAdmin})[tab]?.();
+    perioder:renderPerioder,'kpi-admin':renderKPIAdmin,rat:renderRAT,admin:renderAdmin})[tab]?.();
 }
 
 // ── VIEW TOGGLE ───────────────────────────────────────
@@ -3056,6 +3058,317 @@ async function rmEmail(id,email){
   await saveStoreSettings(id);
   const tags=document.getElementById(`etags-${id}`);
   if(tags)tags.innerHTML=sd.emails.length?sd.emails.map(e=>`<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${id}','${e}')">x</button></span>`).join(''):'<span style="font-size:12px;color:var(--ö-muted)">Inga mailadresser angivna</span>';
+}
+
+
+// ── RAT - OMSÄTTNINGSTREND ────────────────────────────────────────────
+var ratChart = null;
+var ratAllData = null; // {periodKey: {storeId: forsaljning}}
+
+const RAT_STORES = {
+  '4730':'Motala Verkstan','4732':'Motala Väster','4734':'Borensberg',
+  '4735':'Kungs Starby','4736':'Mima i Vadstena','4737':'Skänninge',
+  '4738':'Ullstämma','4756':'Björkalund','4757':'Folkungavallen'
+};
+
+const RAT_YEAR_COLORS = {
+  2023:'#94a3b8', 2024:'#60a5fa', 2025:'#002F6D', 2026:'#E20000'
+};
+const RAT_YEAR_WIDTH = {
+  2023:1.5, 2024:1.5, 2025:2, 2026:3
+};
+const RAT_YEAR_DASH = {
+  2023:[6,3], 2024:[4,2], 2025:[], 2026:[]
+};
+
+function parseWeek(key) {
+  // "2023-V01" -> {year:2023, week:1}
+  const m = key.match(/(\d{4})-V(\d+)/);
+  if(!m) return null;
+  return {year:parseInt(m[1]), week:parseInt(m[2])};
+}
+
+async function loadRatData() {
+  if(ratAllData) return ratAllData;
+  showLoadingOverlay('Laddar omsättningsdata...');
+  try {
+    const rows = await sbGet('os20_data','select=period_key,data&order=period_key&limit=500');
+    ratAllData = {};
+    rows.forEach(r => {
+      const parsed = parseWeek(r.period_key);
+      if(!parsed) return;
+      ratAllData[r.period_key] = {year:parsed.year, week:parsed.week, stores:{}};
+      Object.entries(r.data||{}).forEach(([sid,sd]) => {
+        if(sd.forsaljning) ratAllData[r.period_key].stores[sid] = sd.forsaljning;
+      });
+    });
+    hideLoadingOverlay();
+    return ratAllData;
+  } catch(e) {
+    hideLoadingOverlay();
+    console.error('RAT load error',e);
+    return {};
+  }
+}
+
+function buildRolling52(data, storeId) {
+  // data = ratAllData, returns [{year,week,value}] rullande 52v per period
+  const periods = Object.keys(data).sort();
+  const result = [];
+  periods.forEach((key, idx) => {
+    const {year, week} = data[key];
+    // Samla senaste 52 veckors data
+    let sum = 0, count = 0;
+    for(let back = 0; back < 52; back++) {
+      const pastKey = periods[idx - back];
+      if(!pastKey) break;
+      const oms = data[pastKey].stores[storeId];
+      if(oms != null) { sum += oms; count++; }
+    }
+    if(count >= 10) { // minst 10 veckors data för att rita
+      result.push({year, week, key, value: sum});
+    }
+  });
+  return result;
+}
+
+async function renderRAT() {
+  const el = document.getElementById('panel-rat');
+  if(!el) return;
+
+  el.innerHTML = `
+    <div class="ph" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <div><div class="pt">Omsättningstrend</div><div class="ps">Rullande 52-veckors omsättning — år mot år</div></div>
+    </div>
+    <div style="background:#fff;border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem;margin-bottom:1rem">
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem">
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">BUTIK</label>
+          <select id="rat-store" style="border:1px solid var(--ö-border);border-radius:7px;padding:6px 10px;font-size:13px;outline:none;background:#fff" onchange="updateRatChart()">
+            <option value="all">Alla butiker (koncern)</option>
+            ${Object.entries(RAT_STORES).map(([id,name])=>`<option value="${id}">${name}</option>`).join('')}
+          </select>
+        </div>
+        <div id="rat-year-toggles" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em">ÅR:</span>
+        </div>
+      </div>
+      <div id="rat-legend" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem;font-size:12px"></div>
+      <div style="position:relative;width:100%;height:380px">
+        <canvas id="rat-canvas" role="img" aria-label="Rullande 52-veckors omsättning per år"></canvas>
+      </div>
+      <div id="rat-kpi-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-top:1.25rem"></div>
+    </div>`;
+
+  const data = await loadRatData();
+  if(!data || !Object.keys(data).length) {
+    el.innerHTML += '<div style="padding:2rem;text-align:center;color:var(--ö-muted)">Ingen data tillgänglig</div>';
+    return;
+  }
+
+  // Bygg år-knappar
+  const years = [...new Set(Object.values(data).map(d=>d.year))].sort();
+  const activeYears = new Set(years);
+  const togglesEl = document.getElementById('rat-year-toggles');
+  years.forEach(yr => {
+    const btn = document.createElement('button');
+    btn.id = 'rat-yr-'+yr;
+    btn.textContent = yr;
+    btn.style.cssText = `padding:4px 12px;border-radius:20px;border:2px solid ${RAT_YEAR_COLORS[yr]||'#888'};
+      background:${RAT_YEAR_COLORS[yr]||'#888'};color:#fff;font-size:12px;font-weight:600;cursor:pointer`;
+    btn.onclick = () => {
+      if(activeYears.has(yr)) { activeYears.delete(yr); btn.style.background='transparent'; btn.style.color=RAT_YEAR_COLORS[yr]||'#888'; }
+      else { activeYears.add(yr); btn.style.background=RAT_YEAR_COLORS[yr]||'#888'; btn.style.color='#fff'; }
+      updateRatChart();
+    };
+    togglesEl.appendChild(btn);
+  });
+
+  window._ratData = data;
+  window._ratActiveYears = activeYears;
+  window._ratYears = years;
+  updateRatChart();
+}
+
+function updateRatChart() {
+  const data = window._ratData;
+  if(!data) return;
+  const activeYears = window._ratActiveYears;
+  const years = window._ratYears;
+  const storeId = document.getElementById('rat-store')?.value || 'all';
+
+  // Bygg datasets per år
+  // X-axeln = veckonummer 1-53, Y = rullande 52v omsättning
+  const datasets = [];
+  const allPeriods = Object.keys(data).sort();
+
+  years.forEach(yr => {
+    if(!activeYears.has(yr)) return;
+
+    // Hämta alla perioder för detta år
+    const yearPeriods = allPeriods.filter(k => data[k].year === yr);
+
+    const points = yearPeriods.map(key => {
+      let val = 0;
+      // Rullande 52v: summera bakåt
+      const periodIdx = allPeriods.indexOf(key);
+      let sum = 0, count = 0;
+      for(let back = 0; back < 52; back++) {
+        const pastKey = allPeriods[periodIdx - back];
+        if(!pastKey) break;
+        let oms = 0;
+        if(storeId === 'all') {
+          Object.values(data[pastKey].stores).forEach(v => oms += v);
+        } else {
+          oms = data[pastKey].stores[storeId] || 0;
+        }
+        if(oms > 0) { sum += oms; count++; }
+      }
+      val = count >= 4 ? sum : null;
+      return {x: data[key].week, y: val ? Math.round(val/1000000 * 10)/10 : null};
+    }).filter(p => p.y !== null);
+
+    if(!points.length) return;
+    const color = RAT_YEAR_COLORS[yr] || '#888';
+    datasets.push({
+      label: String(yr),
+      data: points,
+      borderColor: color,
+      backgroundColor: 'transparent',
+      borderWidth: RAT_YEAR_WIDTH[yr] || 2,
+      borderDash: RAT_YEAR_DASH[yr] || [],
+      pointRadius: yr === new Date().getFullYear() ? 3 : 0,
+      pointHoverRadius: 5,
+      tension: 0.3,
+      parsing: false
+    });
+  });
+
+  // Rita
+  const canvas = document.getElementById('rat-canvas');
+  if(!canvas) return;
+  if(ratChart) { ratChart.destroy(); ratChart = null; }
+
+  ratChart = new Chart(canvas, {
+    type: 'line',
+    data: {datasets},
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {mode:'index', intersect:false},
+      plugins: {
+        legend: {display:false},
+        tooltip: {
+          callbacks: {
+            title: ctx => 'Vecka ' + ctx[0].parsed.x,
+            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + ' Mkr'
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 1, max: 52,
+          title: {display:true, text:'Vecka', font:{size:11}},
+          ticks: {stepSize:4, font:{size:11}},
+          grid: {color:'rgba(0,0,0,.05)'}
+        },
+        y: {
+          title: {display:true, text:'Rullande 52v omsättning (Mkr)', font:{size:11}},
+          ticks: {
+            font:{size:11},
+            callback: v => v.toFixed(0) + ' Mkr'
+          },
+          grid: {color:'rgba(0,0,0,.05)'}
+        }
+      }
+    }
+  });
+
+  // Uppdatera legend
+  const legEl = document.getElementById('rat-legend');
+  if(legEl) {
+    legEl.innerHTML = datasets.map(ds => {
+      const isDashed = (RAT_YEAR_DASH[parseInt(ds.label)]||[]).length > 0;
+      return `<span style="display:flex;align-items:center;gap:5px">
+        <span style="display:inline-block;width:24px;height:3px;background:${ds.borderColor};
+          border-top:${isDashed?'2px dashed '+ds.borderColor:'none'}"></span>
+        <span style="font-weight:${parseInt(ds.label)>=2025?'600':'400'};color:${ds.borderColor}">${ds.label}</span>
+      </span>`;
+    }).join('');
+  }
+
+  // KPI-kort: jämför senaste vecka i aktuellt år mot samma vecka förra året
+  buildRatKpiCards(data, storeId, activeYears);
+}
+
+function buildRatKpiCards(data, storeId, activeYears) {
+  const el = document.getElementById('rat-kpi-row');
+  if(!el) return;
+
+  const allPeriods = Object.keys(data).sort();
+  const currentYear = new Date().getFullYear();
+  const prevYear = currentYear - 1;
+
+  if(!activeYears.has(currentYear) || !activeYears.has(prevYear)) { el.innerHTML=''; return; }
+
+  // Hitta senaste period för aktuellt år
+  const curPeriods = allPeriods.filter(k => data[k].year === currentYear);
+  if(!curPeriods.length) { el.innerHTML=''; return; }
+  const latestKey = curPeriods[curPeriods.length-1];
+  const latestWeek = data[latestKey].week;
+
+  // Beräkna rullande 52v för aktuellt år och föregående år samma vecka
+  function getRolling52(year, week) {
+    const targetKey = allPeriods.find(k => data[k].year===year && data[k].week===week);
+    if(!targetKey) return null;
+    const idx = allPeriods.indexOf(targetKey);
+    let sum=0, count=0;
+    for(let b=0;b<52;b++) {
+      const pk = allPeriods[idx-b];
+      if(!pk) break;
+      let oms = storeId==='all'
+        ? Object.values(data[pk].stores).reduce((a,v)=>a+v,0)
+        : (data[pk].stores[storeId]||0);
+      if(oms>0){sum+=oms;count++;}
+    }
+    return count>=4 ? sum : null;
+  }
+
+  const curVal = getRolling52(currentYear, latestWeek);
+  const prevVal = getRolling52(prevYear, latestWeek);
+
+  if(!curVal) { el.innerHTML=''; return; }
+
+  const diff = prevVal ? ((curVal-prevVal)/prevVal*100) : null;
+  const diffStr = diff!=null ? (diff>=0?'+':'')+diff.toFixed(1)+'%' : '—';
+  const diffColor = diff!=null ? (diff>=0?'#1e6b2e':'#c62828') : '#888';
+
+  el.innerHTML = `
+    <div style="background:#f0ede8;border-radius:8px;padding:.875rem 1rem">
+      <div style="font-size:10px;font-weight:600;color:#6b6860;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">
+        Rullande 52v — V${latestWeek} ${currentYear}
+      </div>
+      <div style="font-size:24px;font-weight:700;font-family:monospace;color:#002F6D">
+        ${curVal ? (curVal/1000000).toFixed(1)+' Mkr' : '—'}
+      </div>
+    </div>
+    <div style="background:#f0ede8;border-radius:8px;padding:.875rem 1rem">
+      <div style="font-size:10px;font-weight:600;color:#6b6860;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">
+        Samma vecka ${prevYear}
+      </div>
+      <div style="font-size:24px;font-weight:700;font-family:monospace;color:#002F6D">
+        ${prevVal ? (prevVal/1000000).toFixed(1)+' Mkr' : '—'}
+      </div>
+    </div>
+    <div style="background:#f0ede8;border-radius:8px;padding:.875rem 1rem">
+      <div style="font-size:10px;font-weight:600;color:#6b6860;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">
+        Förändring år mot år
+      </div>
+      <div style="font-size:24px;font-weight:700;font-family:monospace;color:${diffColor}">
+        ${diffStr}
+      </div>
+    </div>`;
 }
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
