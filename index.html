@@ -1649,8 +1649,9 @@ async function sendTotalReport(pdfMode) {
   if(statusEl){ statusEl.style.display='flex'; statusEl.textContent='Skickar totalrapport...'; statusEl.style.background='#e8eef7'; statusEl.style.color='var(--ö-blue)'; }
   try {
     const pdfBase64 = generatePDFBase64(TOTAL_ID, pdfMode);
+    if(!pdfBase64){toast('⚠ Kunde inte generera PDF');return;}
     const wData = getTotalData(new Set(Object.keys(REPORT_DB).sort().slice(-1)));
-    const pk = wData?.pk || Object.keys(REPORT_DB).sort().pop() || '—';
+    const pk = Object.keys(REPORT_DB).sort().pop() || '—';
     const resp = await fetch('https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/send-store-report', {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNuaWZyaXpkaW9pd2x2Z2J4c3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzU5NjQsImV4cCI6MjA5MzQ1MTk2NH0.Eerq42ACQ9UhCsnTdBji8VNv4OggbOdUHxityXNIk9g'},
@@ -1658,7 +1659,7 @@ async function sendTotalReport(pdfMode) {
         to: emails,
         storeName: TOTAL_NAME,
         periodKey: pk,
-        pdfBase64: pdfBase64.split(',')[1]
+        pdfBase64: pdfBase64
       })
     });
     if(resp.ok){
@@ -2771,8 +2772,8 @@ function buildMailHTML(storeId, pdfMode) {
 function _buildPDFDoc(storeId,pdfMode){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const sd=isTotal ? {storeGoals:Object.values(DB)[0]?.storeGoals||{},deptGoals:{},actions:{},emails:[]} : getSD(storeId);
   const isTotal = storeId === TOTAL_ID;
+  const sd=isTotal ? {storeGoals:Object.values(DB)[0]?.storeGoals||{},deptGoals:{},actions:{},emails:[]} : getSD(storeId);
   const storeName=isTotal?TOTAL_NAME:(STORES[storeId]||storeId);
   const wData=isTotal ? getTotalData(new Set(Object.keys(REPORT_DB).sort().slice(-1))) : getLatestWeekData(storeId);
   const aData=(pdfMode==='period'||pdfMode==='both')?(isTotal?getTotalData(selWeeks):getAccDataFromWeeks(storeId,selWeeks)):null;
@@ -3091,8 +3092,7 @@ function _buildPDFDoc(storeId,pdfMode){
 function generatePDF(storeId, pdfMode) {
   const doc = _buildPDFDoc(storeId, pdfMode);
   if(!doc) return;
-  const sd=getSD(storeId);
-  const storeName=STORES[storeId]||storeId;
+  const storeName=storeId===TOTAL_ID?TOTAL_NAME:(STORES[storeId]||storeId);
   const wksArr=[...selWeeks].sort();
   const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
   doc.save(`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel.replace(/\s/g,'_')}.pdf`);
@@ -3101,9 +3101,15 @@ function generatePDF(storeId, pdfMode) {
 
 // Returnerar PDF som base64-sträng (för mailbilaga)
 function generatePDFBase64(storeId, pdfMode) {
-  const doc = _buildPDFDoc(storeId, pdfMode);
-  if(!doc) return null;
-  return doc.output('datauristring').split(',')[1];
+  try {
+    const doc = _buildPDFDoc(storeId, pdfMode);
+    if(!doc) return null;
+    return doc.output('datauristring').split(',')[1];
+  } catch(e) {
+    console.error('PDF error:', e);
+    toast('⚠ PDF-fel: ' + e.message);
+    return null;
+  }
 }
 
 // ── KPI-ADMIN ─────────────────────────────────────────
