@@ -702,7 +702,6 @@ function getTotalKPIVal(key, weeks) {
   switch(key) {
     case 'oms':      return data?.forsaljningDelta ?? null;
     case 'marginal':    return data?.bvPct ?? null;
-    case 'marginal_kr': return data?.bvKr  ?? null;
     case 'antal':    return data?.antalDelta ?? null;
     case 'svinn_k':  return getTotalSvinnPct(wks);
     case 'kvitton': {
@@ -1251,6 +1250,14 @@ function getKPIVal(key, storeId, weeks) {
   switch(key) {
     case 'oms':          return isAcc ? accBIBMean(d=>d?.forsaljningDelta) : (latestBIB?.forsaljningDelta ?? null);
     case 'marginal':     return isAcc ? accBIBMean(d=>d?.bvPct)            : (latestBIB?.bvPct ?? null);
+    case 'marginal_kr':  {
+      // Summera BV kr över valda veckor (inte medelvärde)
+      if(isAcc) {
+        const vals=[...wks].map(pk=>REPORT_DB[pk]?.[curSid]?.bvKr).filter(v=>v!=null);
+        return vals.length ? vals.reduce((a,b)=>a+b,0) : null;
+      }
+      return latestBIB?.bvKr ?? null;
+    }
     case 'antal':        return isAcc ? accBIBMean(d=>d?.antalDelta)        : (latestBIB?.antalDelta ?? null);
     case 'svinn_k':      return svinnVal();
     case 'kvitton':      return isAcc ? accOS20Mean(d=>d?.kvittonDelta)     : (latestOS20?.kvittonDelta ?? null);
