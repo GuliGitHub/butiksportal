@@ -363,7 +363,19 @@ async function loadAllFromSupabase() {
 
   await tryLoad('svinn_data', async () => {
     const rows = await sbGet('svinn_data');
-    rows.forEach(row => { SVINN_DB[row.period_key] = row.data; });
+    rows.forEach(row => {
+      // Berika svinn-rader med deptCode via EAN_DEPT_MAP om det saknas
+      const enriched = {};
+      Object.entries(row.data || {}).forEach(([storeId, svinnRows]) => {
+        enriched[storeId] = (svinnRows || []).map(r => {
+          if (r.deptCode) return r; // redan satt
+          const key = r.artNr || r.ean || '';
+          const mapped = EAN_DEPT_MAP[key];
+          return mapped ? {...r, deptCode: mapped.dept} : r;
+        });
+      });
+      SVINN_DB[row.period_key] = enriched;
+    });
   });
 
   await tryLoad('periods', async () => {
@@ -2950,15 +2962,34 @@ function _buildPDFDoc(storeId,pdfMode){
       doc.text('ACTIONS',M+3,y+3.8);
       y+=5.5;
       acts.forEach(a=>{
-        doc.setFillColor(250,249,246);doc.rect(M,y,W-2*M,6,'F');
-        doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);doc.rect(M,y,W-2*M,6);
-        doc.setTextColor(a.done?GREEN[0]:BLUE[0],a.done?GREEN[1]:BLUE[1],a.done?GREEN[2]:BLUE[2]);
-        doc.setFont('helvetica','bold');doc.setFontSize(8);
-        doc.text(a.done?'✓':'○',M+3,y+4.2);
-        doc.setFont('helvetica','normal');doc.setTextColor(...DK);
-        const txt=a.text+(a.cond?'  ·  '+a.cond:'');
-        doc.text(txt,M+9,y+4.2,{maxWidth:W-2*M-12});
-        y+=6;
+        // Beräkna texthöjd för radbrytning
+        doc.setFont('helvetica','normal');doc.setFontSize(8);
+        const txt=a.text+(a.cond?'  |  '+a.cond:'');
+        const lines=doc.splitTextToSize(txt,W-2*M-14);
+        const rowH=Math.max(6,lines.length*4.5+3);
+
+        if(a.done){doc.setFillColor(245,250,245);}else{doc.setFillColor(250,249,246);}
+        doc.rect(M,y,W-2*M,rowH,'F');
+        doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);
+        doc.rect(M,y,W-2*M,rowH);
+
+        // Checkbox-ruta ritad med rect
+        const bx=M+3, by=y+1.8, bs=3.2;
+        doc.setDrawColor(a.done?GREEN[0]:100,a.done?GREEN[1]:100,a.done?GREEN[2]:100);
+        doc.setLineWidth(0.4);
+        doc.rect(bx,by,bs,bs);
+        if(a.done){
+          // Bock med streck
+          doc.setDrawColor(...GREEN);doc.setLineWidth(0.5);
+          doc.line(bx+0.5,by+1.6,bx+1.3,by+2.6);
+          doc.line(bx+1.3,by+2.6,bx+2.7,by+0.5);
+        }
+
+        // Text
+        doc.setFont('helvetica','normal');doc.setFontSize(8);
+        doc.setTextColor(...DK);
+        doc.text(lines,M+9,y+4.2);
+        y+=rowH;
       });
     }
 
