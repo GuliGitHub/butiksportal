@@ -1118,6 +1118,10 @@ function renderStoreTrendCharts(storeId) {
         <div style="font-size:11px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Bruttovinst %</div>
         <div style="position:relative;height:160px"><canvas id="st-bv-${storeId}"></canvas></div>
       </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Antal kvitton (årstakt)</div>
+        <div style="position:relative;height:160px"><canvas id="st-kvitton-${storeId}"></canvas></div>
+      </div>
     </div>
     <div id="st-legend-${storeId}" style="display:flex;gap:12px;margin-top:.75rem;font-size:11px"></div>
   </div>`;
@@ -3482,9 +3486,10 @@ async function _appendStoreTrendPage(doc, storeId) {
     document.body.appendChild(offscreen);
 
     const chartConfigs = [
-      {id:`pdf-s-oms-${storeId}`,   metric:'oms',   label:'Omsättning (Mkr årstakt)',    unit:'Mkr', dec:1, scale:v=>Math.round(v/1000000*10)/10},
-      {id:`pdf-s-antal-${storeId}`, metric:'antal', label:'Antal sålda (st årstakt)',     unit:'st',  dec:0, scale:v=>Math.round(v)},
-      {id:`pdf-s-bv-${storeId}`,    metric:'bvpct', label:'Bruttovinst % (viktat medel)', unit:'%',   dec:1, scale:v=>Math.round(v*10)/10},
+      {id:`pdf-s-oms-${storeId}`,     metric:'oms',     label:'Omsättning (Mkr årstakt)',    unit:'Mkr', dec:1, scale:v=>Math.round(v/1000000*10)/10},
+      {id:`pdf-s-antal-${storeId}`,   metric:'antal',   label:'Antal sålda (st årstakt)',     unit:'st',  dec:0, scale:v=>Math.round(v)},
+      {id:`pdf-s-bv-${storeId}`,      metric:'bvpct',   label:'Bruttovinst % (viktat medel)', unit:'%',   dec:1, scale:v=>Math.round(v*10)/10},
+      {id:`pdf-s-kvitton-${storeId}`, metric:'kvitton', label:'Antal kvitton (årstakt)',      unit:'st',  dec:0, scale:v=>Math.round(v)},
     ];
 
     const chartImages = {};
@@ -3965,10 +3970,11 @@ async function loadRatData() {
       ratAllData[r.period_key] = {year:parsed.year, week:parsed.week, stores:{}};
       Object.entries(r.data||{}).forEach(([sid,sd]) => {
         if(sd.forsaljning != null) ratAllData[r.period_key].stores[sid] = {
-          oms:   sd.forsaljning  || 0,
-          antal: sd.antalSt      || 0,
-          bvKr:  sd.bvKr         || 0,
-          bvPct: sd.bvPct        || 0
+          oms:     sd.forsaljning  || 0,
+          antal:   sd.antalSt      || 0,
+          bvKr:    sd.bvKr         || 0,
+          bvPct:   sd.bvPct        || 0,
+          kvitton: sd.kvitton      || 0,
         };
       });
     });
@@ -3992,9 +3998,10 @@ function getRolling8(allPeriods, data, periodIdx, storeIds, metric) {
       const sd = data[pk].stores[sid];
       if(!sd) return;
       hasData = true;
-      if(metric === 'oms')   { wOms += sd.oms; wVal += sd.oms; }
-      if(metric === 'antal') { wOms += sd.oms; wVal += sd.antal; }
-      if(metric === 'bvpct') { wOms += sd.oms; wVal += sd.bvKr; } // viktat mot oms
+      if(metric === 'oms')     { wOms += sd.oms; wVal += sd.oms; }
+      if(metric === 'antal')   { wOms += sd.oms; wVal += sd.antal; }
+      if(metric === 'bvpct')   { wOms += sd.oms; wVal += sd.bvKr; } // viktat mot oms
+      if(metric === 'kvitton') { wOms += sd.oms; wVal += sd.kvitton || 0; }
     });
     if(hasData) { sumOms += wOms; sumVal += wVal; count++; }
   }
@@ -4114,9 +4121,10 @@ function buildRatChartContainers() {
   const wrap = document.getElementById('rat-charts-wrap');
   if(!wrap) return;
   const charts = [
-    {id:'rat-oms',   title:'Omsättning',    unit:'Mkr', sub:'Rullande 8-veckors medel × 52'},
-    {id:'rat-antal', title:'Antal sålda',   unit:'st',  sub:'Rullande 8-veckors medel × 52'},
-    {id:'rat-bv',    title:'Bruttovinst %', unit:'%',   sub:'Rullande 8-veckors viktat medel'},
+    {id:'rat-oms',     title:'Omsättning',    unit:'Mkr', sub:'Rullande 8-veckors medel × 52'},
+    {id:'rat-antal',   title:'Antal sålda',   unit:'st',  sub:'Rullande 8-veckors medel × 52'},
+    {id:'rat-bv',      title:'Bruttovinst %', unit:'%',   sub:'Rullande 8-veckors viktat medel'},
+    {id:'rat-kvitton', title:'Antal kvitton', unit:'st',  sub:'Rullande 8-veckors medel × 52'},
   ];
   wrap.innerHTML = charts.map(c => `
     <div>
@@ -4146,8 +4154,8 @@ function makeRatDatasets(metric, allPeriods, data, activeYears, activeStores) {
       const idx = allPeriods.indexOf(key);
       const val = getRolling8(allPeriods, data, idx, storeIds, metric);
       if(val === null) return null;
-      let display = metric === 'oms' ? Math.round(val/1000000*10)/10
-                  : metric === 'bvpct' ? Math.round(val*10)/10
+      let display = metric === 'oms'   ? Math.round(val/1000000*10)/10
+                  : metric === 'bvpct'   ? Math.round(val*10)/10
                   : Math.round(val);
       return {x: data[key].week, y: display};
     }).filter(Boolean);
@@ -4228,9 +4236,12 @@ function updateRatCharts() {
   const activeYears = window._ratActiveYears;
   const activeStores = window._ratActiveStores;
 
-  drawRatChart('rat-oms',   makeRatDatasets('oms',   allPeriods, data, activeYears, activeStores), 'Mkr',  1);
-  drawRatChart('rat-antal', makeRatDatasets('antal', allPeriods, data, activeYears, activeStores), 'st',   0);
-  drawRatChart('rat-bv',    makeRatDatasets('bvpct', allPeriods, data, activeYears, activeStores), '%',    1);
+  
+  
+  drawRatChart('rat-oms',     makeRatDatasets('oms',     allPeriods, data, activeYears, activeStores), 'Mkr',  1);
+  drawRatChart('rat-antal',   makeRatDatasets('antal',   allPeriods, data, activeYears, activeStores), 'st',   0);
+  drawRatChart('rat-bv',      makeRatDatasets('bvpct',   allPeriods, data, activeYears, activeStores), '%',    1);
+  drawRatChart('rat-kvitton', makeRatDatasets('kvitton', allPeriods, data, activeYears, activeStores), 'st',   0);
 }
 
 // ── RAT I KPI-RAPPORT ────────────────────────────────────────────────
