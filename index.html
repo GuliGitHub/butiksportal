@@ -3049,32 +3049,6 @@ function _buildPDFDoc(storeId,pdfMode){
     });
     y+=Math.ceil(accKpis.length/3)*tH2+4;
 
-    // Avdelningstabell ackumulerat
-    const accDepts=(accPeriodData.depts||[]).filter(d=>d.forsaljning>0);
-    if(accDepts.length>0){
-      if(y>220){doc.addPage();y=20;}
-      doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...BLUE);
-      doc.text('Avdelningsöversikt — ackumulerat',M,y);y+=3;
-      const hSa={fontStyle:'bold',fontSize:6,textColor:GR,fillColor:LTGRAY,cellPadding:1.5};
-      const bSa={fontSize:7,textColor:DK,fillColor:WHITE,cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15};
-      doc.autoTable({startY:y,margin:{left:M,right:M},body:[
-        [{content:'Avdelning',styles:hSa},{content:'Oms kr',styles:{...hSa,halign:'right'}},
-         {content:'Oms Δ%',styles:{...hSa,halign:'center'}},{content:'BV%',styles:{...hSa,halign:'center'}},
-         {content:'BV kr',styles:{...hSa,halign:'right'}}],
-        ...accDepts.map(d=>{
-          const oC=d.forsaljningDelta!=null?(d.forsaljningDelta*100>=5?GREEN:d.forsaljningDelta*100>=4?AMBER:REDD):GR;
-          const bC=d.bvPct!=null?(d.bvPct*100>=28?GREEN:d.bvPct*100>=25?AMBER:REDD):GR;
-          return[{content:d.name||d.code,styles:bSa},
-            {content:Math.round(d.forsaljning).toLocaleString('sv-SE')+' kr',styles:{...bSa,halign:'right'}},
-            {content:d.forsaljningDelta!=null?(d.forsaljningDelta>=0?'+':'')+(d.forsaljningDelta*100).toFixed(1)+'%':'—',styles:{...bSa,halign:'center',textColor:oC}},
-            {content:d.bvPct!=null?(d.bvPct*100).toFixed(1)+'%':'—',styles:{...bSa,halign:'center',textColor:bC}},
-            {content:Math.round(d.bvKr).toLocaleString('sv-SE')+' kr',styles:{...bSa,halign:'right'}}];
-        })],
-        styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15},
-        didParseCell:data=>{if(data.row.index===0)data.cell.styles.fillColor=LTGRAY;}
-      });
-      y=doc.lastAutoTable.finalY+6;
-    }
     if(y>220){doc.addPage();y=20;}else{y+=4;}
   }
 
