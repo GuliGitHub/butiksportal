@@ -397,7 +397,7 @@ async function loadAllFromSupabase() {
 
   await tryLoad('periods', async () => {
     const rows = await sbGet('periods');
-    PERIODS = rows.map(p => ({id:p.id, name:p.name, year:p.year, weekFrom:p.week_from, weekTo:p.week_to}));
+    PERIODS = rows.map(p => ({id:p.id, name:p.name, year:p.year, yearFrom:p.year_from||p.year, yearTo:p.year_to||p.year, weekFrom:p.week_from, weekTo:p.week_to}));
   });
 
   await tryLoad('kpi_config', async () => {
@@ -477,7 +477,7 @@ async function deleteSvinnPeriod(periodKey) {
 
 // Spara period-definition
 async function savePeriod(p) {
-  await sbUpsert('periods', {id:p.id, name:p.name, year:p.year, week_from:p.weekFrom, week_to:p.weekTo});
+  await sbUpsert('periods', {id:p.id, name:p.name, year:p.year, year_from:p.yearFrom||p.year, year_to:p.yearTo||p.year, week_from:p.weekFrom, week_to:p.weekTo});
 }
 async function deletePeriodFromDB(id) {
   await sbDelete('periods', {id});
@@ -1853,13 +1853,20 @@ function renderPerioder(){
     <div class="card"><div class="card-head"><div class="ct">Lägg till period</div></div>
       <div style="padding:1rem;display:flex;flex-wrap:wrap;gap:.625rem;align-items:flex-end">
         <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Namn</label>
-          <input id="np-name" placeholder="t.ex. Kvartal 1" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:7px 9px;font-family:inherit;font-size:13px;outline:none;width:160px"></div>
-        <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">År</label>
-          <input id="np-year" type="number" value="${y}" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:13px;outline:none;width:80px"></div>
+          <input id="np-name" placeholder="t.ex. Bokslutsår 2025/2026" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:6px 8px;font-size:13px;width:180px;outline:none">
+        </div>
+        <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Från år</label>
+          <input id="np-year-from" type="number" value="${y}" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:6px 8px;font-size:13px;width:80px;outline:none">
+        </div>
         <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Från vecka</label>
-          <input id="np-from" type="number" min="1" max="53" value="1" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:13px;outline:none;width:72px"></div>
+          <input id="np-from" type="number" min="1" max="53" value="9" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:6px 8px;font-size:13px;width:70px;outline:none">
+        </div>
+        <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Till år</label>
+          <input id="np-year-to" type="number" value="${y+1}" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:6px 8px;font-size:13px;width:80px;outline:none">
+        </div>
         <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Till vecka</label>
-          <input id="np-to" type="number" min="1" max="53" value="13" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:13px;outline:none;width:72px"></div>
+          <input id="np-to" type="number" min="1" max="53" value="8" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:6px;padding:6px 8px;font-size:13px;width:70px;outline:none">
+        </div>
         <button class="btn-sm green" onclick="addPeriod()">+ Lägg till</button>
       </div>
     </div>
@@ -1881,9 +1888,14 @@ function renderPerioder(){
     </div>`;
 }
 async function addPeriod(){
-  const name=document.getElementById('np-name')?.value?.trim(),year=parseInt(document.getElementById('np-year')?.value),from=parseInt(document.getElementById('np-from')?.value),to=parseInt(document.getElementById('np-to')?.value);
-  if(!name){toast('Ange ett namn');return;}if(from>to){toast('Från-vecka måste vara ≤ till-vecka');return;}
-  const p={id:Date.now().toString(),name,year,weekFrom:from,weekTo:to};
+  const name=document.getElementById('np-name')?.value?.trim();
+  const yearFrom=parseInt(document.getElementById('np-year-from')?.value);
+  const yearTo=parseInt(document.getElementById('np-year-to')?.value||yearFrom);
+  const from=parseInt(document.getElementById('np-from')?.value);
+  const to=parseInt(document.getElementById('np-to')?.value);
+  if(!name){toast('Ange ett namn');return;}
+  if(!yearFrom||!from||!to){toast('Fyll i alla fält');return;}
+  const p={id:Date.now().toString(),name,year:yearFrom,yearFrom,yearTo:yearTo||yearFrom,weekFrom:from,weekTo:to};
   PERIODS.push(p);
   await savePeriod(p);
   toast(`"${name}" skapad ✓`);renderPerioder();
@@ -2811,6 +2823,64 @@ function buildMailHTML(storeId, pdfMode) {
 </body></html>`;
 }
 
+
+// Hämta alla period_keys för en period (stöder bokslutsår över två kalenderår)
+function getPeriodKeys(period) {
+  const keys = [];
+  const yFrom = period.yearFrom || period.year;
+  const yTo   = period.yearTo   || period.year;
+  if(yFrom === yTo) {
+    for(let w = period.weekFrom; w <= period.weekTo; w++)
+      keys.push(`${yFrom}-V${String(w).padStart(2,'0')}`);
+  } else {
+    // År 1: från weekFrom till vecka 52/53
+    const maxW1 = Object.keys(REPORT_DB).filter(k=>k.startsWith(yFrom+'-V')).length > 0
+      ? Math.max(...Object.keys(REPORT_DB).filter(k=>k.startsWith(yFrom+'-V')).map(k=>parseInt(k.split('-V')[1])))
+      : 52;
+    for(let w = period.weekFrom; w <= Math.max(maxW1, 52); w++)
+      keys.push(`${yFrom}-V${String(w).padStart(2,'0')}`);
+    // År 2: från vecka 1 till weekTo
+    for(let w = 1; w <= period.weekTo; w++)
+      keys.push(`${yTo}-V${String(w).padStart(2,'0')}`);
+  }
+  return keys.filter(k => REPORT_DB[k]); // bara veckor med data
+}
+
+// Hämta ackumulerad data för en period (stöder bokslutsår)
+function getAccForPeriod(storeId, period) {
+  const keys = getPeriodKeys(period);
+  if(!keys.length) return null;
+  let totF=0, totBvKr=0, totAntal=0, forsaljningDeltas=[], antalDeltas=[], deptAcc={}, found=0;
+  keys.forEach(pk => {
+    const pd = REPORT_DB[pk]?.[storeId];
+    if(!pd) return;
+    found++;
+    totF     += pd.forsaljning  || 0;
+    totBvKr  += pd.bvKr        || 0;
+    totAntal += pd.antalSt     || 0;
+    if(pd.forsaljningDelta!=null) forsaljningDeltas.push(pd.forsaljningDelta);
+    if(pd.antalDelta!=null)       antalDeltas.push(pd.antalDelta);
+    (pd.depts||[]).forEach(d => {
+      if(!deptAcc[d.code]) deptAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0,antalDeltas:[],forsaljningDeltas:[]};
+      deptAcc[d.code].forsaljning += d.forsaljning||0;
+      deptAcc[d.code].bvKr       += d.bvKr||0;
+      if(d.forsaljningDelta!=null) deptAcc[d.code].forsaljningDeltas.push(d.forsaljningDelta);
+      if(d.antalDelta!=null)       deptAcc[d.code].antalDeltas.push(d.antalDelta);
+    });
+  });
+  if(!found) return null;
+  const bvPct = totF > 0 ? totBvKr/totF : null;
+  const forsaljningDelta = forsaljningDeltas.length ? forsaljningDeltas.reduce((a,b)=>a+b,0)/forsaljningDeltas.length : null;
+  const antalDelta       = antalDeltas.length       ? antalDeltas.reduce((a,b)=>a+b,0)/antalDeltas.length             : null;
+  const depts = Object.values(deptAcc).map(d => ({
+    ...d,
+    bvPct: d.forsaljning>0 ? d.bvKr/d.forsaljning : null,
+    forsaljningDelta: d.forsaljningDeltas.length ? d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length : null,
+    antalDelta: d.antalDeltas.length ? d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length : null,
+  })).sort((a,b)=>(a.code||'').localeCompare(b.code||''));
+  return {forsaljning:totF, bvKr:totBvKr, bvPct, forsaljningDelta, antalDelta, antalSt:totAntal, depts, weeks:found, periodName:period.name};
+}
+
 function _buildPDFDoc(storeId,pdfMode){
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -2923,6 +2993,89 @@ function _buildPDFDoc(storeId,pdfMode){
     y+=11;
     kpiTiles('');
     if(y>220){doc.addPage();y=20;}
+  }
+
+
+  // ── ACKUMULERAT BOKSLUTSÅR ────────────────────────────────────────
+  const activePeriod = PERIODS.length > 0
+    ? PERIODS.reduce((best,p) => {
+        const pKeys = getPeriodKeys(p).filter(k => REPORT_DB[k]);
+        if(!pKeys.length) return best;
+        if(!best) return p;
+        return pKeys.length >= getPeriodKeys(best).filter(k=>REPORT_DB[k]).length ? p : best;
+      }, null)
+    : null;
+
+  const accPeriodData = activePeriod ? getAccForPeriod(isTotal?Object.keys(STORES)[0]:storeId, activePeriod) : null;
+
+  if(accPeriodData && activePeriod) {
+    const weeksN = accPeriodData.weeks;
+    // Rubrikrad bokslutsår
+    doc.setFillColor(183,209,235);doc.rect(M,y,W-2*M,8,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...BLUE);
+    doc.text('Ackumulerat — '+activePeriod.name,M+4,y+5.5);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+    doc.text(weeksN+' veckor',W-M-2,y+5.5,{align:'right'});
+    y+=10;
+
+    // KPI-tiles med ackumulerad data
+    const accKpis=[
+      {label:'OMSÄTTNING',    val:accPeriodData.forsaljningDelta!=null?(accPeriodData.forsaljningDelta>=0?'+':'')+(accPeriodData.forsaljningDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.oms, lb:false},
+      {label:'MARGINAL BV%',  val:accPeriodData.bvPct!=null?(accPeriodData.bvPct*100).toFixed(1)+'%':null, goal:sd.storeGoals.marginal, lb:false},
+      {label:'MARGINAL BV KR',val:accPeriodData.bvKr!=null?Math.round(accPeriodData.bvKr).toLocaleString('sv-SE')+' kr':null, goal:null, lb:false},
+      {label:'FÖRS. KR',      val:accPeriodData.forsaljning!=null?Math.round(accPeriodData.forsaljning).toLocaleString('sv-SE')+' kr':null, goal:null, lb:false},
+      {label:'ANTAL SÅLDA',   val:accPeriodData.antalDelta!=null?(accPeriodData.antalDelta>=0?'+':'')+(accPeriodData.antalDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.antal, lb:false},
+    ];
+    const tW2=(W-2*M)/3, tH2=16;
+    accKpis.forEach((k,i)=>{
+      const col=i%3, row=Math.floor(i/3);
+      const tx=M+col*tW2, ty=y+row*tH2;
+      doc.setFillColor(...WHITE);doc.rect(tx,ty,tW2-1,tH2-1,'F');
+      doc.setDrawColor(...BEIGE);doc.setLineWidth(0.3);doc.rect(tx,ty,tW2-1,tH2-1);
+      doc.setFont('helvetica','bold');doc.setFontSize(6);doc.setTextColor(...GR);
+      doc.text(k.label,tx+3,ty+3.5);
+      if(k.val!=null){
+        let col2=DK;
+        if(k.goal!=null){const v=parseFloat(k.val);col2=v>=k.goal?GREEN:v>=k.goal*0.8?AMBER:REDD;}
+        doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...col2);
+        doc.text(k.val,tx+3,ty+11);
+        if(k.goal!=null){
+          doc.setFont('helvetica','normal');doc.setFontSize(6);doc.setTextColor(...GR);
+          doc.text('Mål: '+k.goal+'%',tx+3,ty+14.5);
+        }
+      } else {
+        doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...GR);doc.text('—',tx+3,ty+11);
+      }
+    });
+    y+=Math.ceil(accKpis.length/3)*tH2+4;
+
+    // Avdelningstabell ackumulerat
+    const accDepts=(accPeriodData.depts||[]).filter(d=>d.forsaljning>0);
+    if(accDepts.length>0){
+      if(y>220){doc.addPage();y=20;}
+      doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...BLUE);
+      doc.text('Avdelningsöversikt — ackumulerat',M,y);y+=3;
+      const hSa={fontStyle:'bold',fontSize:6,textColor:GR,fillColor:LTGRAY,cellPadding:1.5};
+      const bSa={fontSize:7,textColor:DK,fillColor:WHITE,cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15};
+      doc.autoTable({startY:y,margin:{left:M,right:M},body:[
+        [{content:'Avdelning',styles:hSa},{content:'Oms kr',styles:{...hSa,halign:'right'}},
+         {content:'Oms Δ%',styles:{...hSa,halign:'center'}},{content:'BV%',styles:{...hSa,halign:'center'}},
+         {content:'BV kr',styles:{...hSa,halign:'right'}}],
+        ...accDepts.map(d=>{
+          const oC=d.forsaljningDelta!=null?(d.forsaljningDelta*100>=5?GREEN:d.forsaljningDelta*100>=4?AMBER:REDD):GR;
+          const bC=d.bvPct!=null?(d.bvPct*100>=28?GREEN:d.bvPct*100>=25?AMBER:REDD):GR;
+          return[{content:d.name||d.code,styles:bSa},
+            {content:Math.round(d.forsaljning).toLocaleString('sv-SE')+' kr',styles:{...bSa,halign:'right'}},
+            {content:d.forsaljningDelta!=null?(d.forsaljningDelta>=0?'+':'')+(d.forsaljningDelta*100).toFixed(1)+'%':'—',styles:{...bSa,halign:'center',textColor:oC}},
+            {content:d.bvPct!=null?(d.bvPct*100).toFixed(1)+'%':'—',styles:{...bSa,halign:'center',textColor:bC}},
+            {content:Math.round(d.bvKr).toLocaleString('sv-SE')+' kr',styles:{...bSa,halign:'right'}}];
+        })],
+        styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15},
+        didParseCell:data=>{if(data.row.index===0)data.cell.styles.fillColor=LTGRAY;}
+      });
+      y=doc.lastAutoTable.finalY+6;
+    }
+    if(y>220){doc.addPage();y=20;}else{y+=4;}
   }
 
   // Senaste veckan
