@@ -362,6 +362,7 @@ async function loadAllFromSupabase() {
         DEPTS.map(d=>[d.code, {...defDG[d.code], ...(loadedDG[d.code]||{})}])
       );
       DB[row.store_id].emails     = row.emails       || [];
+      DB[row.store_id].autoSend   = row.auto_send  || false;
     });
   });
 
@@ -410,7 +411,13 @@ async function loadAllFromSupabase() {
 
   await tryLoad('os20_data', async () => {
     const rows = await sbGet('os20_data');
+    const prevLatestKey = Object.keys(OS20_DB).sort().pop();
     rows.forEach(row => { OS20_DB[row.period_key] = row.data; });
+    // Kolla om ny vecka laddats — trigga auto-send om aktiverat
+    const newLatestKey = rows.map(r=>r.period_key).sort().pop();
+    if(newLatestKey && newLatestKey !== prevLatestKey) {
+      checkAndTriggerAutoSend(newLatestKey);
+    }
   });
 
   await tryLoad('pins', async () => {
@@ -429,6 +436,7 @@ async function saveStoreSettings(storeId) {
     store_goals: sd.storeGoals,
     dept_goals:  sd.deptGoals,
     emails:      sd.emails,
+    auto_send:   sd.autoSend || false,
     updated_at:  new Date().toISOString()
   });
 }
@@ -593,6 +601,7 @@ function defaultSD() {
     deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,antal:5,marginal:28,svinn:1.0}])),
     actions:{},
     emails:[],
+    autoSend:false,
   };
 }
 
@@ -962,7 +971,7 @@ function buildNav(){
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
       <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
       <div class="ni" onclick="showTab('actions',this)">Actions</div>
-      <div class="ni" onclick="showTab('pdf',this)">Ladda ner PDF</div>`;
+      <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>`;
 }
 function showTab(tab,el){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -1674,7 +1683,7 @@ function adminViewTotal(){
   document.getElementById('nav').innerHTML=`
     <div class="ni" onclick="backAdmin()">← Alla butiker</div>
     <div class="ni active" onclick="showTab('overview',this)">Översikt</div>
-    <div class="ni" onclick="showTab('pdf',this)">Ladda ner PDF</div>
+    <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>
     <div class="ni" onclick="showTab('butiksinst',this)">Prenumeration</div>`;
   showTab('overview', document.querySelectorAll('.ni')[1]);
 }
@@ -1726,7 +1735,7 @@ function adminViewStore(storeId){
     <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
     <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
     <div class="ni" onclick="showTab('actions',this)">Actions</div>
-    <div class="ni" onclick="showTab('pdf',this)">Ladda ner PDF</div>`;
+    <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>`;
   showTab('overview',document.querySelectorAll('.ni')[1]);
 }
 function backAdmin(){sid=null;document.getElementById('store-lbl').textContent='Admin / Central';buildNav();showTab('overview',document.querySelector('.ni'));}
@@ -2598,6 +2607,44 @@ function renderPdfPanel(){
       </div>
     </div>
 
+    <!-- Mailadresser direkt i PDF/Admin-vyn -->
+    <div class="card" style="margin-top:.875rem">
+      <div class="card-head">
+        <div><div class="ct">📧 Prenumeranter</div><div class="cs">Mailadresser för automatiska rapporter</div></div>
+      </div>
+      <div style="padding:1rem">
+        <div id="store-etags-${sid}" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:.75rem">
+          ${(()=>{const sd2=getSD(sid);return (sd2.emails||[]).length
+            ?(sd2.emails.map(e=>`<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${sid}','${e}')">×</button></span>`).join(''))
+            :`<span style="font-size:12px;color:var(--ö-muted)">Inga prenumeranter ännu</span>`;})()}
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <input class="email-add-inp" type="email" id="store-email-inp-${sid}" placeholder="Lägg till e-postadress..." onkeydown="if(event.key==='Enter')addStoreEmail('${sid}')">
+          <button class="btn-sm green" onclick="addStoreEmail('${sid}')">+ Lägg till</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auto-send toggle -->
+    <div class="card" style="margin-top:.875rem">
+      <div class="card-head" style="justify-content:space-between">
+        <div>
+          <div class="ct">🤖 Automatisk rapportutskick</div>
+          <div class="cs">Skicka rapport automatiskt när veckodata laddas upp</div>
+        </div>
+        <button id="auto-send-btn-${sid}"
+          class="toggle-btn ${(()=>{const sd2=getSD(sid);return sd2.autoSend?'on':'off';})()}"
+          onclick="toggleAutoSend('${sid}')">
+          ${(()=>{const sd2=getSD(sid);return sd2.autoSend?'PÅ':'AV';})()}
+        </button>
+      </div>
+      <div style="padding:.75rem 1.25rem;font-size:12px;color:var(--ö-muted)">
+        ${(()=>{const sd2=getSD(sid);return sd2.autoSend
+          ?'✓ Rapport skickas automatiskt när ÖS20-data för veckan laddas upp via mail.'
+          :'Aktivera för att skicka rapport automatiskt vid dataimport.';})()}
+      </div>
+    </div>
+
     ${role==='admin'?`
     <div class="card" style="margin-top:.875rem">
       <div class="card-head"><div><div class="ct">Skicka till alla butiker</div><div class="cs">Skickar rapport till samtliga butiker med registrerade mailadresser</div></div></div>
@@ -2612,8 +2659,68 @@ function renderPdfPanel(){
 }
 function updPdfSel(){const m=document.querySelector('input[name=pmode]:checked')?.value;document.getElementById('pdf-psel').style.display=(m==='period'||m==='both')?'block':'none';}
 
+
+// Auto-send: kolla om nya veckans data är komplett och skicka rapporter
+async function checkAndTriggerAutoSend(periodKey) {
+  const storesWithData = Object.keys(OS20_DB[periodKey] || {});
+  if(storesWithData.length < 1) return;
+
+  console.log('Auto-send check för', periodKey, '—', storesWithData.length, 'butiker');
+
+  let sent = 0;
+  for(const storeId of Object.keys(STORES)) {
+    const sd = getSD(storeId);
+    if(!sd.autoSend) continue;
+    if(!sd.emails || !sd.emails.length) continue;
+    if(!OS20_DB[periodKey]?.[storeId]) continue;
+
+    console.log('Auto-send: skickar', storeId, 'till', sd.emails);
+    try {
+      await sendStoreReport(storeId, 'week');
+      sent++;
+    } catch(e) {
+      console.error('Auto-send misslyckades för', storeId, e);
+    }
+  }
+  if(sent > 0) toast(`✓ Auto-send: ${sent} rapport(er) skickade för ${periodKey}`);
+}
+
 // ── MAILUTSKICK ───────────────────────────────────────
 const EDGE_FUNCTION_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/send-store-report';
+
+
+async function addStoreEmail(storeId) {
+  const inp = document.getElementById('store-email-inp-'+storeId);
+  if(!inp) return;
+  const email = inp.value.trim().toLowerCase();
+  if(!email || !email.includes('@')) { toast('Ange en giltig mailadress'); return; }
+  const sd = getSD(storeId);
+  if(!sd.emails) sd.emails = [];
+  if(sd.emails.includes(email)) { toast('Adressen finns redan'); return; }
+  sd.emails.push(email);
+  await saveStoreSettings(storeId);
+  inp.value = '';
+  // Uppdatera tags
+  const tagsEl = document.getElementById('store-etags-'+storeId);
+  if(tagsEl) tagsEl.innerHTML = sd.emails.map(e=>
+    `<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${storeId}','${e}')">×</button></span>`
+  ).join('');
+  toast('✓ '+email+' tillagd');
+}
+
+async function toggleAutoSend(storeId) {
+  const sd = getSD(storeId);
+  sd.autoSend = !sd.autoSend;
+  await saveStoreSettings(storeId);
+  const btn = document.getElementById('auto-send-btn-'+storeId);
+  if(btn) {
+    btn.textContent = sd.autoSend ? 'PÅ' : 'AV';
+    btn.className = 'toggle-btn ' + (sd.autoSend ? 'on' : 'off');
+  }
+  // Uppdatera beskrivning
+  renderPDF();
+  toast(sd.autoSend ? '✓ Automatisk utskick aktiverat' : 'Automatisk utskick inaktiverat');
+}
 
 async function sendStoreReport(storeId, pdfMode) {
   const statusEl = document.getElementById('mail-status');
