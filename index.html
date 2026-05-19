@@ -419,12 +419,16 @@ async function saveStoreSettings(storeId) {
 // Spara actions för en avdelning
 async function saveActions(storeId, deptCode) {
   const sd = getSD(storeId);
-  await sbUpsert('actions', {
+  const {error} = await sb.from('actions').upsert({
     store_id:   storeId,
     dept_code:  deptCode,
     data:       sd.actions[deptCode] || [],
     updated_at: new Date().toISOString()
-  });
+  }, {onConflict: 'store_id,dept_code'});
+  if(error) {
+    console.error('saveActions FAILED', error.message);
+    toast('⚠ Kunde inte spara actions: ' + error.message);
+  }
 }
 
 // Spara försäljningsperiod
