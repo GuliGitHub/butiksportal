@@ -544,6 +544,7 @@ const DEPTS=[
 const KPI_LIBRARY = [
   {key:'oms',          label:'Omsättning',        unit:'% vs fg år', lb:false, fmt:'delta', källa:'bib'},
   {key:'marginal',     label:'Marginal BV%',       unit:'%',          lb:false, fmt:'pct',   källa:'bib'},
+  {key:'marginal_kr',   label:'Marginal BV kr',     unit:'kr',         lb:false, fmt:'kr',    källa:'bib'},
   {key:'svinn_k',      label:'Känt Svinn',         unit:'%',          lb:true,  fmt:'pct',   källa:'svinn'},
   {key:'antal',        label:'Antal Sålda',        unit:'% vs fg år', lb:false, fmt:'delta', källa:'bib'},
   {key:'kvitton',      label:'Antal Kvitton',      unit:'% vs fg år', lb:false, fmt:'delta', källa:'os20'},
@@ -559,6 +560,7 @@ const KPI_LIBRARY = [
 const DEFAULT_KPI_CONFIG = {
   oms:          {visible:true,  tier:'primary'},
   marginal:     {visible:true,  tier:'primary'},
+  marginal_kr:  {visible:false, tier:'primary'},
   svinn_k:      {visible:true,  tier:'primary'},
   antal:        {visible:true,  tier:'primary'},
   kvitton:      {visible:true,  tier:'secondary'},
@@ -587,7 +589,7 @@ let role=null, sid=null, viewMode='week', selPeriodId=null;
 
 function defaultSD() {
   return {
-    storeGoals:{oms:7, marginal:26.2, svinn_k:0.7, antal:5, kvitton:5, snittKop:180, driftlackage:3.5, kundkorg:8, medlems:80, emv:20, eko:5},
+    storeGoals:{oms:7, marginal:26.2, marginal_kr:null, svinn_k:0.7, antal:5, kvitton:5, snittKop:180, driftlackage:3.5, kundkorg:8, medlems:80, emv:20, eko:5},
     deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,antal:5,marginal:28,svinn:1.0}])),
     actions:{},
     emails:[],
@@ -699,7 +701,8 @@ function getTotalKPIVal(key, weeks) {
 
   switch(key) {
     case 'oms':      return data?.forsaljningDelta ?? null;
-    case 'marginal': return data?.bvPct ?? null;
+    case 'marginal':    return data?.bvPct ?? null;
+    case 'marginal_kr': return data?.bvKr  ?? null;
     case 'antal':    return data?.antalDelta ?? null;
     case 'svinn_k':  return getTotalSvinnPct(wks);
     case 'kvitton': {
