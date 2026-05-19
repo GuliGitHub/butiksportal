@@ -1699,7 +1699,7 @@ async function sendTotalReport(pdfMode) {
   const statusEl = document.getElementById('mail-all-status');
   if(statusEl){ statusEl.style.display='flex'; statusEl.textContent='Skickar totalrapport...'; statusEl.style.background='#e8eef7'; statusEl.style.color='var(--ö-blue)'; }
   try {
-    const pdfBase64 = generatePDFBase64(TOTAL_ID, pdfMode);
+    const pdfBase64 = await generatePDFBase64(TOTAL_ID, pdfMode);
     if(!pdfBase64){toast('⚠ Kunde inte generera PDF');return;}
     const wData = getTotalData(new Set(Object.keys(REPORT_DB).sort().slice(-1)));
     const pk = Object.keys(REPORT_DB).sort().pop() || '—';
@@ -2727,31 +2727,43 @@ async function sendStoreReport(storeId, pdfMode) {
   if(statusEl){ statusEl.style.display='block'; statusEl.style.background='#f0f4ff'; statusEl.style.color='var(--ö-blue)'; statusEl.textContent='Genererar PDF...'; }
 
   try {
-    const storeName = STORES[storeId]||storeId;
-    const wksArr=[...selWeeks].sort();
-    const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
-    const fileName = `Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel}.pdf`;
+    const sd = getSD(storeId);
+    const emails = sd.emails || [];
+    if(!emails.length) throw new Error('Inga mailadresser registrerade');
 
-    if(statusEl) statusEl.textContent='Skickar rapport...';
-    const pdfBase64 = generatePDFBase64(storeId, pdfMode);
+    const storeName = storeId===TOTAL_ID ? TOTAL_NAME : (STORES[storeId]||storeId);
+    const wksArr=[...selWeeks].sort();
+    const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')} – ${wksArr[wksArr.length-1].replace('-V','V')}`:'Senaste veckan';
+    const fileName=`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel}.pdf`;
+
+    if(statusEl) statusEl.textContent='Genererar PDF...';
+    const pdfBase64 = await generatePDFBase64(storeId, pdfMode);
     if(!pdfBase64) throw new Error('Kunde inte generera PDF');
 
+    if(statusEl) statusEl.textContent='Skickar rapport...';
     const res = await fetch(EDGE_FUNCTION_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
-      body:JSON.stringify({storeId, storeName, periodLabel, fileName,
+      body:JSON.stringify({
+        to: emails,
+        storeName, periodLabel, fileName,
         subject:`Veckorapport ${storeName} — ${periodLabel}`,
-        pdfBase64  // skickar PDF som base64-bilaga
+        pdfBase64
       })
     });
     const data = await res.json();
     if(res.ok){
-      if(statusEl){ statusEl.style.background='#e8f5e9'; statusEl.style.color='#2e7d32'; statusEl.textContent=`✓ Skickat till ${data.sent} av ${data.total} prenumeranter`; }
+      if(statusEl){ statusEl.style.background='#e8f5e9'; statusEl.style.color='#2e7d32';
+        statusEl.textContent=`✓ Skickat till ${emails.length} prenumerant${emails.length>1?'er':''}`;
+      }
+      toast(`✓ Rapport skickad till ${emails.length} mottagare`);
     } else throw new Error(data.error||'Okänt fel');
   } catch(e){
-    if(statusEl){ statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; statusEl.textContent=`⚠ Fel: ${e.message}`; }
+    if(statusEl){ statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; statusEl.textContent=`⚠ ${e.message}`; }
+    toast('⚠ '+e.message);
   }
 }
+
 
 async function sendSingleFromAdmin(storeId) {
   const storeName = STORES[storeId];
@@ -2761,7 +2773,7 @@ async function sendSingleFromAdmin(storeId) {
   try {
     const emails = getSD(storeId).emails||[];
     if(!emails.length){ toast(`⚠ Inga mailadresser för ${storeName}`); return; }
-    const pdfBase64 = generatePDFBase64(storeId, mode);
+    const pdfBase64 = await generatePDFBase64(storeId, mode);
     if(!pdfBase64) throw new Error('Kunde inte generera PDF');
     const wksArr=[...selWeeks].sort();
     const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
