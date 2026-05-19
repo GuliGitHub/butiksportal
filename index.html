@@ -284,6 +284,23 @@ const SB_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNuaWZyaXpkaW9pd2x2Z2J4c3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzU5NjQsImV4cCI6MjA5MzQ1MTk2NH0.Eerq42ACQ9UhCsnTdBji8VNv4OggbOdUHxityXNIk9g';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
+// Återställ session vid sidladdning
+(async function restoreSession() {
+  const savedRole = sessionStorage.getItem('o_role');
+  const savedSid  = sessionStorage.getItem('o_sid');
+  if(!savedRole) return;
+  role = savedRole;
+  sid  = savedRole==='admin' ? null : (savedSid||null);
+  const storeName = savedSid==='total' ? TOTAL_NAME : (STORES[savedSid]||'');
+  const lbl = savedRole==='admin' ? 'Admin / Central' : storeName;
+  const storeLblEl = document.getElementById('store-lbl');
+  if(storeLblEl) storeLblEl.textContent = lbl;
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display   = 'flex';
+  await loadAllFromSupabase();
+  buildNav(); renderPanel('overview');
+})();
+
 // Hamta publiceringstid fran GitHub
 (function(){
   fetch('https://api.github.com/repos/GuliGitHub/butiksportal/commits?path=index.html&per_page=1')
@@ -744,6 +761,9 @@ async function login(){
   document.getElementById('store-lbl').textContent=r==='admin'?'Admin / Central':storeName;
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='flex';
+  // Spara session
+  sessionStorage.setItem('o_role', r);
+  sessionStorage.setItem('o_sid', s||'');
   await loadAllFromSupabase();
   buildNav(); renderPanel('overview');
 }
@@ -765,7 +785,7 @@ function checkBlommorPin(){
     document.getElementById('blommor-pin').focus();
   }
 }
-function logout(){role=null;sid=null;document.getElementById('login').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('pin-in').value='';document.getElementById('role-sel').value='';document.getElementById('store-sel').value='';document.getElementById('store-fld').style.display='none';}
+function logout(){role=null;sid=null;sessionStorage.removeItem('o_role');sessionStorage.removeItem('o_sid');document.getElementById('login').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('pin-in').value='';document.getElementById('role-sel').value='';document.getElementById('store-sel').value='';document.getElementById('store-fld').style.display='none';}
 
 
 // ── TOTAL-VY ──────────────────────────────────────────
