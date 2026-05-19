@@ -589,11 +589,7 @@ function defaultSD() {
   return {
     storeGoals:{oms:7, marginal:26.2, svinn_k:0.7, antal:5, kvitton:5, snittKop:180, driftlackage:3.5, kundkorg:8, medlems:80, emv:20, eko:5},
     deptGoals:Object.fromEntries(DEPTS.map(d=>[d.code,{active:DEF_ACTIVE.includes(d.code),oms:5,antal:5,marginal:28,svinn:1.0}])),
-    actions:{
-      '01':[{id:1,type:'fixed',text:'Fyll på färskt bröd senast kl 08:00',cond:'',done:false},{id:2,type:'goal',text:'Justera beställning vid högt svinn',cond:'Om svinn > 1,5%',done:false}],
-      '02':[{id:1,type:'fixed',text:'Packade munkar alltid i displayen',cond:'',done:false},{id:2,type:'fixed',text:'Minst 40% TB på exponeringar',cond:'',done:false},{id:3,type:'goal',text:'Gå igenom svinnlistan',cond:'Om svinn > 1%',done:false}],
-      '03':[{id:1,type:'fixed',text:'Putsa och fyll på hyllor kl 08:00',cond:'',done:false},{id:2,type:'goal',text:'Kontakta leverantör vid kvalitetsbrister',cond:'Om svinn > 2%',done:false}],
-    },
+    actions:{},
     emails:[],
   };
 }
