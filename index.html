@@ -1486,6 +1486,7 @@ function renderDeptTable(sd,wData,aData,mode){
 
       const omsUtfall=rw?.forsaljningDelta??null,  omsAcc=ra?.forsaljningDelta??null;
       const bvUtfall=rw?.bvPct??null,              bvAcc=ra?.bvPct??null;
+      const bvKrUtfall=rw?.bvKr??null,             bvKrAcc=ra?.bvKr??null;
       const svinnUtfall=deptSvinnPct(d.code);
       const antalUtfall=rw?.antalDelta??null,       antalAcc=ra?.antalDelta??null;
 
@@ -1514,6 +1515,11 @@ function renderDeptTable(sd,wData,aData,mode){
             ${kpiBox('Antal sålda',  antalUtfall, dg.antal??null, 'delta', false, antalAcc)}
             ${kpiBox('Marginal BV%', bvUtfall,    dg.marginal, 'pct',   false, bvAcc)}
             ${kpiBox('Känt svinn',   svinnUtfall, dg.svinn,    'pct',   true,  null)}
+            ${bvKrUtfall!=null?`<div style="flex:1;padding:.625rem .875rem;border-left:1px solid var(--ö-border)">
+              <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Marginal BV kr</div>
+              <div style="font-size:16px;font-weight:700;color:var(--ö-text);font-family:'SF Mono',monospace;line-height:1">${Math.round(bvKrUtfall).toLocaleString('sv-SE')} kr</div>
+              ${bvKrAcc!=null?`<div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Ack: ${Math.round(bvKrAcc).toLocaleString('sv-SE')} kr</div>`:''}
+            </div>`:''}
           </div>
         </div>
 
