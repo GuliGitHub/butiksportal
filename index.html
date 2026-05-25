@@ -284,23 +284,6 @@ const SB_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNuaWZyaXpkaW9pd2x2Z2J4c3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzU5NjQsImV4cCI6MjA5MzQ1MTk2NH0.Eerq42ACQ9UhCsnTdBji8VNv4OggbOdUHxityXNIk9g';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
-// Återställ session vid sidladdning
-(async function restoreSession() {
-  const savedRole = sessionStorage.getItem('o_role');
-  const savedSid  = sessionStorage.getItem('o_sid');
-  if(!savedRole) return;
-  role = savedRole;
-  sid  = savedRole==='admin' ? null : (savedSid||null);
-  const storeName = savedSid==='total' ? TOTAL_NAME : (STORES[savedSid]||'');
-  const lbl = savedRole==='admin' ? 'Admin / Central' : storeName;
-  const storeLblEl = document.getElementById('store-lbl');
-  if(storeLblEl) storeLblEl.textContent = lbl;
-  document.getElementById('login').style.display = 'none';
-  document.getElementById('app').style.display   = 'flex';
-  await loadAllFromSupabase();
-  buildNav(); renderPanel('overview');
-})();
-
 // Hamta publiceringstid fran GitHub
 (function(){
   fetch('https://api.github.com/repos/GuliGitHub/butiksportal/commits?path=index.html&per_page=1')
@@ -4746,6 +4729,24 @@ async function saveRatReportSetting(val) {
   } catch(e) { toast('⚠ Kunde inte spara inställning'); }
 }
 
+
+
+// Återställ session vid sidladdning (körs sist när alla variabler är definierade)
+(async function restoreSession() {
+  const savedRole = sessionStorage.getItem('o_role');
+  const savedSid  = sessionStorage.getItem('o_sid');
+  if(!savedRole) return;
+  role = savedRole;
+  sid  = savedRole==='admin' ? null : (savedSid||null);
+  const storeName = savedSid==='total' ? TOTAL_NAME : (STORES[savedSid]||'');
+  const lbl = savedRole==='admin' ? 'Admin / Central' : storeName;
+  const storeLblEl = document.getElementById('store-lbl');
+  if(storeLblEl) storeLblEl.textContent = lbl;
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display   = 'flex';
+  await loadAllFromSupabase();
+  buildNav(); renderPanel('overview');
+})();
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
 </script>
