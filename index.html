@@ -363,6 +363,7 @@ async function loadAllFromSupabase() {
       );
       DB[row.store_id].emails     = row.emails       || [];
       DB[row.store_id].autoSend   = row.auto_send  || false;
+      DB[row.store_id].location   = row.location    || null;
     });
   });
 
@@ -437,6 +438,7 @@ async function saveStoreSettings(storeId) {
     dept_goals:  sd.deptGoals,
     emails:      sd.emails,
     auto_send:   sd.autoSend || false,
+    location:    sd.location  || null,
     updated_at:  new Date().toISOString()
   });
 }
@@ -602,6 +604,7 @@ function defaultSD() {
     actions:{},
     emails:[],
     autoSend:false,
+    location:null,
   };
 }
 
@@ -644,6 +647,18 @@ function fmtPct(v,d=1){if(v==null)return'—';return(v*100).toFixed(d)+'%';}
 function fmtDelta(v){if(v==null)return'—';return(v>=0?'+':'')+(v*100).toFixed(1)+'%';}
 
 // ── TOTAL-BUTIK AGGREGERING ───────────────────────────
+
+const DEFAULT_COORDS = {
+  '4730':{lat:58.5375,lon:15.0463},
+  '4732':{lat:58.5300,lon:15.0280},
+  '4734':{lat:58.5643,lon:15.2869},
+  '4735':{lat:58.4281,lon:14.8893},
+  '4736':{lat:58.4459,lon:14.8893},
+  '4737':{lat:58.3962,lon:15.0833},
+  '4738':{lat:58.4700,lon:15.5700},
+  '4756':{lat:58.5900,lon:16.1900},
+  '4757':{lat:58.4108,lon:15.6248},
+};
 const TOTAL_ID = 'total';
 const TOTAL_NAME = 'Östenssons Totalt';
 
@@ -1210,6 +1225,43 @@ async function drawStoreTrendCharts(storeId) {
   }).join('');
 }
 
+
+async function loadAndRenderWeather(storeId) {
+  const el = document.getElementById('weather-panel-'+storeId);
+  if(!el) return;
+  el.innerHTML = '<div style="padding:.5rem 1rem;font-size:12px;color:var(--ö-muted)">Hämtar väderprognos...</div>';
+  const forecast = await fetchWeather(storeId);
+  if(!forecast || !forecast.length) { el.innerHTML=''; return; }
+
+  const days = forecast.slice(0,10);
+  const DAYS_SV = ['Sön','Mån','Tis','Ons','Tor','Fre','Lör'];
+  const MONTHS_SV = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+
+  el.innerHTML = `<div style="background:#fff;border:1px solid var(--ö-border);border-radius:10px;overflow:hidden;margin-bottom:1rem">
+    <div style="padding:.625rem 1rem;border-bottom:1px solid var(--ö-border);background:var(--ö-bkg)">
+      <span style="font-size:12px;font-weight:600;color:var(--ö-blue)">10-dygnsprognos</span>
+      <span style="font-size:10px;color:var(--ö-muted);margin-left:.5rem">Källa: YR/Met.no</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(10,1fr);gap:0;overflow-x:auto">
+      ${days.map(d => {
+        const date = new Date(d.date+'T12:00:00');
+        const dayName = DAYS_SV[date.getDay()];
+        const dayNum = date.getDate();
+        const mon = MONTHS_SV[date.getMonth()];
+        return `<div style="text-align:center;padding:.5rem .25rem;border-right:1px solid var(--ö-border);min-width:64px">
+          <div style="font-size:11px;font-weight:600;color:var(--ö-text)">${dayName}</div>
+          <div style="font-size:10px;color:var(--ö-muted)">${dayNum} ${mon}</div>
+          <div style="font-size:22px;margin:.25rem 0">${weatherIcon(d.symbol)}</div>
+          <div style="font-size:14px;font-weight:700;color:#c62828">${d.maxTemp!=null?d.maxTemp+'°':'—'}</div>
+          <div style="font-size:11px;color:var(--ö-muted)">${d.minTemp!=null?d.minTemp+'°':'—'}</div>
+          ${d.precip>0?`<div style="font-size:10px;color:#1565c0;margin-top:2px">${d.precip} mm</div>`:''}
+          <div style="font-size:10px;color:var(--ö-muted);margin-top:2px">${d.windAvg!=null?d.windAvg+' m/s':''}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
 function renderOverview(){
   const el=document.getElementById('panel-overview');
   if(role==='admin'){renderAdminOv(el);return;}
@@ -1225,8 +1277,10 @@ function renderOverview(){
     ${viewToggle()}
     ${renderKPIGrid(sd,curData,sid)}
     ${renderStoreTrendCharts(sid)}
+    <div id="weather-panel-${sid}" style="margin-bottom:1rem"></div>
     ${renderDeptTable(sd,wData,aData,viewMode)}`;
   setTimeout(()=>drawStoreTrendCharts(sid), 50);
+  setTimeout(()=>loadAndRenderWeather(sid), 100);
 }
 
 function getKPIVal(key, storeId, weeks) {
@@ -2699,6 +2753,17 @@ async function checkAndTriggerAutoSend(periodKey) {
 const EDGE_FUNCTION_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/send-store-report';
 
 
+
+async function saveStoreLocation(storeId) {
+  const lat = parseFloat(document.getElementById('loc-lat-'+storeId)?.value);
+  const lon = parseFloat(document.getElementById('loc-lon-'+storeId)?.value);
+  if(!lat || !lon || isNaN(lat) || isNaN(lon)) { toast('Ange giltiga koordinater'); return; }
+  const sd = getSD(storeId);
+  sd.location = {lat: Math.round(lat*10000)/10000, lon: Math.round(lon*10000)/10000};
+  await saveStoreSettings(storeId);
+  toast(`✓ Plats sparad för ${STORES[storeId]||storeId}`);
+}
+
 async function addStoreEmail(storeId) {
   const inp = document.getElementById('store-email-inp-'+storeId);
   if(!inp) return;
@@ -3008,6 +3073,73 @@ function getAccForPeriod(storeId, period) {
     antalDelta: d.antalDeltas.length ? d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length : null,
   })).sort((a,b)=>(a.code||'').localeCompare(b.code||''));
   return {forsaljning:totF, bvKr:totBvKr, bvPct, forsaljningDelta, antalDelta, antalSt:totAntal, depts, weeks:found, periodName:period.name};
+}
+
+
+function getStoreCoords(storeId) {
+  const sd = getSD(storeId);
+  return sd.location || DEFAULT_COORDS[storeId] || null;
+}
+
+// Hämta 10-dygnsprognos från YR/met.no
+async function fetchWeather(storeId) {
+  const coords = getStoreCoords(storeId);
+  if(!coords) return null;
+  try {
+    const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${coords.lat}&lon=${coords.lon}`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'OstenssonsButiksportal/1.0 gustaf.lindblad@hemkop.se' }
+    });
+    if(!resp.ok) return null;
+    const data = await resp.json();
+    return parseWeatherForecast(data);
+  } catch(e) {
+    console.error('Weather fetch error:', e);
+    return null;
+  }
+}
+
+// Parsa YR-data till 10 dagars prognos
+function parseWeatherForecast(data) {
+  const timeseries = data?.properties?.timeseries || [];
+  const days = {};
+  timeseries.forEach(ts => {
+    const d = ts.time.slice(0, 10);
+    const hour = parseInt(ts.time.slice(11, 13));
+    if(!days[d]) days[d] = { date: d, temps: [], winds: [], symbols: [], precip: 0 };
+    const inst = ts.data.instant.details;
+    days[d].temps.push(inst.air_temperature);
+    days[d].winds.push(inst.wind_speed);
+    // Symbolkod från 6h-prognos (eller 12h om saknas)
+    const sym = ts.data.next_6_hours?.summary?.symbol_code
+             || ts.data.next_12_hours?.summary?.symbol_code
+             || ts.data.next_1_hours?.summary?.symbol_code;
+    if(sym) days[d].symbols.push(sym);
+    const p6 = ts.data.next_6_hours?.details?.precipitation_amount || 0;
+    days[d].precip += p6;
+  });
+  return Object.values(days).slice(0, 10).map(d => ({
+    date: d.date,
+    maxTemp: d.temps.length ? Math.round(Math.max(...d.temps)) : null,
+    minTemp: d.temps.length ? Math.round(Math.min(...d.temps)) : null,
+    windAvg: d.winds.length ? Math.round(d.winds.reduce((a,b)=>a+b,0)/d.winds.length) : null,
+    symbol: d.symbols[Math.floor(d.symbols.length/2)] || d.symbols[0] || 'cloudy',
+    precip: Math.round(d.precip * 10) / 10,
+  }));
+}
+
+// Väderikon som SVG-emoji-fallback baserat på symbol_code
+function weatherIcon(symbol) {
+  if(!symbol) return '🌡';
+  const s = symbol.toLowerCase();
+  if(s.includes('clearsky') || s.includes('fair'))            return '☀️';
+  if(s.includes('partlycloudy') || s.includes('partly'))      return '⛅';
+  if(s.includes('cloudy'))                                     return '☁️';
+  if(s.includes('fog'))                                        return '🌫️';
+  if(s.includes('thunder') || s.includes('storm'))            return '⛈️';
+  if(s.includes('snow') || s.includes('sleet'))               return '🌨️';
+  if(s.includes('rain') || s.includes('shower'))              return '🌧️';
+  return '🌡️';
 }
 
 function _buildPDFDoc(storeId,pdfMode){
@@ -3703,6 +3835,242 @@ async function _generateTotalPDF(pdfMode) {
   toast('PDF nedladdad ✓');
 }
 
+
+// ── VÄDERPROGNOS-SIDA I PDF ──────────────────────────────────────────
+
+// ── VÄDERIKONER SOM SVG → PNG FÖR PDF ───────────────────────────────
+const WEATHER_SVGS = {
+  sun: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <circle cx="20" cy="20" r="8" fill="#FFA000"/>
+    <g stroke="#FFA000" stroke-width="2" stroke-linecap="round">
+      <line x1="20" y1="2" x2="20" y2="7"/>
+      <line x1="20" y1="33" x2="20" y2="38"/>
+      <line x1="2" y1="20" x2="7" y2="20"/>
+      <line x1="33" y1="20" x2="38" y2="20"/>
+      <line x1="6" y1="6" x2="10" y2="10"/>
+      <line x1="30" y1="30" x2="34" y2="34"/>
+      <line x1="34" y1="6" x2="30" y2="10"/>
+      <line x1="10" y1="30" x2="6" y2="34"/>
+    </g>
+  </svg>`,
+  partly: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <circle cx="16" cy="16" r="7" fill="#FFA000"/>
+    <g stroke="#FFA000" stroke-width="1.5" stroke-linecap="round">
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="2" y1="16" x2="6" y2="16"/>
+      <line x1="5" y1="5" x2="8" y2="8"/>
+      <line x1="27" y1="5" x2="24" y2="8"/>
+    </g>
+    <rect x="14" y="22" width="20" height="11" rx="5.5" fill="#90A4AE"/>
+    <rect x="18" y="18" width="14" height="10" rx="5" fill="#B0BEC5"/>
+  </svg>`,
+  cloudy: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <rect x="4" y="20" width="32" height="14" rx="7" fill="#90A4AE"/>
+    <rect x="10" y="13" width="22" height="13" rx="6.5" fill="#B0BEC5"/>
+  </svg>`,
+  fog: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <rect x="4" y="14" width="32" height="3" rx="1.5" fill="#B0BEC5" opacity=".7"/>
+    <rect x="4" y="21" width="28" height="3" rx="1.5" fill="#B0BEC5" opacity=".7"/>
+    <rect x="4" y="28" width="24" height="3" rx="1.5" fill="#B0BEC5" opacity=".7"/>
+  </svg>`,
+  rain: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <rect x="6" y="8" width="28" height="14" rx="7" fill="#78909C"/>
+    <g stroke="#1565C0" stroke-width="2" stroke-linecap="round">
+      <line x1="14" y1="27" x2="12" y2="34"/>
+      <line x1="20" y1="27" x2="18" y2="34"/>
+      <line x1="26" y1="27" x2="24" y2="34"/>
+    </g>
+  </svg>`,
+  sleet: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <rect x="6" y="8" width="28" height="14" rx="7" fill="#78909C"/>
+    <g stroke="#1565C0" stroke-width="2" stroke-linecap="round">
+      <line x1="14" y1="27" x2="12" y2="32"/>
+      <line x1="26" y1="27" x2="24" y2="32"/>
+    </g>
+    <circle cx="20" cy="33" r="2" fill="#90CAF9"/>
+  </svg>`,
+  snow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <rect x="6" y="8" width="28" height="14" rx="7" fill="#90A4AE"/>
+    <g fill="#90CAF9">
+      <circle cx="14" cy="31" r="2.5"/>
+      <circle cx="20" cy="33" r="2.5"/>
+      <circle cx="26" cy="31" r="2.5"/>
+    </g>
+  </svg>`,
+  thunder: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <rect x="4" y="6" width="32" height="14" rx="7" fill="#546E7A"/>
+    <polygon points="22,22 16,32 20,32 18,40 26,28 22,28" fill="#FFD600"/>
+  </svg>`,
+};
+
+function getWeatherSVG(symbol) {
+  if(!symbol) return WEATHER_SVGS.cloudy;
+  const s = symbol.toLowerCase();
+  if(s.includes('clearsky') || s.includes('fair')) return WEATHER_SVGS.sun;
+  if(s.includes('partlycloudy') || s.includes('partly')) return WEATHER_SVGS.partly;
+  if(s.includes('fog')) return WEATHER_SVGS.fog;
+  if(s.includes('thunder') || s.includes('storm')) return WEATHER_SVGS.thunder;
+  if(s.includes('snow')) return WEATHER_SVGS.snow;
+  if(s.includes('sleet')) return WEATHER_SVGS.sleet;
+  if(s.includes('rain') || s.includes('shower') || s.includes('drizzle')) return WEATHER_SVGS.rain;
+  if(s.includes('cloudy')) return WEATHER_SVGS.cloudy;
+  return WEATHER_SVGS.partly;
+}
+
+// Konvertera SVG-sträng till PNG base64 via Canvas (för PDF-inbäddning)
+async function svgToPngBase64(svgStr, size=40) {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    const blob = new Blob([svgStr], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png').split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+// Pre-rendera alla ikoner som används i en prognos
+async function preRenderWeatherIcons(forecast) {
+  const icons = {};
+  const symbolsNeeded = [...new Set(forecast.map(d => {
+    const s = (d.symbol||'').toLowerCase();
+    if(s.includes('clearsky')||s.includes('fair')) return 'sun';
+    if(s.includes('partlycloudy')||s.includes('partly')) return 'partly';
+    if(s.includes('fog')) return 'fog';
+    if(s.includes('thunder')||s.includes('storm')) return 'thunder';
+    if(s.includes('snow')) return 'snow';
+    if(s.includes('sleet')) return 'sleet';
+    if(s.includes('rain')||s.includes('shower')||s.includes('drizzle')) return 'rain';
+    return 'cloudy';
+  }))];
+  for(const sym of symbolsNeeded) {
+    icons[sym] = await svgToPngBase64(WEATHER_SVGS[sym] || WEATHER_SVGS.cloudy, 48);
+  }
+  return icons;
+}
+
+async function _appendWeatherPage(doc, storeId) {
+  const weatherData = await fetchWeather(storeId);
+  if(!weatherData || !weatherData.length) return;
+
+  // Pre-rendera SVG-ikoner till PNG
+  const iconPNGs = await preRenderWeatherIcons(weatherData);
+
+  // Hjälpfunktion: hämta ikon-key från symbol
+  function getIconKey(symbol) {
+    if(!symbol) return 'cloudy';
+    const s = symbol.toLowerCase();
+    if(s.includes('clearsky')||s.includes('fair')) return 'sun';
+    if(s.includes('partlycloudy')||s.includes('partly')) return 'partly';
+    if(s.includes('fog')) return 'fog';
+    if(s.includes('thunder')||s.includes('storm')) return 'thunder';
+    if(s.includes('snow')) return 'snow';
+    if(s.includes('sleet')) return 'sleet';
+    if(s.includes('rain')||s.includes('shower')||s.includes('drizzle')) return 'rain';
+    return 'cloudy';
+  }
+  const W=210, M=14;
+  const BLUE=[0,47,109], RED=[226,0,0], GR=[107,104,96], DK=[26,26,24];
+  const BEIGE=[233,229,224], WHITE=[255,255,255], LTGRAY=[240,237,232];
+  const storeName = storeId===TOTAL_ID ? TOTAL_NAME : (STORES[storeId]||storeId);
+
+  doc.addPage();
+  let yw = 0;
+
+  // Sidhuvud
+  doc.setFillColor(...BLUE); doc.rect(0,0,W,18,'F');
+  doc.setFillColor(...RED);  doc.rect(0,16,W,2,'F');
+  doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text(storeName, W-M, 8, {align:'right'});
+  doc.text('Genererad '+new Date().toLocaleDateString('sv-SE'), W-M, 13.5, {align:'right'});
+  yw = 26;
+
+  // Rubrik
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
+  doc.text('10-dygnsprognos', M, yw); yw += 4;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
+  const coords = getStoreCoords(storeId);
+  doc.text('Källa: YR / Met.no' + (coords ? ` · Lat ${coords.lat}, Lon ${coords.lon}` : ''), M, yw);
+  yw += 8;
+
+  // Kolumner
+  const days = weatherData.slice(0, 10);
+  const colW = (W - 2*M) / days.length;
+  const DAYS_SV = ['Sön','Mån','Tis','Ons','Tor','Fre','Lör'];
+  const MONTHS_SV = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+
+
+
+  // Rubrikrad dagar
+  days.forEach((d, i) => {
+    const x = M + i * colW;
+    const date = new Date(d.date + 'T12:00:00');
+    const dayName = DAYS_SV[date.getDay()];
+    const dayNum = date.getDate();
+    const mon = MONTHS_SV[date.getMonth()];
+
+    // Bakgrund
+    if(i % 2 === 0) { doc.setFillColor(...LTGRAY); doc.rect(x, yw, colW, 46, 'F'); }
+    else             { doc.setFillColor(...WHITE);   doc.rect(x, yw, colW, 46, 'F'); }
+    doc.setDrawColor(...BEIGE); doc.setLineWidth(0.2); doc.rect(x, yw, colW, 46);
+
+    // Dag
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...BLUE);
+    doc.text(dayName, x + colW/2, yw + 6, {align:'center'});
+
+    // Datum
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
+    doc.text(`${dayNum} ${mon}`, x + colW/2, yw + 11, {align:'center'});
+
+    // Väderikon (PNG inbäddad)
+    const iconKey = getIconKey(d.symbol);
+    const iconPng = iconPNGs[iconKey];
+    if(iconPng) {
+      const iconSize = Math.min(colW - 4, 12);
+      doc.addImage(iconPng, 'PNG', x + (colW-iconSize)/2, yw + 12, iconSize, iconSize);
+    }
+
+    // Max temp
+    if(d.maxTemp != null) {
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(198, 40, 40);
+      doc.text(`${d.maxTemp}°`, x + colW/2, yw + 27, {align:'center'});
+    }
+
+    // Min temp
+    if(d.minTemp != null) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...GR);
+      doc.text(`${d.minTemp}°`, x + colW/2, yw + 34, {align:'center'});
+    }
+
+    // Vind
+    if(d.windAvg != null) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...GR);
+      doc.text(`${d.windAvg} m/s`, x + colW/2, yw + 40, {align:'center'});
+    }
+
+    // Nederbörd
+    if(d.precip > 0) {
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(21, 101, 192);
+      doc.text(`${d.precip} mm`, x + colW/2, yw + 45, {align:'center'});
+    }
+  });
+
+  yw += 50;
+
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
+  doc.text('Väderdata: Met.no / YR · Licensierad under Creative Commons 4.0', M, yw);
+}
+
 async function generatePDF(storeId, pdfMode) {
   // For total: pre-render trend charts then capture
   if(storeId === TOTAL_ID) {
@@ -3716,6 +4084,7 @@ async function generatePDF(storeId, pdfMode) {
   const wksArr=[...selWeeks].sort();
   const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
   await _appendStoreTrendPage(doc, storeId);
+  if(storeId !== TOTAL_ID) await _appendWeatherPage(doc, storeId);
   doc.save(`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel.replace(/\s/g,'_')}.pdf`);
   toast('PDF nedladdad ✓');
 }
@@ -3726,6 +4095,7 @@ async function generatePDFBase64(storeId, pdfMode) {
     const doc = _buildPDFDoc(storeId, pdfMode);
     if(!doc) return null;
     if(storeId !== TOTAL_ID) await _appendStoreTrendPage(doc, storeId);
+    if(storeId !== TOTAL_ID) await _appendWeatherPage(doc, storeId);
     return doc.output('datauristring').split(',')[1];
   } catch(e) {
     console.error('PDF error:', e);
@@ -3888,6 +4258,14 @@ function renderAdmin(){
           <div class="email-add-wrap">
             <input class="email-add-inp" type="email" id="ne-${id}" placeholder="Lägg till e-postadress..." onkeydown="if(event.key==='Enter')addEmail('${id}')">
             <button class="btn-sm green" onclick="addEmail('${id}')">+ Lägg till</button>
+          </div>
+          <!-- Koordinater -->
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-top:.5rem">
+            <input type="number" step="0.0001" id="loc-lat-${id}" value="${getSD(id).location?.lat||DEFAULT_COORDS[id]?.lat||''}"
+              placeholder="Latitud" style="width:90px;border:1px solid var(--ö-border);border-radius:6px;padding:4px 8px;font-size:11px;outline:none">
+            <input type="number" step="0.0001" id="loc-lon-${id}" value="${getSD(id).location?.lon||DEFAULT_COORDS[id]?.lon||''}"
+              placeholder="Longitud" style="width:90px;border:1px solid var(--ö-border);border-radius:6px;padding:4px 8px;font-size:11px;outline:none">
+            <button class="btn-sm" onclick="saveStoreLocation('${id}')">📍 Spara plats</button>
           </div>
         </div>`;}).join('')}
 
