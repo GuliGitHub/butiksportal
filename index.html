@@ -733,9 +733,11 @@ function getTotalKPIVal(key, weeks) {
     default: return null;
   }
 }
-function pctColor(val,goal,lb){
+function pctColor(val,goal,lb,strict){
   if(val==null||goal==null)return'#aaa';
   if(lb)return val<=goal?'#3d6e10':val<=goal*1.15?'#c65000':'#c62828';
+  // strict=true: grön om >=mål, orange om inom 2pp/2%, annars röd
+  if(strict)return val>=goal?'#3d6e10':val>=(goal-0.02)?'#c65000':'#c62828';
   return val>=goal*0.95?'#3d6e10':val>=goal*0.80?'#c65000':'#c62828';
 }
 
@@ -1144,9 +1146,10 @@ async function drawStoreTrendCharts(storeId) {
   );
 
   const configs = [
-    {id:`st-oms-${storeId}`,   metric:'oms',   unit:'Mkr', dec:1, scale: v => Math.round(v/1000000*10)/10},
-    {id:`st-antal-${storeId}`, metric:'antal', unit:'st',  dec:0, scale: v => Math.round(v)},
-    {id:`st-bv-${storeId}`,    metric:'bvpct', unit:'%',   dec:1, scale: v => Math.round(v*10)/10},
+    {id:`st-oms-${storeId}`,     metric:'oms',     unit:'Mkr', dec:1, scale: v => Math.round(v/1000000*10)/10},
+    {id:`st-antal-${storeId}`,   metric:'antal',   unit:'st',  dec:0, scale: v => Math.round(v)},
+    {id:`st-bv-${storeId}`,      metric:'bvpct',   unit:'%',   dec:1, scale: v => Math.round(v*10)/10},
+    {id:`st-kvitton-${storeId}`, metric:'kvitton', unit:'st',  dec:0, scale: v => Math.round(v)},
   ];
 
   const datasets_for_legend = [];
@@ -1363,7 +1366,7 @@ function renderKPIGrid(sd, data, storeId) {
     const goal    = sd?.storeGoals?.[k.key];
     // For kundkorg (num) and snittKop (kr), goal is in raw units not %
     const goalDec = (k.fmt==='num'||k.fmt==='kr'||k.fmt==='kr_delta') ? goal : (goal != null ? goal/100 : null);
-    const color   = (val != null && goalDec != null) ? pctColor(val, goalDec, k.lb) : 'var(--ö-muted)';
+    const color   = (val != null && goalDec != null) ? pctColor(val, goalDec, k.lb, k.fmt==='pct') : 'var(--ö-muted)';
     const display = fmtKPIVal(k, val);
     const barW    = (val != null && goalDec) ? Math.min(Math.abs(val/goalDec)*100, 100) : 0;
 
@@ -1546,7 +1549,13 @@ function renderDeptTable(sd,wData,aData,mode){
 
       const omsUtfall=rw?.forsaljningDelta??null,  omsAcc=ra?.forsaljningDelta??null;
       const bvUtfall=rw?.bvPct??null,              bvAcc=ra?.bvPct??null;
-      const bvKrUtfall=rw?.bvKr??null,             bvKrAcc=ra?.bvKr??null;
+      // BV kr delta mot föregående år
+      const bvKrCur  = rw?.bvKr ?? null;
+      const bvKrPrev = rw?.bvKrFgAr ?? null;
+      const bvKrUtfall = (bvKrCur!=null && bvKrPrev!=null) ? bvKrCur - bvKrPrev : bvKrCur;
+      const bvKrAccCur  = ra?.bvKr ?? null;
+      const bvKrAccPrev = ra?.bvKrFgAr ?? null;
+      const bvKrAcc = (bvKrAccCur!=null && bvKrAccPrev!=null) ? bvKrAccCur - bvKrAccPrev : bvKrAccCur;
       const svinnUtfall=deptSvinnPct(d.code);
       const antalUtfall=rw?.antalDelta??null,       antalAcc=ra?.antalDelta??null;
 
@@ -1576,9 +1585,9 @@ function renderDeptTable(sd,wData,aData,mode){
             ${kpiBox('Marginal BV%', bvUtfall,    dg.marginal, 'pct',   false, bvAcc)}
             ${kpiBox('Känt svinn',   svinnUtfall, dg.svinn,    'pct',   true,  null)}
             ${bvKrUtfall!=null?`<div style="flex:1;padding:.625rem .875rem;border-left:1px solid var(--ö-border)">
-              <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Marginal BV kr</div>
-              <div style="font-size:16px;font-weight:700;color:var(--ö-text);font-family:'SF Mono',monospace;line-height:1">${Math.round(bvKrUtfall).toLocaleString('sv-SE')} kr</div>
-              ${bvKrAcc!=null?`<div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Ack: ${Math.round(bvKrAcc).toLocaleString('sv-SE')} kr</div>`:''}
+              <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Marginal BV kr Δ</div>
+              <div style="font-size:16px;font-weight:700;color:${bvKrUtfall>=0?'#3d6e10':'#c62828'};font-family:'SF Mono',monospace;line-height:1">${bvKrUtfall>=0?'+':''}${Math.round(bvKrUtfall).toLocaleString('sv-SE')} kr</div>
+              ${bvKrAcc!=null?`<div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Ack: ${bvKrAcc>=0?'+':''}${Math.round(bvKrAcc).toLocaleString('sv-SE')} kr</div>`:''}
             </div>`:''}
             ${(()=>{
               const ao=getAOData(sid,d.code,wks);
