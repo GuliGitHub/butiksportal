@@ -250,7 +250,8 @@ function aggregate(all){
   return {forsaljning:totF,bvKr:totBv,
     forsaljningDelta:omsN?norm(omsS/omsN):null,bvPct:bvN?norm(bvS/bvN):null,antalDelta:antN?norm(antS/antN):null,
     depts:Object.values(depts).map(function(d){
-      return Object.assign({},d,{forsaljningDelta:norm(avg(d.fDs)),bvPct:norm(avg(d.bvPs)),antalDelta:norm(avg(d.antDs))});
+      var rawBvPct=avg(d.bvPs); var rawFD=avg(d.fDs); var rawAD=avg(d.antDs);
+      return Object.assign({},d,{forsaljningDelta:norm(rawFD),bvPct:norm(rawBvPct),antalDelta:norm(rawAD),bvKrFgAr:d.bvKrFgAr||null,bvKrDelta:d.bvKrDelta||null});
     })
   };
 }
