@@ -3436,6 +3436,7 @@ function _buildPDFDoc(storeId,pdfMode){
     });
     y+=bH;
 
+    const aoD=getAODeptData(isTotal?Object.keys(STORES)[0]:storeId,d.code);
     // Autoorder
     if(aoD) {
       doc.setFillColor(235,245,235);doc.rect(M,y,W-2*M,7,'F');
