@@ -139,23 +139,23 @@ function fD(v){ return v==null?'—':(v>=0?'+':'')+(v*100).toFixed(1)+'%'; }
 function fP(v){ return v==null?'—':(v*100).toFixed(1)+'%'; }
 function fK(v){ return v==null?'—':Math.round(v).toLocaleString('sv-SE')+' kr'; }
 
-function ktile(label,v,m,fmt,lb){
-  var c=col(v,m,lb), hex=colHex(c);
-  var d=fmt==='delta'?fD(v):fmt==='pct'?fP(v):fmt==='kr'?fK(v):v!=null?v.toFixed(1):'—';
-  var ms=m!=null?'Mål: '+m+(fmt==='kr'?' kr':fmt==='num'?' st':'%'):'';
+function ktile(label,v,m,fmt,lb,strict){
+  var c=col(v,m,lb,strict), hex=colHex(c);
+  var d=fmt==='delta'?fD(v):fmt==='pct'?fP(v):fmt==='kr'||fmt==='kr_delta'?((v!=null&&v>=0?'+':'')+fK(v)):v!=null?v.toFixed(1):'—';
+  var ms=m!=null?'Mål: '+m+(fmt==='kr'||fmt==='kr_delta'?' kr':fmt==='num'?' st':'%'):'';
   return '<div class="ktile"><div class="klabel">'+label+'</div><div class="kval" style="color:'+hex+'">'+d+'</div>'
     +'<div class="kmeta">'+ms+'</div><div class="kbar"><div class="kfill" style="background:'+hex+';width:'+bw(v,m)+'%"></div></div></div>';
 }
 function stile(label,v,m,fmt,lb){
   var c=col(v,m,lb), hex=colHex(c);
-  var d=fmt==='delta'?fD(v):fmt==='pct'?fP(v):fmt==='kr'?fK(v):v!=null?v.toFixed(1):'—';
-  var ms=m!=null?'Mål: '+m+(fmt==='kr'?' kr':fmt==='num'?' st':'%'):'';
+  var d=fmt==='delta'?fD(v):fmt==='pct'?fP(v):fmt==='kr'||fmt==='kr_delta'?((v!=null&&v>=0?'+':'')+fK(v)):v!=null?v.toFixed(1):'—';
+  var ms=m!=null?'Mål: '+m+(fmt==='kr'||fmt==='kr_delta'?' kr':fmt==='num'?' st':'%'):'';
   return '<div class="stile"><div><div class="klabel">'+label+'</div><div style="font-size:10px;color:var(--muted)">'+ms+'</div></div>'
     +'<div class="sval" style="color:'+hex+'">'+d+'</div></div>';
 }
-function dkpi(label,v,m,fmt,lb){
-  var c=col(v,m,lb), hex=colHex(c);
-  var d=fmt==='delta'?fD(v):fP(v);
+function dkpi(label,v,m,fmt,lb,strict){
+  var c=col(v,m,lb,strict), hex=colHex(c);
+  var d=fmt==='delta'?fD(v):fmt==='kr_delta'?(v!=null?(v>=0?'+':'')+fK(v):'—'):fP(v);
   var ms=m!=null?'Mål '+m+'%':'—';
   return '<div class="dkpi"><div class="dkpi-label">'+label+'</div><div class="dkpi-val" style="color:'+hex+'">'+d+'</div>'
     +'<div class="dkpi-mal">'+ms+'</div><div class="dkpi-bar"><div class="dkpi-fill" style="background:'+hex+';width:'+bw(v,m)+'%"></div></div></div>';
@@ -205,7 +205,8 @@ function top5TbHTML(rows){
 function buildSvinn5(svinnRows, code, eanMap){
   var m={};
   (svinnRows||[]).forEach(function(r){
-    if((r.deptCode||null)!==code) return;
+    var dc = r.deptCode || (eanMap[r.artNr||r.ean]?.dept) || null;
+    if(dc!==code) return;
     var k=r.artNr||r.artName||r.ean;
     if(!m[k]) m[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};
     m[k].svinnKr+=r.svinnKr||0;
@@ -245,19 +246,22 @@ function aggregate(all){
     });
   });
   function avg(a){return a.length?a.reduce(function(x,y){return x+y;},0)/a.length:null;}
+  function norm(v){return v!=null?(Math.abs(v)>1?v/100:v):null;} // normalisera % till decimal
   return {forsaljning:totF,bvKr:totBv,
-    forsaljningDelta:omsN?omsS/omsN:null,bvPct:bvN?bvS/bvN:null,antalDelta:antN?antS/antN:null,
+    forsaljningDelta:omsN?norm(omsS/omsN):null,bvPct:bvN?norm(bvS/bvN):null,antalDelta:antN?norm(antS/antN):null,
     depts:Object.values(depts).map(function(d){
-      return Object.assign({},d,{forsaljningDelta:avg(d.fDs),bvPct:avg(d.bvPs),antalDelta:avg(d.antDs)});
+      return Object.assign({},d,{forsaljningDelta:norm(avg(d.fDs)),bvPct:norm(avg(d.bvPs)),antalDelta:norm(avg(d.antDs))});
     })
   };
 }
 
 function render(data, goals, deptGoals, svinnData, eanMap, actions){
+  var bvKrDelta = (data.bvKr!=null && data.bvKrFgAr!=null) ? data.bvKr - data.bvKrFgAr : data.bvKr;
   var g=goals||{}, dg=deptGoals||{};
   var html='<div class="kgrid">'
     +ktile('Omsättning',data.forsaljningDelta,g.oms||7,'delta',false)
-    +ktile('Marginal BV%',data.bvPct,g.marginal||26.2,'pct',false)
+    +ktile('Marginal BV%',data.bvPct,g.marginal||26.2,'pct',false,true)
+    +ktile('Marginal BV kr Δ',bvKrDelta,null,'kr_delta',false)
     +ktile('Antal sålda',data.antalDelta,g.antal||5,'delta',false)
     +ktile('Känt svinn',null,g.svinn_k||0.7,'pct',true)
     +'</div>'
@@ -289,7 +293,8 @@ function render(data, goals, deptGoals, svinnData, eanMap, actions){
         +'<div class="dkpis">'
         +dkpi('Omsättning',d.forsaljningDelta,ddg.oms||5,'delta',false)
         +dkpi('Antal sålda',d.antalDelta,ddg.antal||5,'delta',false)
-        +dkpi('Marginal BV%',d.bvPct,ddg.marginal||28,'pct',false)
+        +dkpi('Marginal BV%',d.bvPct,ddg.marginal||28,'pct',false,true)
+        +dkpi('Marginal BV kr Δ',(d.bvKr!=null&&d.bvKrFgAr!=null)?d.bvKr-d.bvKrFgAr:d.bvKr,null,'kr_delta',false)
         +dkpi('Känt svinn',null,ddg.svinn||1.0,'pct',true)
         +'</div>';
 
@@ -322,7 +327,124 @@ function render(data, goals, deptGoals, svinnData, eanMap, actions){
     });
   }
 
+  // Lägg till trenddiagram-container
+  html += '<div id="w-trends" style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:1.25rem;margin-bottom:1rem">'
+    + '<div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:1rem">Trender — rullande 8-veckors medel × 52</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem">'
+    + '<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Omsättning (Mkr årstakt)</div><div style="position:relative;height:140px"><canvas id="wc-oms"></canvas></div></div>'
+    + '<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Antal sålda (st årstakt)</div><div style="position:relative;height:140px"><canvas id="wc-antal"></canvas></div></div>'
+    + '<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Bruttovinst %</div><div style="position:relative;height:140px"><canvas id="wc-bv"></canvas></div></div>'
+    + '<div><div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Antal kvitton (årstakt)</div><div style="position:relative;height:140px"><canvas id="wc-kvitton"></canvas></div></div>'
+    + '</div></div>';
+
   document.getElementById('main').innerHTML=html;
+  if(currentStore!=="all") drawWidgetTrends(currentStore);
+}
+
+
+// ── TRENDDIAGRAM ─────────────────────────────────────────────────────
+var wCharts = {};
+var wRatData = null;
+
+async function loadRatDataWidget(storeId) {
+  if(wRatData) return wRatData;
+  const {data, error} = await SB.from('os20_data').select('period_key,data').order('period_key').limit(500);
+  if(error || !data) return {};
+  wRatData = {};
+  data.forEach(function(r) {
+    var m = r.period_key.match(/(\d{4})-V(\d+)/);
+    if(!m) return;
+    var yr = parseInt(m[1]), wk = parseInt(m[2]);
+    wRatData[r.period_key] = {year:yr, week:wk, stores:{}};
+    Object.entries(r.data||{}).forEach(function([sid,sd]) {
+      if(sd.forsaljning!=null) wRatData[r.period_key].stores[sid] = {
+        oms: sd.forsaljning||0, antal: sd.antalSt||0,
+        bvKr: sd.bvKr||0, bvPct: sd.bvPct||0, kvitton: sd.kvitton||0
+      };
+    });
+  });
+  return wRatData;
+}
+
+function getRolling8Widget(allPeriods, data, periodIdx, storeId, metric) {
+  var sumOms=0, sumVal=0, count=0;
+  for(var back=0; back<8; back++) {
+    var pk = allPeriods[periodIdx-back];
+    if(!pk) break;
+    var sd = data[pk].stores[storeId];
+    if(!sd) continue;
+    if(metric==='oms')     { sumOms+=sd.oms; sumVal+=sd.oms; }
+    if(metric==='antal')   { sumOms+=sd.oms; sumVal+=sd.antal; }
+    if(metric==='bvpct')   { sumOms+=sd.oms; sumVal+=sd.bvKr; }
+    if(metric==='kvitton') { sumOms+=sd.oms; sumVal+=sd.kvitton; }
+    count++;
+  }
+  if(count<4) return null;
+  if(metric==='bvpct') return sumOms>0 ? (sumVal/sumOms)*100 : null;
+  return (sumVal/count)*52;
+}
+
+async function drawWidgetTrends(storeId) {
+  if(typeof Chart === 'undefined') return;
+  var data = await loadRatDataWidget(storeId);
+  if(!data || !Object.keys(data).length) return;
+
+  var allPeriods = Object.keys(data).sort();
+  var curYear = new Date().getFullYear();
+  var prevYear = curYear - 1;
+  var COLORS = {};
+  COLORS[prevYear] = '#94a3b8';
+  COLORS[curYear]  = '#E20000';
+
+  var configs = [
+    {id:'wc-oms',     metric:'oms',     unit:'Mkr', dec:1, scale:function(v){return Math.round(v/1000000*10)/10;}},
+    {id:'wc-antal',   metric:'antal',   unit:'st',  dec:0, scale:Math.round},
+    {id:'wc-bv',      metric:'bvpct',   unit:'%',   dec:1, scale:function(v){return Math.round(v*10)/10;}},
+    {id:'wc-kvitton', metric:'kvitton', unit:'st',  dec:0, scale:Math.round},
+  ];
+
+  configs.forEach(function(cfg) {
+    var canvas = document.getElementById(cfg.id);
+    if(!canvas) return;
+    if(wCharts[cfg.id]) { wCharts[cfg.id].destroy(); delete wCharts[cfg.id]; }
+
+    var datasets = [prevYear, curYear].filter(function(yr) {
+      return allPeriods.some(function(k){return data[k].year===yr;});
+    }).map(function(yr) {
+      var pts = allPeriods
+        .filter(function(k){return data[k].year===yr;})
+        .map(function(key) {
+          var idx = allPeriods.indexOf(key);
+          var val = getRolling8Widget(allPeriods, data, idx, storeId, cfg.metric);
+          if(val==null) return null;
+          return {x: data[key].week, y: cfg.scale(val)};
+        }).filter(Boolean);
+      return {
+        label: String(yr), data: pts,
+        borderColor: COLORS[yr]||'#888',
+        backgroundColor: 'transparent',
+        borderWidth: yr===curYear?2.5:1.5,
+        borderDash: yr===prevYear?[5,3]:[],
+        pointRadius:0, tension:0.35, parsing:false
+      };
+    });
+
+    wCharts[cfg.id] = new Chart(canvas, {
+      type:'line', data:{datasets:datasets},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false}, tooltip:{callbacks:{
+          title:function(ctx){return 'Vecka '+ctx[0].parsed.x;},
+          label:function(ctx){return ctx.dataset.label+': '+ctx.parsed.y.toFixed(cfg.dec)+' '+cfg.unit;}
+        }}},
+        scales:{
+          x:{type:'linear',min:1,max:52,ticks:{stepSize:8,font:{size:9}},grid:{color:'rgba(0,0,0,.04)'}},
+          y:{ticks:{font:{size:9},callback:function(v){return v.toFixed(cfg.dec);}},grid:{color:'rgba(0,0,0,.04)'}}
+        }
+      }
+    });
+  });
 }
 
 async function load(){
