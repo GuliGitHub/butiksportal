@@ -3731,7 +3731,8 @@ function _buildPDFDoc(storeId,pdfMode){
       wks.forEach(pk=>{
         storeLoop.forEach(sid=>{
         (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
-          if((r.deptCode||null)!==d.code)return;
+          const _dc=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;
+          if(_dc!==d.code)return;
           const k=r.artNr||r.artName||r.ean;
           if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};
           svinnMap[k].svinnKr+=r.svinnKr||0;
@@ -4122,8 +4123,10 @@ async function preRenderWeatherIcons(forecast) {
 }
 
 async function _appendWeatherPage(doc, storeId) {
+  console.log('[PDF] Hämtar väder för', storeId);
   const weatherData = await fetchWeather(storeId);
-  if(!weatherData || !weatherData.length) return;
+  if(!weatherData || !weatherData.length) { console.warn('[PDF] Ingen väderdata för', storeId); return; }
+  console.log('[PDF] Väderdata hämtad:', weatherData.length, 'dagar');
 
   // Pre-rendera SVG-ikoner till PNG
   const iconPNGs = await preRenderWeatherIcons(weatherData);
@@ -4248,8 +4251,12 @@ async function generatePDF(storeId, pdfMode) {
   const storeName=storeId===TOTAL_ID?TOTAL_NAME:(STORES[storeId]||storeId);
   const wksArr=[...selWeeks].sort();
   const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
-  if(storeId !== TOTAL_ID) await _appendWeatherPage(doc, storeId);
-  await _appendStoreTrendPage(doc, storeId);
+  if(storeId !== TOTAL_ID) {
+    try { await _appendWeatherPage(doc, storeId); }
+    catch(e) { console.error('PDF: väder misslyckades:', e.message); }
+    try { await _appendStoreTrendPage(doc, storeId); }
+    catch(e) { console.error('PDF: trender misslyckades:', e.message); }
+  }
   doc.save(`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel.replace(/\s/g,'_')}.pdf`);
   toast('PDF nedladdad ✓');
 }
@@ -4258,14 +4265,16 @@ async function generatePDF(storeId, pdfMode) {
 async function generatePDFBase64(storeId, pdfMode) {
   try {
     const doc = _buildPDFDoc(storeId, pdfMode);
-    if(!doc) return null;
-    if(storeId !== TOTAL_ID) await _appendWeatherPage(doc, storeId);
-    if(storeId !== TOTAL_ID) await _appendStoreTrendPage(doc, storeId);
-    if(storeId !== TOTAL_ID) await _appendWeatherPage(doc, storeId);
+    if(!doc) { console.error('PDF: _buildPDFDoc returnerade null'); return null; }
+    if(storeId !== TOTAL_ID) {
+      try { await _appendWeatherPage(doc, storeId); }
+      catch(e) { console.error('PDF: väder-sida misslyckades:', e.message); }
+      try { await _appendStoreTrendPage(doc, storeId); }
+      catch(e) { console.error('PDF: trend-sida misslyckades:', e.message); }
+    }
     return doc.output('datauristring').split(',')[1];
   } catch(e) {
-    console.error('PDF error:', e);
-    toast('⚠ PDF-fel: ' + e.message);
+    console.error('PDF generatePDFBase64 fel:', e);
     return null;
   }
 }
