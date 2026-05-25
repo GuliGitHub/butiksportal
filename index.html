@@ -2792,7 +2792,7 @@ async function sendSingleFromAdmin(storeId) {
     const res = await fetch(EDGE_FUNCTION_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
-      body:JSON.stringify({storeId,storeName,periodLabel,fileName,pdfBase64,subject:`Veckorapport ${storeName} — ${periodLabel}`})
+      body:JSON.stringify({storeId,storeName,periodLabel,fileName,pdfBase64,to:emails,subject:`Veckorapport ${storeName} — ${periodLabel}`})
     });
     const data = await res.json();
     if(res.ok){ toast(`✓ Skickat till ${data.sent} mottagare på ${storeName}`); if(statusEl)statusEl.style.display='none'; }
