@@ -2330,13 +2330,22 @@ async function doBIBUpload(force) {
           depts:[]};
       } else if(lastStore && c0==null && c1==null && c2!=null && c2str.match(/^\d{1,2}$/) && c3!=null) {
         lastDept = c2str.padStart(2,'0'); avdCount++;
-        pd[lastStore].depts.push({code:lastDept, name:c3,
-          forsaljning:     row[6]!=null?parseFloat(row[6]):null,
-          forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
-          antalSt:         row[8]!=null?parseFloat(row[8]):null,
-          antalDelta:      row[9]!=null?parseFloat(row[9]):null,
-          bvKr:            row[10]!=null?parseFloat(row[10]):null,
-          bvPct:           row[11]!=null?parseFloat(row[11]):null});
+        {
+          const _dF=row[6]!=null?parseFloat(row[6]):null;
+          const _dFD=row[7]!=null?parseFloat(row[7]):null;
+          const _dBvKr=row[10]!=null?parseFloat(row[10]):null;
+          const _dBvPct=row[11]!=null?parseFloat(row[11]):null;
+          const _dBvPctFgAr=row[12]!=null?parseFloat(row[12]):null;
+          const _dFFgAr=_dF!=null&&_dFD!=null?_dF/(1+_dFD):null;
+          const _dBvKrFgAr=_dFFgAr!=null&&_dBvPctFgAr!=null?_dFFgAr*_dBvPctFgAr:null;
+          const _dBvKrDelta=_dBvKr!=null&&_dBvKrFgAr!=null?_dBvKr-_dBvKrFgAr:null;
+          pd[lastStore].depts.push({code:lastDept, name:c3,
+            forsaljning:_dF, forsaljningDelta:_dFD,
+            antalSt:row[8]!=null?parseFloat(row[8]):null,
+            antalDelta:row[9]!=null?parseFloat(row[9]):null,
+            bvKr:_dBvKr, bvPct:_dBvPct,
+            bvPctFgAr:_dBvPctFgAr, bvKrFgAr:_dBvKrFgAr, bvKrDelta:_dBvKrDelta});
+        }
       } else if(lastStore && lastDept && c0==null && c1==null && c2==null && c3==null && row[4]!=null && row[5]!=null) {
         const ean = String(row[5]).trim();
         if(ean.match(/^\d{6,14}$/)){
