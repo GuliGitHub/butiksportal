@@ -380,6 +380,17 @@ async function loadAllFromSupabase() {
     rows.forEach(row => { REPORT_DB[row.period_key] = row.data; });
   });
 
+  await tryLoad('ao_data', async () => {
+    const rows = await sbGet('ao_data');
+    rows.forEach(row => { AO_DB[row.period_key] = row.data; });
+  });
+
+  await tryLoad('ao_data', async () => {
+    const rows = await sbGet('ao_data');
+    rows.forEach(row => { AO_DB[row.period_key] = AO_DB[row.period_key] || {};
+      AO_DB[row.period_key][row.store_id] = row.data; });
+  });
+
   await tryLoad('svinn_data', async () => {
     const rows = await sbGet('svinn_data');
     rows.forEach(row => {
@@ -1576,9 +1587,38 @@ function renderDeptTable(sd,wData,aData,mode){
               <div style="font-size:16px;font-weight:700;color:var(--ö-text);font-family:'SF Mono',monospace;line-height:1">${Math.round(bvKrUtfall).toLocaleString('sv-SE')} kr</div>
               ${bvKrAcc!=null?`<div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Ack: ${Math.round(bvKrAcc).toLocaleString('sv-SE')} kr</div>`:''}
             </div>`:''}
+            ${(()=>{
+              const ao=getAOData(sid,d.code,wks);
+              if(!ao) return '';
+              const andel=ao.aoAndel!=null?(ao.aoAndel*100).toFixed(1)+'%':null;
+              const andelColor=ao.aoAndel!=null?(ao.aoAndel>=0.9?'#1e6b2e':ao.aoAndel>=0.7?'#b45309':'#c62828'):'var(--ö-muted)';
+              return `<div style="flex:1;padding:.625rem .875rem;border-left:1px solid var(--ö-border);background:#f5f7ff">
+                <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px">AO Saldokontroller</div>
+                ${andel?`<div style="font-size:14px;font-weight:700;color:${andelColor};font-family:'SF Mono',monospace">${andel}</div>
+                <div style="font-size:9px;color:var(--ö-muted)">Andel riktade</div>`:'<div style="font-size:14px;color:var(--ö-muted)">—</div>'}
+                <div style="margin-top:4px;font-size:10px;color:var(--ö-muted)">${ao.aoAntal!=null?ao.aoAntal+' st riktade':''} ${ao.aoSpontan!=null?'/ '+ao.aoSpontan+' spontana':''}</div>
+              </div>`;
+            })()}
           </div>
         </div>
 
+        <!-- Autoorder (AO) nyckeltal -->
+        ${(()=>{const ao=getAODeptData(sid,d.code);if(!ao)return'';return`
+          <div style="background:var(--ö-light);border-top:1px solid var(--ö-border);padding:.5rem 1rem;display:flex;gap:1.5rem;flex-wrap:wrap">
+            <div style="font-size:10px;font-weight:700;color:var(--ö-blue);text-transform:uppercase;letter-spacing:.07em;min-width:100px;line-height:2">🔄 Autoorder</div>
+            <div style="font-size:11px">
+              <span style="color:var(--ö-muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em;display:block">Andel riktade</span>
+              <span style="font-weight:700;color:${ao.aoAndelRiktade>=0.9?'#1e6b2e':ao.aoAndelRiktade>=0.7?'#b45309':'#c62828'}">${fmtAOPct(ao.aoAndelRiktade)}</span>
+            </div>
+            <div style="font-size:11px">
+              <span style="color:var(--ö-muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em;display:block">Antal saldokontroller</span>
+              <span style="font-weight:700;color:var(--ö-text)">${ao.aoAntalSaldo??'—'}</span>
+            </div>
+            <div style="font-size:11px">
+              <span style="color:var(--ö-muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em;display:block">Spontana</span>
+              <span style="font-weight:700;color:var(--ö-text)">${ao.aoAntalSpontana??'—'}</span>
+            </div>
+          </div>`;})()}
         <!-- Actions + Top 5-listor -->
         ${acts.length||hasSvinn||hasTB?`
         <div style="padding:.75rem 1rem 1rem 1rem;border-top:1px solid var(--ö-border);background:#faf9f6">
@@ -3078,6 +3118,48 @@ function getAccForPeriod(storeId, period) {
 }
 
 
+
+// Hämta AO-data för en butik och avdelning i valda veckor
+function getAOData(storeId, deptCode, weeks) {
+  const wks = weeks && weeks.size > 0 ? weeks : new Set(Object.keys(AO_DB).sort().slice(-1));
+  let andel = [], antal = 0, spontan = 0, found = 0;
+  wks.forEach(pk => {
+    const d = AO_DB[pk]?.[storeId]?.[deptCode];
+    if(!d) return;
+    found++;
+    if(d.aoAndel != null) andel.push(d.aoAndel);
+    if(d.aoAntal  != null) antal   += d.aoAntal;
+    if(d.aoSpontan != null) spontan += d.aoSpontan;
+  });
+  if(!found) return null;
+  return {
+    aoAndel:  andel.length ? andel.reduce((a,b)=>a+b,0)/andel.length : null,
+    aoAntal:  antal,
+    aoSpontan:spontan,
+  };
+}
+
+
+// ── AUTOORDER HELPERS ─────────────────────────────────────────────────
+function getLatestAOData(storeId) {
+  // Hitta senaste veckan med AO-data
+  const keys = Object.keys(AO_DB).sort();
+  for(let i = keys.length-1; i >= 0; i--) {
+    if(AO_DB[keys[i]]?.[storeId]) return { pk: keys[i], ...AO_DB[keys[i]][storeId] };
+  }
+  return null;
+}
+
+function getAODeptData(storeId, deptCode) {
+  const ao = getLatestAOData(storeId);
+  return ao?.depts?.[deptCode] || null;
+}
+
+function fmtAOPct(v) {
+  if(v == null) return '—';
+  return (v * 100).toFixed(1) + '%';
+}
+
 function getStoreCoords(storeId) {
   const sd = getSD(storeId);
   return sd.location || DEFAULT_COORDS[storeId] || null;
@@ -3423,6 +3505,22 @@ async function _buildPDFDoc(storeId,pdfMode){
       doc.text(k.mål!=null?'Mål: '+k.mål+'%':'',tx+3,y+15);
     });
     y+=bH;
+
+    // Autoorder
+    if(aoD) {
+      doc.setFillColor(235,245,235);doc.rect(M,y,W-2*M,7,'F');
+      doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);doc.rect(M,y,W-2*M,7);
+      doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(...BLUE);
+      doc.text('AUTOORDER',M+3,y+4.5);
+      const aoParts=[
+        `Andel riktade: ${aoD.aoAndelRiktade!=null?(aoD.aoAndelRiktade*100).toFixed(1)+'%':'—'}`,
+        `Antal saldokontroller: ${aoD.aoAntalSaldo??'—'}`,
+        `Spontana: ${aoD.aoAntalSpontana??'—'}`,
+      ];
+      doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...DK);
+      doc.text(aoParts.join('   ·   '),M+28,y+4.5);
+      y+=8;
+    }
 
     // Actions
     if(acts.length>0){
