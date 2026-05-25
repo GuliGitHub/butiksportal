@@ -544,7 +544,7 @@ const DEPTS=[
 const KPI_LIBRARY = [
   {key:'oms',          label:'Omsättning',        unit:'% vs fg år', lb:false, fmt:'delta', källa:'bib'},
   {key:'marginal',     label:'Marginal BV%',       unit:'%',          lb:false, fmt:'pct',   källa:'bib'},
-  {key:'marginal_kr',   label:'Marginal BV kr',     unit:'kr',         lb:false, fmt:'kr',    källa:'bib'},
+  {key:'marginal_kr',   label:'Marginal BV kr Δ',   unit:'kr',         lb:false, fmt:'kr_delta', källa:'bib'},
   {key:'svinn_k',      label:'Känt Svinn',         unit:'%',          lb:true,  fmt:'pct',   källa:'svinn'},
   {key:'antal',        label:'Antal Sålda',        unit:'% vs fg år', lb:false, fmt:'delta', källa:'bib'},
   {key:'kvitton',      label:'Antal Kvitton',      unit:'% vs fg år', lb:false, fmt:'delta', källa:'os20'},
@@ -1305,17 +1305,30 @@ function getKPIVal(key, storeId, weeks) {
   }
 
   switch(key) {
-    case 'oms':          return isAcc ? accBIBMean(d=>d?.forsaljningDelta) : (latestBIB?.forsaljningDelta ?? null);
-    case 'marginal':     return isAcc ? accBIBMean(d=>d?.bvPct)            : (latestBIB?.bvPct ?? null);
-    case 'marginal_kr':  {
-      // Summera BV kr över valda veckor (inte medelvärde)
-      if(isAcc) {
-        const vals=[...wks].map(pk=>REPORT_DB[pk]?.[curSid]?.bvKr).filter(v=>v!=null);
-        return vals.length ? vals.reduce((a,b)=>a+b,0) : null;
-      }
-      return latestBIB?.bvKr ?? null;
+    case 'oms':          {
+      const raw = isAcc ? accBIBMean(d=>d?.forsaljningDelta) : (latestBIB?.forsaljningDelta ?? latestOS20?.forsaljningDelta ?? null);
+      return raw != null ? (Math.abs(raw) > 1 ? raw/100 : raw) : null;
     }
-    case 'antal':        return isAcc ? accBIBMean(d=>d?.antalDelta)        : (latestBIB?.antalDelta ?? null);
+    case 'marginal':     {
+      const raw = isAcc ? accBIBMean(d=>d?.bvPct) : (latestBIB?.bvPct ?? latestOS20?.bvPct ?? null);
+      // Normalisera: om värdet är >1 är det lagrat som procent (t.ex 24.5), konvertera till decimal
+      return raw != null ? (raw > 1 ? raw/100 : raw) : null;
+    }
+    case 'marginal_kr':  {
+      // Visa differens BV kr mot föregående år
+      if(isAcc) {
+        const cur  = [...wks].map(pk => (REPORT_DB[pk]?.[curSid]?.bvKr  || OS20_DB[pk]?.[curSid]?.bvKr)  ?? null).filter(v=>v!=null).reduce((a,b)=>a+b,0);
+        const prev = [...wks].map(pk => (REPORT_DB[pk]?.[curSid]?.bvKrFgAr || OS20_DB[pk]?.[curSid]?.bvKrFgAr) ?? null).filter(v=>v!=null).reduce((a,b)=>a+b,0);
+        return cur ? (prev ? cur - prev : cur) : null;
+      }
+      const cur  = latestBIB?.bvKr  ?? latestOS20?.bvKr  ?? null;
+      const prev = latestBIB?.bvKrFgAr ?? latestOS20?.bvKrFgAr ?? null;
+      return (cur!=null && prev!=null) ? cur - prev : cur;
+    }
+    case 'antal':        {
+      const raw = isAcc ? accOS20Mean(d=>d?.antalDelta) : (latestOS20?.antalDelta ?? latestBIB?.antalDelta ?? null);
+      return raw != null ? (Math.abs(raw) > 1 ? raw/100 : raw) : null;
+    }
     case 'svinn_k':      return svinnVal();
     case 'kvitton':      return isAcc ? accOS20Mean(d=>d?.kvittonDelta)     : (latestOS20?.kvittonDelta ?? null);
     case 'snittKop':     return isAcc ? accOS20Mean(d=>d?.snittKop)         : (latestOS20?.snittKop ?? null);
@@ -1333,7 +1346,8 @@ function fmtKPIVal(k, val) {
   switch(k.fmt) {
     case 'delta': return fmtDelta(val);
     case 'pct':   return fmtPct(val);
-    case 'kr':    return Math.round(val).toLocaleString('sv-SE') + ' kr';
+    case 'kr':       return Math.round(val).toLocaleString('sv-SE') + ' kr';
+    case 'kr_delta': return (val>=0?'+':'')+Math.round(val).toLocaleString('sv-SE') + ' kr';
     case 'num':   return val.toFixed(1);
     default:      return val.toFixed(1);
   }
@@ -1348,7 +1362,7 @@ function renderKPIGrid(sd, data, storeId) {
     const val     = getKPIVal(k.key, curSid, viewMode==='period'?selWeeks:null);
     const goal    = sd?.storeGoals?.[k.key];
     // For kundkorg (num) and snittKop (kr), goal is in raw units not %
-    const goalDec = (k.fmt==='num'||k.fmt==='kr') ? goal : (goal != null ? goal/100 : null);
+    const goalDec = (k.fmt==='num'||k.fmt==='kr'||k.fmt==='kr_delta') ? goal : (goal != null ? goal/100 : null);
     const color   = (val != null && goalDec != null) ? pctColor(val, goalDec, k.lb) : 'var(--ö-muted)';
     const display = fmtKPIVal(k, val);
     const barW    = (val != null && goalDec) ? Math.min(Math.abs(val/goalDec)*100, 100) : 0;
