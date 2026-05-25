@@ -1318,15 +1318,12 @@ function getKPIVal(key, storeId, weeks) {
       return raw != null ? (raw > 1 ? raw/100 : raw) : null;
     }
     case 'marginal_kr':  {
-      // Visa differens BV kr mot föregående år
+      // Delta BV kr mot fg år — räknas fram via forsaljningFgAr × (bvPct - bvDelta)
       if(isAcc) {
-        const cur  = [...wks].map(pk => (REPORT_DB[pk]?.[curSid]?.bvKr  || OS20_DB[pk]?.[curSid]?.bvKr)  ?? null).filter(v=>v!=null).reduce((a,b)=>a+b,0);
-        const prev = [...wks].map(pk => (REPORT_DB[pk]?.[curSid]?.bvKrFgAr || OS20_DB[pk]?.[curSid]?.bvKrFgAr) ?? null).filter(v=>v!=null).reduce((a,b)=>a+b,0);
-        return cur ? (prev ? cur - prev : cur) : null;
+        const deltas = [...wks].map(pk => calcBvKrDelta(OS20_DB[pk]?.[curSid] || REPORT_DB[pk]?.[curSid])).filter(v=>v!=null);
+        return deltas.length ? deltas.reduce((a,b)=>a+b,0) : null;
       }
-      const cur  = latestBIB?.bvKr  ?? latestOS20?.bvKr  ?? null;
-      const prev = latestBIB?.bvKrFgAr ?? latestOS20?.bvKrFgAr ?? null;
-      return (cur!=null && prev!=null) ? cur - prev : cur;
+      return calcBvKrDelta(latestOS20 || latestBIB);
     }
     case 'antal':        {
       const raw = isAcc ? accOS20Mean(d=>d?.antalDelta) : (latestOS20?.antalDelta ?? latestBIB?.antalDelta ?? null);
@@ -1549,13 +1546,9 @@ function renderDeptTable(sd,wData,aData,mode){
 
       const omsUtfall=rw?.forsaljningDelta??null,  omsAcc=ra?.forsaljningDelta??null;
       const bvUtfall=rw?.bvPct??null,              bvAcc=ra?.bvPct??null;
-      // BV kr delta mot föregående år
-      const bvKrCur  = rw?.bvKr ?? null;
-      const bvKrPrev = rw?.bvKrFgAr ?? null;
-      const bvKrUtfall = (bvKrCur!=null && bvKrPrev!=null) ? bvKrCur - bvKrPrev : bvKrCur;
-      const bvKrAccCur  = ra?.bvKr ?? null;
-      const bvKrAccPrev = ra?.bvKrFgAr ?? null;
-      const bvKrAcc = (bvKrAccCur!=null && bvKrAccPrev!=null) ? bvKrAccCur - bvKrAccPrev : bvKrAccCur;
+      // BV kr delta mot fg år via calcBvKrDelta
+      const bvKrUtfall = calcBvKrDelta(rw);
+      const bvKrAcc    = calcBvKrDelta(ra);
       const svinnUtfall=deptSvinnPct(d.code);
       const antalUtfall=rw?.antalDelta??null,       antalAcc=ra?.antalDelta??null;
 
@@ -3160,6 +3153,27 @@ function getAODeptData(storeId, deptCode) {
 function fmtAOPct(v) {
   if(v == null) return '—';
   return (v * 100).toFixed(1) + '%';
+}
+
+
+// Beräkna BV kr delta mot föregående år
+// bvKrFgAr saknas i datan — räkna ut: forsaljningFgAr × (bvPct - bvDelta)
+function calcBvKrDelta(d) {
+  if(!d) return null;
+  const bvKr = d.bvKr;
+  if(bvKr == null) return null;
+  // Försök direkt om bvKrFgAr finns
+  if(d.bvKrFgAr != null) return bvKr - d.bvKrFgAr;
+  // Räkna fram: forsaljningFgAr × (bvPct - bvDelta)
+  const forsaljningFgAr = d.forsaljningFgAr;
+  const bvPctRaw = d.bvPct;
+  const bvDeltaRaw = d.bvDelta;
+  if(forsaljningFgAr == null || bvPctRaw == null || bvDeltaRaw == null) return bvKr; // visa utfall om vi inte kan beräkna
+  const bvPct    = Math.abs(bvPctRaw)  > 1 ? bvPctRaw/100  : bvPctRaw;
+  const bvDelta  = Math.abs(bvDeltaRaw)> 1 ? bvDeltaRaw/100: bvDeltaRaw;
+  const bvPctFgAr = bvPct - bvDelta;
+  const bvKrFgAr  = forsaljningFgAr * bvPctFgAr;
+  return bvKr - bvKrFgAr;
 }
 
 function getStoreCoords(storeId) {

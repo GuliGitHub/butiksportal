@@ -255,8 +255,17 @@ function aggregate(all){
   };
 }
 
+
+function calcBvKrDelta(d) {
+  if(!d || d.bvKr==null) return null;
+  if(d.bvKrFgAr!=null) return d.bvKr - d.bvKrFgAr;
+  if(d.forsaljningFgAr==null || d.bvPct==null || d.bvDelta==null) return d.bvKr;
+  var bvPct   = Math.abs(d.bvPct)   > 1 ? d.bvPct/100   : d.bvPct;
+  var bvDelta = Math.abs(d.bvDelta) > 1 ? d.bvDelta/100 : d.bvDelta;
+  return d.bvKr - d.forsaljningFgAr * (bvPct - bvDelta);
+}
 function render(data, goals, deptGoals, svinnData, eanMap, actions){
-  var bvKrDelta = (data.bvKr!=null && data.bvKrFgAr!=null) ? data.bvKr - data.bvKrFgAr : data.bvKr;
+  var bvKrDelta = calcBvKrDelta(data);
   var g=goals||{}, dg=deptGoals||{};
   var html='<div class="kgrid">'
     +ktile('Omsättning',data.forsaljningDelta,g.oms||7,'delta',false)
@@ -294,7 +303,7 @@ function render(data, goals, deptGoals, svinnData, eanMap, actions){
         +dkpi('Omsättning',d.forsaljningDelta,ddg.oms||5,'delta',false)
         +dkpi('Antal sålda',d.antalDelta,ddg.antal||5,'delta',false)
         +dkpi('Marginal BV%',d.bvPct,ddg.marginal||28,'pct',false,true)
-        +dkpi('Marginal BV kr Δ',(d.bvKr!=null&&d.bvKrFgAr!=null)?d.bvKr-d.bvKrFgAr:d.bvKr,null,'kr_delta',false)
+        +dkpi('Marginal BV kr Δ',calcBvKrDelta(d),null,'kr_delta',false)
         +dkpi('Känt svinn',null,ddg.svinn||1.0,'pct',true)
         +'</div>';
 
