@@ -1484,8 +1484,9 @@ function renderDeptTable(sd,wData,aData,mode){
 
   // ── Top 5 TB kr per avdelning ─────────────────────────
   function top5TB(code) {
-    // Använd per-butik EAN-data om tillgänglig, annars fall tillbaka på global
-    const eanSource = EAN_BY_STORE[sid] || EAN_DEPT_MAP;
+    // Kräv per-butik EAN-data — visa inte om det saknas (globala data är ej per butik)
+    const eanSource = EAN_BY_STORE[sid];
+    if(!eanSource || Object.keys(eanSource).length === 0) return [];
     const m={};
     Object.entries(eanSource).forEach(([artnr,info])=>{
       if(info.dept!==code||!info.bvKr||info.bvKr<=0)return;
@@ -3004,8 +3005,9 @@ function buildMailHTML(storeId, pdfMode) {
     const svinnMap={};
     wks.forEach(pk=>{(SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if((r.deptCode||null)!==d.code)return;const k=r.artNr||r.artName||r.ean;if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};svinnMap[k].svinnKr+=r.svinnKr||0;const bi=EAN_DEPT_MAP[r.artNr||r.ean];if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;});});
     const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5).map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
-    const _tbEan=EAN_BY_STORE[isTotal?null:storeId]||EAN_DEPT_MAP;
-      const tbMap={};Object.entries(_tbEan).forEach(([artnr,info])=>{if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};});
+    const _tbEan=EAN_BY_STORE[isTotal?null:storeId];
+      if(!_tbEan||!Object.keys(_tbEan).length){} // Tom = visa ej TB
+      const tbMap={};Object.entries(_tbEan||{}).forEach(([artnr,info])=>{if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};});
     const tbRows=Object.values(tbMap).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
 
     function miniTable(title,rows,col3,col4,col4Color,col5,getC5color) {
