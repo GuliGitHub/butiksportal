@@ -1454,7 +1454,7 @@ function renderDeptTable(sd,wData,aData,mode){
   function deptSvinnPct(code) {
     let totS=0,totF=0;
     wks.forEach(pk=>{
-      (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{if(r.deptCode===code)totS+=r.svinnKr||0;});
+      (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc===code)totS+=r.svinnKr||0;});
       const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===code);
       if(rd)totF+=rd.forsaljning||0;
     });
@@ -2970,7 +2970,7 @@ function buildMailHTML(storeId, pdfMode) {
     const curD = pdfMode==='week'?rdW:rdA||rdW;
     let totS=0,totF=0;
     wks.forEach(pk=>{
-      (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if(r.deptCode===d.code)totS+=r.svinnKr||0;});
+      (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{const _dc2=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc2===d.code)totS+=r.svinnKr||0;});
       const rd=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);
       if(rd)totF+=rd.forsaljning||0;
     });
@@ -3744,7 +3744,7 @@ function _buildPDFDoc(storeId,pdfMode){
       const storeLoop=isTotal?Object.keys(STORES):[storeId];
       wks.forEach(pk=>{
         storeLoop.forEach(sid=>{
-          (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{if(r.deptCode===d.code)totS+=r.svinnKr||0;});
+          (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc3=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc3===d.code)totS+=r.svinnKr||0;});
           const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);
           if(rd)totF+=rd.forsaljning||0;
         });
