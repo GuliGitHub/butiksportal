@@ -397,6 +397,7 @@ async function loadAllFromSupabase() {
     if(rows.length) {
       KPI_CONFIG = {...DEFAULT_KPI_CONFIG, ...rows[0].config};
       if(rows[0].ean_dept_map) EAN_DEPT_MAP = rows[0].ean_dept_map;
+      if(rows[0].ean_by_store) EAN_BY_STORE = rows[0].ean_by_store;
     }
   });
 
@@ -2372,7 +2373,7 @@ async function doBIBUpload(force) {
   Object.entries(pd).forEach(([id,d]) => getSD(id).reportData = d);
   await saveReportPeriod(pk);
   if(Object.keys(EAN_DEPT_MAP).length>0){
-    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,updated_at:new Date().toISOString()});
+    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,updated_at:new Date().toISOString()});
   }
   _pendingBIBWorkbook = null;
   document.getElementById('fp').style.display = 'none';
@@ -2434,7 +2435,7 @@ async function parseBIBSheet(rows,pk){
   await saveReportPeriod(pk);
   // Spara EAN-mappningen så den överlever refresh
   if(Object.keys(EAN_DEPT_MAP).length>0){
-    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,updated_at:new Date().toISOString()});
+    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,updated_at:new Date().toISOString()});
   }
 }
 
