@@ -585,6 +585,7 @@ const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','1
 
 // ── STATE ─────────────────────────────────────────────
 let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, AO_DB={}, PERIODS=[], PINS={};
+let EAN_BY_STORE={}; // {storeId: {ean: {dept,oms,bvKr,namn}}}
 let role=null, sid=null, viewMode='week', selPeriodId=null;
 
 function defaultSD() {
@@ -1482,8 +1483,10 @@ function renderDeptTable(sd,wData,aData,mode){
 
   // ── Top 5 TB kr per avdelning ─────────────────────────
   function top5TB(code) {
+    // Använd per-butik EAN-data om tillgänglig, annars fall tillbaka på global
+    const eanSource = EAN_BY_STORE[sid] || EAN_DEPT_MAP;
     const m={};
-    Object.entries(EAN_DEPT_MAP).forEach(([artnr,info])=>{
+    Object.entries(eanSource).forEach(([artnr,info])=>{
       if(info.dept!==code||!info.bvKr||info.bvKr<=0)return;
       m[artnr]={artName:info.namn||artnr, bvKr:info.bvKr*wks.size, oms:info.oms*wks.size, bvPct:info.oms>0?info.bvKr/info.oms:null};
     });
@@ -2351,12 +2354,13 @@ async function doBIBUpload(force) {
       } else if(lastStore && lastDept && c0==null && c1==null && c2==null && c3==null && row[4]!=null && row[5]!=null) {
         const ean = String(row[5]).trim();
         if(ean.match(/^\d{6,14}$/)){
-          EAN_DEPT_MAP[ean]={
-            dept: lastDept,
-            oms:  row[6]!=null?parseFloat(row[6]):0,
-            bvKr: row[10]!=null?parseFloat(row[10]):0,
-            namn: row[4]||''
-          };
+          const _eanData={dept:lastDept, oms:row[6]!=null?parseFloat(row[6]):0, bvKr:row[10]!=null?parseFloat(row[10]):0, namn:row[4]||''};
+          EAN_DEPT_MAP[ean]=_eanData;
+          // Spara per butik
+          if(lastStore){
+            if(!EAN_BY_STORE[lastStore]) EAN_BY_STORE[lastStore]={};
+            EAN_BY_STORE[lastStore][ean]=_eanData;
+          }
           artCount++;
         }
       }
@@ -2419,12 +2423,9 @@ async function parseBIBSheet(rows,pk){
       // Artikelrad: kol[4]=namn, kol[5]=artnr, kol[6]=oms, kol[10]=bvKr
       const ean=String(row[5]).trim();
       if(ean && ean.match(/^\d{6,14}$/)){
-        EAN_DEPT_MAP[ean]={
-          dept: curDept,
-          oms:  row[6]!=null?parseFloat(row[6]):0,
-          bvKr: row[10]!=null?parseFloat(row[10]):0,
-          namn: row[4]||''
-        };
+        const _e2={dept:curDept, oms:row[6]!=null?parseFloat(row[6]):0, bvKr:row[10]!=null?parseFloat(row[10]):0, namn:row[4]||''};
+        EAN_DEPT_MAP[ean]=_e2;
+        if(cs){if(!EAN_BY_STORE[cs])EAN_BY_STORE[cs]={};EAN_BY_STORE[cs][ean]=_e2;}
       }
     }
   }
@@ -3002,7 +3003,8 @@ function buildMailHTML(storeId, pdfMode) {
     const svinnMap={};
     wks.forEach(pk=>{(SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if((r.deptCode||null)!==d.code)return;const k=r.artNr||r.artName||r.ean;if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};svinnMap[k].svinnKr+=r.svinnKr||0;const bi=EAN_DEPT_MAP[r.artNr||r.ean];if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;});});
     const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5).map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
-    const tbMap={};Object.entries(EAN_DEPT_MAP).forEach(([artnr,info])=>{if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};});
+    const _tbEan=EAN_BY_STORE[isTotal?null:storeId]||EAN_DEPT_MAP;
+      const tbMap={};Object.entries(_tbEan).forEach(([artnr,info])=>{if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};});
     const tbRows=Object.values(tbMap).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
 
     function miniTable(title,rows,col3,col4,col4Color,col5,getC5color) {
