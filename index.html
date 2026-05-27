@@ -1112,7 +1112,7 @@ function renderStoreTrendCharts(storeId) {
   return `<div style="background:#fff;border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem;margin-bottom:1rem">
     <div style="font-size:13px;font-weight:600;color:var(--ö-blue);margin-bottom:1rem">
       Trender — rullande 8-veckors medel × 52
-      <span style="font-size:11px;font-weight:400;color:var(--ö-muted);margin-left:.5rem">Aktuellt år vs föregående år</span>
+      <span style="font-size:11px;font-weight:400;color:var(--ö-muted);margin-left:.5rem">Aktuellt år vs föregående år — obs: ej kalenderkorrigerat</span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem">
       <div>
@@ -1453,6 +1453,11 @@ function renderDeptTable(sd,wData,aData,mode){
 
   // ── Svinn% per avdelning ──────────────────────────────
   function deptSvinnPct(code) {
+    // HGR-data: svinnPct finns direkt per avdelning
+    let hS=0,hN=0;
+    wks.forEach(pk=>{const dept=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===code);if(dept?.svinnPct!=null){hS+=dept.svinnPct;hN++;}});
+    if(hN>0) return hS/hN;
+    // Fallback: beräkna från svinnfil och försäljning
     let totS=0,totF=0;
     wks.forEach(pk=>{
       (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc===code)totS+=r.svinnKr||0;});
@@ -2040,11 +2045,11 @@ function renderUploadFörsäljning(){
     <div class="ph"><div><div class="pt">Försäljningsdata</div><div class="ps">Ladda upp veckorapporter — nya veckor läggs till automatiskt</div></div></div>
 
     <div class="card">
-      <div class="card-head"><div><div class="ct">BIB_HEM06 — Försäljning per avdelning</div><div class="cs">En flik per vecka · nya veckor läggs till, befintliga hoppas över</div></div></div>
+      <div class="card-head"><div><div class="ct">HGR / BIB — Försäljning per avdelning</div><div class="cs">Stöder ny HGR-fil (en flik, alla veckor) och gammal BIB HEM06/07 (en flik per vecka)</div></div></div>
       <div style="padding:1rem">
         <div class="uzone" onclick="document.getElementById('ff').click()" ondragover="event.preventDefault();this.classList.add('udrag')" ondragleave="this.classList.remove('udrag')" ondrop="hFD(event)">
           <div style="font-size:22px;margin-bottom:.375rem">📊</div>
-          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp BIB_HEM06-filen</div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp HGR- eller BIB-filen</div>
           <div style="font-size:12px;color:var(--ö-muted)">Alla veckor läses in automatiskt · befintliga veckor påverkas inte</div>
         </div>
         <input type="file" id="ff" style="display:none" accept=".xlsx,.xls" onchange="hFF(event)">
@@ -2141,6 +2146,10 @@ function identifyFile(wb) {
     const header6 = (rows[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
     if(header6.includes('driftläckage') || header6.includes('kvitton') || header6.includes('snittköp'))
       return {type:'os20', name:'9A ÖS20 Försäljning & driftläckage'};
+    // Ny HGR-fil (en flik, alla veckor)
+    if(sheetName.toLowerCase().includes('hgr') || sheetName.toLowerCase().includes('östenssons hgr')) {
+      return {type:'hgr', name:'HGR — Artikel per vecka'};
+    }
     return {type:'bib_multi', name:'BIB_HEM06 (flerfliks)'};
   }
 
@@ -2208,7 +2217,11 @@ function procF(file){
       if(!weekSheets.length){
         // BIB-filen har en flik per butik (inte per vecka) — visa veckoväljare
         prog.style.display='none';
-        showBIBWeekPicker(wb, file.name);
+        if(detected.type === 'hgr') {
+          await doHGRUpload(wb, file.name);
+        } else {
+          showBIBWeekPicker(wb, file.name);
+        }
         return;
       }
 
@@ -2970,13 +2983,16 @@ function buildMailHTML(storeId, pdfMode) {
   function deptSection(d, rdW, rdA) {
     const dg = sd.deptGoals[d.code];
     const curD = pdfMode==='week'?rdW:rdA||rdW;
+    // HGR-svinn: direkt från avdelningsdata
+    let _hS=0,_hN=0;
+    wks.forEach(pk=>{const dept=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);if(dept?.svinnPct!=null){_hS+=dept.svinnPct;_hN++;}});
     let totS=0,totF=0;
-    wks.forEach(pk=>{
+    if(_hN===0){wks.forEach(pk=>{
       (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{const _dc2=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc2===d.code)totS+=r.svinnKr||0;});
       const rd=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);
       if(rd)totF+=rd.forsaljning||0;
-    });
-    const svinnPct=totF>0?totS/totF:null;
+    });}
+    const svinnPct=_hN>0?_hS/_hN:(totF>0?totS/totF:null);
     const dKpis=[
       {label:'Omsättning',val:curD?.forsaljningDelta,mål:dg.oms,fmt:'delta',lb:false},
       {label:'Antal sålda',val:curD?.antalDelta,mål:dg.antal,fmt:'delta',lb:false},
@@ -3743,16 +3759,16 @@ function _buildPDFDoc(storeId,pdfMode){
         : (sd.actions[d.code]||[]);
 
       const wks=selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
+          // HGR-svinn: direkt från avdelningsdata
+      let _hS2=0,_hN2=0;
+      wks.forEach(pk=>{storeLoop.forEach(sid=>{const dept=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);if(dept?.svinnPct!=null){_hS2+=dept.svinnPct;_hN2++;}});});
       let totS=0,totF=0;
-      const storeLoop=isTotal?Object.keys(STORES):[storeId];
-      wks.forEach(pk=>{
-        storeLoop.forEach(sid=>{
-          (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc3=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc3===d.code)totS+=r.svinnKr||0;});
-          const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);
-          if(rd)totF+=rd.forsaljning||0;
-        });
-      });
-      const svinnPct=totF>0?totS/totF:null;
+      if(_hN2===0){wks.forEach(pk=>{storeLoop.forEach(sid=>{
+        (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc3=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc3===d.code)totS+=r.svinnKr||0;});
+        const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);
+        if(rd)totF+=rd.forsaljning||0;
+      });});}
+      const svinnPct=_hN2>0?_hS2/_hN2:(totF>0?totS/totF:null);
 
       const svinnMap={};
       wks.forEach(pk=>{
