@@ -169,6 +169,7 @@ function buildNav(){
     ?`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('upload-försäljning',this)">📊 Försäljning</div>
       <div class="ni" onclick="showTab('upload-svinn',this)">🗑 Svinn</div>
+      <div class="ni" onclick="showTab('rekommendationer',this)">💡 Rekommendationer</div>
       <div class="ni" onclick="showTab('perioder',this)">📅 Perioder</div>
       <div class="ni" onclick="showTab('kpi-admin',this)">KPI-inställningar</div>
       <div class="ni" onclick="showTab('rat',this)">&#128200; Analys/trender</div>
