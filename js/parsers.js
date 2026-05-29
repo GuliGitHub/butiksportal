@@ -572,3 +572,140 @@ async function delPK(type,pk){
   toast(`${pk} borttagen`);
 }
 
+
+
+// ── HGR-UPPLADDNING (ny format) ────────────────────────────────────
+async function doHGRUpload(wb, fileName) {
+  const pmsg = document.getElementById('fpm');
+  const fp   = document.getElementById('fp');
+  if(fp)   fp.style.display='block';
+  if(pmsg) pmsg.textContent = 'Analyserar HGR-fil...';
+
+  try {
+    const ws   = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+
+    // Hitta veckonummer
+    let periodKey = null;
+    for(const row of rows) {
+      const c0 = row[0];
+      if(c0 && typeof c0 === 'number' && c0 > 200000) {
+        const yr = Math.floor(c0/100), wk = c0%100;
+        periodKey = `${yr}-V${String(wk).padStart(2,'0')}`;
+        break;
+      }
+    }
+    if(!periodKey) throw new Error('Kunde inte hitta veckonummer i HGR-filen');
+    if(pmsg) pmsg.textContent = `Läser ${periodKey}...`;
+
+    const STORE_IDS = Object.keys(STORES);
+    const storeData = {}, eanByStore = {};
+    let currentStore = null, currentHGR = null, artCount = 0;
+
+    for(let i=3; i<rows.length; i++) {
+      const row = rows[i]||[];
+      const c0=row[0],c1=row[1],c3=row[3],c4=row[4],c5=row[5],c6=row[6];
+
+      // Butikrad
+      if(c1 && typeof c1==='number' && STORE_IDS.includes(String(c1)) && !c0) {
+        currentStore=String(c1); currentHGR=null;
+        if(!storeData[currentStore]){storeData[currentStore]={depts:[]};eanByStore[currentStore]={};}
+        continue;
+      }
+      if(!currentStore) continue;
+
+      // HGR/Avdelningsrad
+      if(c3 && !c1 && !c5) {
+        currentHGR=String(c3).trim().padStart(2,'0');
+        const fors=row[11]!=null?parseFloat(row[11]):null, forsAr=row[12]!=null?parseFloat(row[12]):null;
+        const antal=row[13]!=null?parseFloat(row[13]):null, antalAr=row[14]!=null?parseFloat(row[14]):null;
+        const bvKr=row[15]!=null?parseFloat(row[15]):null, bvKrAr=row[16]!=null?parseFloat(row[16]):null;
+        const bvPct=row[17]!=null?parseFloat(row[17]):null, bvPctAr=row[18]!=null?parseFloat(row[18]):null;
+        const svinn=row[19]!=null?parseFloat(row[19]):null, svinnAr=row[20]!=null?parseFloat(row[20]):null;
+        const driftlck=row[21]!=null?parseFloat(row[21]):null, bvEft=row[23]!=null?parseFloat(row[23]):null;
+        storeData[currentStore].depts.push({
+          code:currentHGR, name:String(c4||''),
+          forsaljning:fors, forsaljningFgAr:forsAr,
+          forsaljningDelta:(fors!=null&&forsAr!=null&&forsAr>0)?(fors-forsAr)/forsAr:null,
+          antalSt:antal, antalFgAr:antalAr,
+          antalDelta:(antal!=null&&antalAr!=null&&antalAr>0)?(antal-antalAr)/antalAr:null,
+          bvKr, bvKrFgAr:bvKrAr, bvKrDelta:(bvKr!=null&&bvKrAr!=null)?bvKr-bvKrAr:null,
+          bvPct, bvPctFgAr:bvPctAr, svinnPct:svinn, svinnPctFgAr:svinnAr,
+          driftlckPct:driftlck, bvEftSvinnPct:bvEft,
+          articles:[],
+        });
+        continue;
+      }
+
+      // Artikelrad
+      if(c5 && !c3 && currentHGR) {
+        const artNr=String(c5).trim();
+        const oms=row[11]!=null?parseFloat(row[11]):0;
+        const bvKr=row[15]!=null?parseFloat(row[15]):0;
+        const bvPct=row[17]!=null?parseFloat(row[17]):0;
+        const svinn=row[19]!=null?parseFloat(row[19]):0;
+        const namn=String(c6||'');
+        if(oms>0||bvKr>0){
+          const artData={artNr,namn,dept:currentHGR,oms,bvKr,bvPct,svinnPct:svinn};
+          eanByStore[currentStore][artNr]=artData;
+          EAN_DEPT_MAP[artNr]={dept:currentHGR,namn,bvKr,oms};
+          const depts=storeData[currentStore].depts;
+          const lastDept=depts[depts.length-1];
+          if(lastDept&&lastDept.code===currentHGR){
+            if(!lastDept.articles)lastDept.articles=[];
+            lastDept.articles.push(artData);
+          }
+        }
+        artCount++;
+      }
+    }
+
+    const storeCount=Object.keys(storeData).length;
+    if(!storeCount) throw new Error('Inga butiker hittades i HGR-filen');
+    if(pmsg) pmsg.textContent=`Sparar ${storeCount} butiker, ${artCount} artiklar...`;
+
+    // Bygg butiksaggregat och spara
+    for(const [sid,sd] of Object.entries(storeData)) {
+      let totF=0,totBvKr=0,totAntal=0,totFAr=0,totBvKrAr=0,totAntalAr=0;
+      sd.depts.forEach(d=>{
+        totF+=d.forsaljning||0; totFAr+=d.forsaljningFgAr||0;
+        totBvKr+=d.bvKr||0; totBvKrAr+=d.bvKrFgAr||0;
+        totAntal+=d.antalSt||0; totAntalAr+=d.antalFgAr||0;
+      });
+      const payload={
+        forsaljning:totF, forsaljningFgAr:totFAr,
+        forsaljningDelta:totFAr>0?(totF-totFAr)/totFAr:null,
+        antalSt:totAntal, antalDelta:totAntalAr>0?(totAntal-totAntalAr)/totAntalAr:null,
+        bvKr:totBvKr, bvKrFgAr:totBvKrAr, bvKrDelta:totBvKr-totBvKrAr,
+        bvPct:totF>0?totBvKr/totF:null, depts:sd.depts,
+      };
+      // Hämta befintlig data och merga
+      const {data:ex}=await sb.from('report_data').select('data').eq('period_key',periodKey).limit(1);
+      const existing=ex?.[0]?.data||{};
+      if(!REPORT_DB[periodKey])REPORT_DB[periodKey]={};
+      REPORT_DB[periodKey][sid]=payload;
+      await sb.from('report_data').upsert(
+        {period_key:periodKey,data:{...existing,...REPORT_DB[periodKey]},uploaded_at:new Date().toISOString()},
+        {onConflict:'period_key'}
+      );
+    }
+
+    // Uppdatera EAN_BY_STORE och spara
+    for(const [sid,eans] of Object.entries(eanByStore)){
+      if(!EAN_BY_STORE[sid])EAN_BY_STORE[sid]={};
+      Object.assign(EAN_BY_STORE[sid],eans);
+    }
+    await sbUpsert('kpi_config',{
+      id:'global',config:KPI_CONFIG,
+      ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,
+      updated_at:new Date().toISOString()
+    });
+
+    if(pmsg) pmsg.textContent=`✓ ${periodKey} — ${storeCount} butiker, ${artCount} artiklar`;
+    toast(`✓ HGR ${periodKey} importerad`);
+    renderUploadFörsäljning();
+  } catch(e) {
+    if(pmsg) pmsg.textContent='⚠ '+e.message;
+    toast('⚠ HGR-fel: '+e.message);
+  }
+}
