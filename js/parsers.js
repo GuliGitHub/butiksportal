@@ -574,7 +574,7 @@ async function delPK(type,pk){
 
 
 
-// ── HGR-UPPLADDNING (ny format) ────────────────────────────────────
+// ── HGR-UPPLADDNING (stöder enbutiksformat och flerfliksformat) ────────
 async function doHGRUpload(wb, fileName) {
   const pmsg = document.getElementById('fpm');
   const fp   = document.getElementById('fp');
@@ -582,130 +582,215 @@ async function doHGRUpload(wb, fileName) {
   if(pmsg) pmsg.textContent = 'Analyserar HGR-fil...';
 
   try {
-    const ws   = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+    // Detektera format: flerfliksformat har fliknamn som YYYYVV
+    const weekSheets = wb.SheetNames.filter(n => /^\d{6}$/.test(n));
+    const isMultiSheet = weekSheets.length > 0;
 
-    // Hitta veckonummer
-    let periodKey = null;
-    for(const row of rows) {
-      const c0 = row[0];
-      if(c0 && typeof c0 === 'number' && c0 > 200000) {
-        const yr = Math.floor(c0/100), wk = c0%100;
-        periodKey = `${yr}-V${String(wk).padStart(2,'0')}`;
-        break;
-      }
+    if(isMultiSheet) {
+      if(pmsg) pmsg.textContent = `Flerfliksformat — ${weekSheets.length} veckor hittades...`;
+      await _parseHGRMultiSheet(wb, weekSheets, pmsg);
+    } else {
+      await _parseHGRSingleSheet(wb, pmsg);
     }
-    if(!periodKey) throw new Error('Kunde inte hitta veckonummer i HGR-filen');
-    if(pmsg) pmsg.textContent = `Läser ${periodKey}...`;
-
-    const STORE_IDS = Object.keys(STORES);
-    const storeData = {}, eanByStore = {};
-    let currentStore = null, currentHGR = null, artCount = 0;
-
-    for(let i=3; i<rows.length; i++) {
-      const row = rows[i]||[];
-      const c0=row[0],c1=row[1],c3=row[3],c4=row[4],c5=row[5],c6=row[6];
-
-      // Butikrad
-      if(c1 && typeof c1==='number' && STORE_IDS.includes(String(c1)) && !c0) {
-        currentStore=String(c1); currentHGR=null;
-        if(!storeData[currentStore]){storeData[currentStore]={depts:[]};eanByStore[currentStore]={};}
-        continue;
-      }
-      if(!currentStore) continue;
-
-      // HGR/Avdelningsrad
-      if(c3 && !c1 && !c5) {
-        currentHGR=String(c3).trim().padStart(2,'0');
-        const fors=row[11]!=null?parseFloat(row[11]):null, forsAr=row[12]!=null?parseFloat(row[12]):null;
-        const antal=row[13]!=null?parseFloat(row[13]):null, antalAr=row[14]!=null?parseFloat(row[14]):null;
-        const bvKr=row[15]!=null?parseFloat(row[15]):null, bvKrAr=row[16]!=null?parseFloat(row[16]):null;
-        const bvPct=row[17]!=null?parseFloat(row[17]):null, bvPctAr=row[18]!=null?parseFloat(row[18]):null;
-        const svinn=row[19]!=null?parseFloat(row[19]):null, svinnAr=row[20]!=null?parseFloat(row[20]):null;
-        const driftlck=row[21]!=null?parseFloat(row[21]):null, bvEft=row[23]!=null?parseFloat(row[23]):null;
-        storeData[currentStore].depts.push({
-          code:currentHGR, name:String(c4||''),
-          forsaljning:fors, forsaljningFgAr:forsAr,
-          forsaljningDelta:(fors!=null&&forsAr!=null&&forsAr>0)?(fors-forsAr)/forsAr:null,
-          antalSt:antal, antalFgAr:antalAr,
-          antalDelta:(antal!=null&&antalAr!=null&&antalAr>0)?(antal-antalAr)/antalAr:null,
-          bvKr, bvKrFgAr:bvKrAr, bvKrDelta:(bvKr!=null&&bvKrAr!=null)?bvKr-bvKrAr:null,
-          bvPct, bvPctFgAr:bvPctAr, svinnPct:svinn, svinnPctFgAr:svinnAr,
-          driftlckPct:driftlck, bvEftSvinnPct:bvEft,
-          articles:[],
-        });
-        continue;
-      }
-
-      // Artikelrad
-      if(c5 && !c3 && currentHGR) {
-        const artNr=String(c5).trim();
-        const oms=row[11]!=null?parseFloat(row[11]):0;
-        const bvKr=row[15]!=null?parseFloat(row[15]):0;
-        const bvPct=row[17]!=null?parseFloat(row[17]):0;
-        const svinn=row[19]!=null?parseFloat(row[19]):0;
-        const namn=String(c6||'');
-        if(oms>0||bvKr>0){
-          const artData={artNr,namn,dept:currentHGR,oms,bvKr,bvPct,svinnPct:svinn};
-          eanByStore[currentStore][artNr]=artData;
-          EAN_DEPT_MAP[artNr]={dept:currentHGR,namn,bvKr,oms};
-          const depts=storeData[currentStore].depts;
-          const lastDept=depts[depts.length-1];
-          if(lastDept&&lastDept.code===currentHGR){
-            if(!lastDept.articles)lastDept.articles=[];
-            lastDept.articles.push(artData);
-          }
-        }
-        artCount++;
-      }
-    }
-
-    const storeCount=Object.keys(storeData).length;
-    if(!storeCount) throw new Error('Inga butiker hittades i HGR-filen');
-    if(pmsg) pmsg.textContent=`Sparar ${storeCount} butiker, ${artCount} artiklar...`;
-
-    // Bygg butiksaggregat och spara
-    for(const [sid,sd] of Object.entries(storeData)) {
-      let totF=0,totBvKr=0,totAntal=0,totFAr=0,totBvKrAr=0,totAntalAr=0;
-      sd.depts.forEach(d=>{
-        totF+=d.forsaljning||0; totFAr+=d.forsaljningFgAr||0;
-        totBvKr+=d.bvKr||0; totBvKrAr+=d.bvKrFgAr||0;
-        totAntal+=d.antalSt||0; totAntalAr+=d.antalFgAr||0;
-      });
-      const payload={
-        forsaljning:totF, forsaljningFgAr:totFAr,
-        forsaljningDelta:totFAr>0?(totF-totFAr)/totFAr:null,
-        antalSt:totAntal, antalDelta:totAntalAr>0?(totAntal-totAntalAr)/totAntalAr:null,
-        bvKr:totBvKr, bvKrFgAr:totBvKrAr, bvKrDelta:totBvKr-totBvKrAr,
-        bvPct:totF>0?totBvKr/totF:null, depts:sd.depts,
-      };
-      // Hämta befintlig data och merga
-      const {data:ex}=await sb.from('report_data').select('data').eq('period_key',periodKey).limit(1);
-      const existing=ex?.[0]?.data||{};
-      if(!REPORT_DB[periodKey])REPORT_DB[periodKey]={};
-      REPORT_DB[periodKey][sid]=payload;
-      await sb.from('report_data').upsert(
-        {period_key:periodKey,data:{...existing,...REPORT_DB[periodKey]},uploaded_at:new Date().toISOString()},
-        {onConflict:'period_key'}
-      );
-    }
-
-    // Uppdatera EAN_BY_STORE och spara
-    for(const [sid,eans] of Object.entries(eanByStore)){
-      if(!EAN_BY_STORE[sid])EAN_BY_STORE[sid]={};
-      Object.assign(EAN_BY_STORE[sid],eans);
-    }
-    await sbUpsert('kpi_config',{
-      id:'global',config:KPI_CONFIG,
-      ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,
-      updated_at:new Date().toISOString()
-    });
-
-    if(pmsg) pmsg.textContent=`✓ ${periodKey} — ${storeCount} butiker, ${artCount} artiklar`;
-    toast(`✓ HGR ${periodKey} importerad`);
-    renderUploadFörsäljning();
   } catch(e) {
     if(pmsg) pmsg.textContent='⚠ '+e.message;
     toast('⚠ HGR-fel: '+e.message);
+  }
+}
+
+// ── Parser för enbutiksformat (en flik, en vecka) ────────────────────
+async function _parseHGRSingleSheet(wb, pmsg) {
+  const ws   = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+
+  let periodKey = null;
+  for(const row of rows) {
+    const c0 = row[0];
+    if(c0 && typeof c0 === 'number' && c0 > 200000) {
+      const yr = Math.floor(c0/100), wk = c0%100;
+      periodKey = `${yr}-V${String(wk).padStart(2,'0')}`;
+      break;
+    }
+  }
+  if(!periodKey) throw new Error('Kunde inte hitta veckonummer i HGR-filen');
+  if(pmsg) pmsg.textContent = `Läser ${periodKey}...`;
+
+  const {storeData, eanByStore, artCount} = _parseHGRRows(rows, 0);
+  const storeCount = Object.keys(storeData).length;
+  if(!storeCount) throw new Error('Inga butiker hittades i HGR-filen');
+
+  await _saveHGRData(storeData, eanByStore, periodKey);
+  if(pmsg) pmsg.textContent=`✓ ${periodKey} — ${storeCount} butiker, ${artCount} artiklar`;
+  toast(`✓ HGR ${periodKey} importerad`);
+  renderUploadFörsäljning();
+}
+
+// ── Parser för flerfliksformat (en flik per vecka) ───────────────────
+async function _parseHGRMultiSheet(wb, weekSheets, pmsg) {
+  let totalWeeks = 0, totalArts = 0;
+  const allEanByStore = {};
+
+  for(const sheetName of weekSheets.sort()) {
+    const yr = parseInt(sheetName.slice(0,4));
+    const wk = parseInt(sheetName.slice(4));
+    const periodKey = `${yr}-V${String(wk).padStart(2,'0')}`;
+
+    if(pmsg) pmsg.textContent = `Läser ${periodKey}...`;
+
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+
+    // Flerfliksformat: headerrad på rad 8, data börjar rad 9
+    // Kolumnmapping är: [0]=butikId, [1]=butikNamn, [2]=avdKod, [3]=avdNamn,
+    // [4]=artNr, [5]=artNamn, [10]=fors, [11]=forsAr, [12]=antal,
+    // [13]=bvKr, [14]=antalAr, [15]=bvKrAr, [16]=bvPct, [17]=bvPctAr,
+    // [18]=svinn, [19]=svinnAr, [20]=driftlck, [22]=bvEft
+    const {storeData, eanByStore, artCount} = _parseHGRRows(rows, 8);
+
+    const storeCount = Object.keys(storeData).length;
+    if(!storeCount) continue;
+
+    await _saveHGRData(storeData, eanByStore, periodKey);
+
+    // Merga ean per butik
+    for(const [sid,eans] of Object.entries(eanByStore)) {
+      if(!allEanByStore[sid]) allEanByStore[sid] = {};
+      Object.assign(allEanByStore[sid], eans);
+    }
+
+    totalWeeks++;
+    totalArts += artCount;
+  }
+
+  // Spara EAN_BY_STORE en gång för alla veckor
+  for(const [sid,eans] of Object.entries(allEanByStore)) {
+    if(!EAN_BY_STORE[sid]) EAN_BY_STORE[sid]={};
+    Object.assign(EAN_BY_STORE[sid], eans);
+  }
+  await sbUpsert('kpi_config',{
+    id:'global',config:KPI_CONFIG,
+    ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,
+    updated_at:new Date().toISOString()
+  });
+
+  if(pmsg) pmsg.textContent=`✓ ${totalWeeks} veckor importerade — ${totalArts} artiklar`;
+  toast(`✓ HGR ${totalWeeks} veckor importerade`);
+  renderUploadFörsäljning();
+}
+
+// ── Gemensam rad-parser (hanterar båda format) ──────────────────────
+// headerOffset: 0 = enbutiksformat, 8 = flerfliksformat
+function _parseHGRRows(rows, headerOffset) {
+  const STORE_IDS = Object.keys(STORES);
+  const storeData = {}, eanByStore = {};
+  let currentStore = null, currentHGR = null, artCount = 0;
+
+  // Kolumnindex: identiska i båda format (enbutiksformat har dessa direkt)
+  // Flerfliksformat har samma kolumner men annan startrad
+  const COL = {
+    butikId:1, butikNamn:2,      // OBS: flerfliksformat: butikId=kol0, namn=kol1
+    avdKod:2, avdNamn:3,
+    artNr:4, artNamn:5,
+    fors:10, forsAr:11, antal:12, bvKr:13, antalAr:14, bvKrAr:15,
+    bvPct:16, bvPctAr:17, svinn:18, svinnAr:19, driftlck:20, bvEft:22
+  };
+
+  // Flerfliksformat: butikId är i kol[0], avdKod i kol[2], artNr i kol[4]
+  // Enbutiksformat: butikId är i kol[1] (kol[0]=veckonummer/tomt)
+  const isMultiFormat = headerOffset === 8;
+
+  for(let i=headerOffset; i<rows.length; i++) {
+    const row = rows[i]||[];
+    const c0 = row[0], c1 = row[1], c2 = row[2], c3 = row[3], c4 = row[4], c5 = row[5];
+
+    // Butikrad
+    const butikId = isMultiFormat
+      ? (c0 && typeof c0==='number' && STORE_IDS.includes(String(c0)) ? String(c0) : null)
+      : (c1 && typeof c1==='number' && STORE_IDS.includes(String(c1)) && !c0 ? String(c1) : null);
+
+    if(butikId) {
+      currentStore=butikId; currentHGR=null;
+      if(!storeData[currentStore]){storeData[currentStore]={depts:[]};eanByStore[currentStore]={};}
+      continue;
+    }
+    if(!currentStore) continue;
+
+    // Avdelningsrad: kol[2]=avdkod finns, kol[4]=artNr saknas
+    const avdKod = isMultiFormat
+      ? (c2 && !c0 && !c1 && !c4 ? String(c2).trim() : null)
+      : (c3 && !c1 && !c5 ? String(c3).trim() : null);  // enbutiksformat: avdkod i kol[3]
+    const avdNamn = isMultiFormat ? c3 : c4;
+
+    if(avdKod) {
+      currentHGR = avdKod.padStart(2,'0');
+      const g = (idx) => row[idx]!=null ? parseFloat(row[idx]) : null;
+      const fors=g(COL.fors), forsAr=g(COL.forsAr);
+      const antal=g(COL.antal), antalAr=g(COL.antalAr);
+      const bvKr=g(COL.bvKr), bvKrAr=g(COL.bvKrAr);
+      storeData[currentStore].depts.push({
+        code:currentHGR, name:String(avdNamn||''),
+        forsaljning:fors, forsaljningFgAr:forsAr,
+        forsaljningDelta:(fors&&forsAr&&forsAr>0)?(fors-forsAr)/forsAr:null,
+        antalSt:antal, antalFgAr:antalAr,
+        antalDelta:(antal&&antalAr&&antalAr>0)?(antal-antalAr)/antalAr:null,
+        bvKr, bvKrFgAr:bvKrAr, bvKrDelta:(bvKr!=null&&bvKrAr!=null)?bvKr-bvKrAr:null,
+        bvPct:g(COL.bvPct), bvPctFgAr:g(COL.bvPctAr),
+        svinnPct:g(COL.svinn), svinnPctFgAr:g(COL.svinnAr),
+        driftlckPct:g(COL.driftlck), bvEftSvinnPct:g(COL.bvEft),
+        articles:[],
+      });
+      continue;
+    }
+
+    // Artikelrad: kol[4]=artNr finns
+    const artNr = c4 ? String(c4).trim() : null;
+    if(artNr && currentHGR) {
+      const g = (idx) => row[idx]!=null ? parseFloat(row[idx]) : 0;
+      const oms=g(COL.fors), bvKr=g(COL.bvKr), bvPct=g(COL.bvPct), svinn=g(COL.svinn);
+      const namn = String(c5||'');
+      if(oms>0||bvKr>0) {
+        const artData={artNr,namn,dept:currentHGR,oms,bvKr,bvPct,svinnPct:svinn};
+        eanByStore[currentStore][artNr]=artData;
+        EAN_DEPT_MAP[artNr]={dept:currentHGR,namn,bvKr,oms};
+        const lastDept=storeData[currentStore].depts.slice(-1)[0];
+        if(lastDept&&lastDept.code===currentHGR){
+          lastDept.articles.push(artData);
+        }
+      }
+      artCount++;
+    }
+  }
+  return {storeData, eanByStore, artCount};
+}
+
+// ── Spara HGR-data till Supabase ────────────────────────────────────
+async function _saveHGRData(storeData, eanByStore, periodKey) {
+  for(const [sid,sd] of Object.entries(storeData)) {
+    let totF=0,totBvKr=0,totAntal=0,totFAr=0,totBvKrAr=0,totAntalAr=0;
+    sd.depts.forEach(d=>{
+      totF+=d.forsaljning||0; totFAr+=d.forsaljningFgAr||0;
+      totBvKr+=d.bvKr||0; totBvKrAr+=d.bvKrFgAr||0;
+      totAntal+=d.antalSt||0; totAntalAr+=d.antalFgAr||0;
+    });
+    const payload={
+      forsaljning:totF, forsaljningFgAr:totFAr,
+      forsaljningDelta:totFAr>0?(totF-totFAr)/totFAr:null,
+      antalSt:totAntal, antalDelta:totAntalAr>0?(totAntal-totAntalAr)/totAntalAr:null,
+      bvKr:totBvKr, bvKrFgAr:totBvKrAr, bvKrDelta:totBvKr-totBvKrAr,
+      bvPct:totF>0?totBvKr/totF:null, depts:sd.depts,
+    };
+    const {data:ex}=await sb.from('report_data').select('data').eq('period_key',periodKey).limit(1);
+    const existing=ex?.[0]?.data||{};
+    if(!REPORT_DB[periodKey])REPORT_DB[periodKey]={};
+    REPORT_DB[periodKey][sid]=payload;
+    await sb.from('report_data').upsert(
+      {period_key:periodKey,data:{...existing,...REPORT_DB[periodKey]},uploaded_at:new Date().toISOString()},
+      {onConflict:'period_key'}
+    );
+  }
+  // Spara EAN (bara vid enkelvecka — flervecka samlar ihop och sparar på slutet)
+  for(const [sid,eans] of Object.entries(eanByStore)){
+    if(!EAN_BY_STORE[sid])EAN_BY_STORE[sid]={};
+    Object.assign(EAN_BY_STORE[sid],eans);
   }
 }
