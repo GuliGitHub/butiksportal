@@ -692,12 +692,20 @@ function _parseHGRRows(rows, headerOffset) {
 
   // Kolumnindex: identiska i båda format (enbutiksformat har dessa direkt)
   // Flerfliksformat har samma kolumner men annan startrad
+  // Kolumnmappning — enbutiksformat och flerfliksformat har identisk struktur
+  // Enbutiksformat (Björkalund etc):  fors=11, forsAr=12, antal=13, bvKr=14, antalAr=15, bvKrAr=16, bvPct=17, bvPctAr=18, svinn=19, svinnAr=20, driftlck=21, bvEft=23
+  // Flerfliksformat (v10-v20):        fors=10, forsAr=11, antal=12, bvKr=13, antalAr=14, bvKrAr=15, bvPct=16, bvPctAr=17, svinn=18, svinnAr=19, driftlck=20, bvEft=22
+  // Enbutiksformat har en extra kolumn (Vecka) i kol[0] → alla data-kolumner förskjutna +1
+  const colShift = isMultiFormat ? 0 : 1;
   const COL = {
-    butikId:1, butikNamn:2,      // OBS: flerfliksformat: butikId=kol0, namn=kol1
-    avdKod:2, avdNamn:3,
-    artNr:4, artNamn:5,
-    fors:10, forsAr:11, antal:12, bvKr:13, antalAr:14, bvKrAr:15,
-    bvPct:16, bvPctAr:17, svinn:18, svinnAr:19, driftlck:20, bvEft:22
+    butikId:1, butikNamn:2,
+    avdKod:3, avdNamn:4,
+    artNr:5, artNamn:6,
+    fors:10+colShift, forsAr:11+colShift, antal:12+colShift,
+    bvKr:13+colShift, antalAr:14+colShift, bvKrAr:15+colShift,
+    bvPct:16+colShift, bvPctAr:17+colShift,
+    svinn:18+colShift, svinnAr:19+colShift,
+    driftlck:20+colShift, bvEft:22+colShift
   };
 
   // Flerfliksformat: butikId är i kol[0], avdKod i kol[2], artNr i kol[4]
@@ -720,11 +728,11 @@ function _parseHGRRows(rows, headerOffset) {
     }
     if(!currentStore) continue;
 
-    // Avdelningsrad: kol[2]=avdkod finns, kol[4]=artNr saknas
+    // Avdelningsrad detektering
     const avdKod = isMultiFormat
-      ? (c2 && !c0 && !c1 && !c4 ? String(c2).trim() : null)
-      : (c3 && !c1 && !c5 ? String(c3).trim() : null);  // enbutiksformat: avdkod i kol[3]
-    const avdNamn = isMultiFormat ? c3 : c4;
+      ? (c2 && !c0 && !c1 && !c4 ? String(c2).trim() : null)  // flerfliksformat: avdkod i kol[2]
+      : (c3 && !c1 && !row[5] ? String(c3).trim() : null);     // enbutiksformat: avdkod i kol[3], artNr i kol[5]
+    const avdNamn = isMultiFormat ? c3 : row[4];
 
     if(avdKod) {
       currentHGR = avdKod.padStart(2,'0');
@@ -747,12 +755,12 @@ function _parseHGRRows(rows, headerOffset) {
       continue;
     }
 
-    // Artikelrad: kol[4]=artNr finns
-    const artNr = c4 ? String(c4).trim() : null;
+    // Artikelrad: artNr i kol[5] (enbutiksformat) eller kol[4] (flerfliksformat)
+    const artNr = isMultiFormat ? (c4 ? String(c4).trim() : null) : (row[5] ? String(row[5]).trim() : null);
     if(artNr && currentHGR) {
       const g = (idx) => row[idx]!=null ? parseFloat(row[idx]) : 0;
       const oms=g(COL.fors), bvKr=g(COL.bvKr), bvPct=g(COL.bvPct), svinn=g(COL.svinn);
-      const namn = String(c5||'');
+      const namn = isMultiFormat ? String(c5||'') : String(row[6]||'');
       if(oms>0||bvKr>0) {
         const artData={artNr,namn,dept:currentHGR,oms,bvKr,bvPct,svinnPct:svinn};
         eanByStore[currentStore][artNr]=artData;
