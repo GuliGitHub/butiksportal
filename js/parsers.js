@@ -15,16 +15,17 @@ function identifyFile(wb) {
   // Filer med veckoflikar (format YYYYWW)
   const weekSheets = sheets.filter(s=>s.match(/^\d{6}$/));
   if(weekSheets.length) {
+    // Kolla om det är HGR-flerfliksformat (har 'Östenssons HGR' rubrik eller 'Bruttovinst' i header)
+    const ws0 = wb.Sheets[weekSheets[0]];
+    const rows0 = XLSX.utils.sheet_to_json(ws0,{header:1,defval:null});
+    const topText = rows0.slice(0,10).flat().map(v=>String(v||'').toLowerCase()).join(' ');
+    if(topText.includes('hgr') || topText.includes('bruttovinst') && topText.includes('artikel')) {
+      return {type:'hgr', name:`HGR flerfliksformat — ${weekSheets.length} veckor`};
+    }
     // Läs rad 6 (index 5) som är headern i OS20-filen
-    const ws = wb.Sheets[weekSheets[0]];
-    const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-    const header6 = (rows[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
+    const header6 = (rows0[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
     if(header6.includes('driftläckage') || header6.includes('kvitton') || header6.includes('snittköp'))
       return {type:'os20', name:'9A ÖS20 Försäljning & driftläckage'};
-    // Ny HGR-fil (en flik, alla veckor)
-    if(sheetName.toLowerCase().includes('hgr') || sheetName.toLowerCase().includes('östenssons hgr')) {
-      return {type:'hgr', name:'HGR — Artikel per vecka'};
-    }
     return {type:'bib_multi', name:'BIB_HEM06 (flerfliks)'};
   }
 
@@ -100,7 +101,11 @@ function procF(file){
         return;
       }
 
-      // Flerfliks-fil
+      // Flerfliks-fil — kolla om det är HGR eller BIB
+      if(detected.type === 'hgr') {
+        await doHGRUpload(wb, file.name);
+        return;
+      }
       const nya=weekSheets.filter(s=>!REPORT_DB[sheetToPK(s)]);
       const finns=weekSheets.filter(s=>REPORT_DB[sheetToPK(s)]);
 
