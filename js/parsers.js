@@ -91,9 +91,22 @@ function procF(file){
       // Hitta alla veckoflikar — format YYYYWW (t.ex. 202618)
       const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
       if(!weekSheets.length){
-        // BIB-filen har en flik per butik (inte per vecka) — visa veckoväljare
+        // En-flik fil — kolla om det är HGR eller BIB
         prog.style.display='none';
         if(detected.type === 'hgr') {
+          // Identifiera butik från filen innan uppladdning
+          const ws0 = wb.Sheets[wb.SheetNames[0]];
+          const rows0 = XLSX.utils.sheet_to_json(ws0,{header:1,defval:null,range:'A1:C10'});
+          let detectedStore = null;
+          for(const r of rows0){
+            if(r[1] && typeof r[1]==='number' && Object.keys(STORES).includes(String(r[1]))){
+              detectedStore = {id:String(r[1]),name:STORES[String(r[1])]||String(r[1])};
+              break;
+            }
+          }
+          if(detectedStore) {
+            pmsg.textContent = `Identifierad butik: ${detectedStore.name}`;
+          }
           await doHGRUpload(wb, file.name);
         } else {
           showBIBWeekPicker(wb, file.name);
@@ -804,10 +817,12 @@ async function _saveHGRData(storeData, eanByStore, periodKey) {
     // Hämta befintlig data från Supabase och merga — befintliga butiker behålls
     const {data:ex}=await sb.from('report_data').select('data').eq('period_key',periodKey).limit(1);
     const existing=ex?.[0]?.data||{};
-    // Merga: befintliga butiker + ny butik (ny skriver INTE över andra butiker)
+    // Merga Supabase-data med ny butik
     const merged = {...existing, [sid]: payload};
+    // Uppdatera REPORT_DB utan att radera andra butiker
     if(!REPORT_DB[periodKey])REPORT_DB[periodKey]={};
-    REPORT_DB[periodKey][sid]=payload;
+    Object.assign(REPORT_DB[periodKey], {[sid]: payload});
+    // Spara merged till Supabase
     await sb.from('report_data').upsert(
       {period_key:periodKey, data:merged, uploaded_at:new Date().toISOString()},
       {onConflict:'period_key'}
