@@ -213,7 +213,15 @@ function getTotalKPIVal(key, weeks) {
 
   switch(key) {
     case 'oms':      return data?.forsaljningDelta ?? null;
-    case 'marginal':    return data?.bvPct ?? null;
+    case 'marginal': {
+      // Sanity-check: om HGR-data ger orimlig BV% (<10%), använd OS20 istället
+      const hgrBvPct = data?.bvPct ?? null;
+      if(hgrBvPct != null && hgrBvPct < 0.10) {
+        const os20BvPct = latestOS20?.bvPct ?? null;
+        return os20BvPct ?? hgrBvPct;
+      }
+      return hgrBvPct;
+    }
     case 'antal':    return data?.antalDelta ?? null;
     case 'svinn_k':  return getTotalSvinnPct(wks);
     case 'kvitton': {
