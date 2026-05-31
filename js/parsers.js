@@ -624,9 +624,18 @@ async function _parseHGRSingleSheet(wb, pmsg) {
   const storeCount = Object.keys(storeData).length;
   if(!storeCount) throw new Error('Inga butiker hittades i HGR-filen');
 
+  // Visa vilken butik som laddas upp
+  const storeNames = Object.keys(storeData).map(sid => STORES[sid]||sid).join(', ');
+  if(pmsg) pmsg.textContent = `Sparar ${storeNames} för ${periodKey}...`;
+
   await _saveHGRData(storeData, eanByStore, periodKey);
-  if(pmsg) pmsg.textContent=`✓ ${periodKey} — ${storeCount} butiker, ${artCount} artiklar`;
-  toast(`✓ HGR ${periodKey} importerad`);
+
+  // Kolla hur många butiker finns totalt för perioden efter sparning
+  const {data:afterSave} = await sb.from('report_data').select('data').eq('period_key',periodKey).limit(1);
+  const totalStores = Object.keys(afterSave?.[0]?.data||{}).length;
+
+  if(pmsg) pmsg.textContent=`✓ ${periodKey} — ${storeNames} sparad (${totalStores}/9 butiker totalt)`;
+  toast(`✓ ${storeNames} · ${periodKey} importerad`);
   renderUploadFörsäljning();
 }
 
@@ -792,12 +801,15 @@ async function _saveHGRData(storeData, eanByStore, periodKey) {
       bvKr:totBvKr, bvKrFgAr:totBvKrAr, bvKrDelta:totBvKr-totBvKrAr,
       bvPct:totF>0?totBvKr/totF:null, depts:sd.depts,
     };
+    // Hämta befintlig data från Supabase och merga — befintliga butiker behålls
     const {data:ex}=await sb.from('report_data').select('data').eq('period_key',periodKey).limit(1);
     const existing=ex?.[0]?.data||{};
+    // Merga: befintliga butiker + ny butik (ny skriver INTE över andra butiker)
+    const merged = {...existing, [sid]: payload};
     if(!REPORT_DB[periodKey])REPORT_DB[periodKey]={};
     REPORT_DB[periodKey][sid]=payload;
     await sb.from('report_data').upsert(
-      {period_key:periodKey,data:{...existing,...REPORT_DB[periodKey]},uploaded_at:new Date().toISOString()},
+      {period_key:periodKey, data:merged, uploaded_at:new Date().toISOString()},
       {onConflict:'period_key'}
     );
   }
