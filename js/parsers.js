@@ -718,6 +718,8 @@ function _parseHGRRows(rows, headerOffset) {
   // Enbutiksformat (Björkalund etc):  fors=11, forsAr=12, antal=13, bvKr=14, antalAr=15, bvKrAr=16, bvPct=17, bvPctAr=18, svinn=19, svinnAr=20, driftlck=21, bvEft=23
   // Flerfliksformat (v10-v20):        fors=10, forsAr=11, antal=12, bvKr=13, antalAr=14, bvKrAr=15, bvPct=16, bvPctAr=17, svinn=18, svinnAr=19, driftlck=20, bvEft=22
   // Enbutiksformat har en extra kolumn (Vecka) i kol[0] → alla data-kolumner förskjutna +1
+  // isMultiFormat MÅSTE deklareras före COL (används i colShift)
+  const isMultiFormat = headerOffset === 8;
   const colShift = isMultiFormat ? 0 : 1;
   const COL = {
     butikId:1, butikNamn:2,
@@ -729,10 +731,6 @@ function _parseHGRRows(rows, headerOffset) {
     svinn:18+colShift, svinnAr:19+colShift,
     driftlck:20+colShift, bvEft:22+colShift
   };
-
-  // Flerfliksformat: butikId är i kol[0], avdKod i kol[2], artNr i kol[4]
-  // Enbutiksformat: butikId är i kol[1] (kol[0]=veckonummer/tomt)
-  const isMultiFormat = headerOffset === 8;
 
   for(let i=headerOffset; i<rows.length; i++) {
     const row = rows[i]||[];
