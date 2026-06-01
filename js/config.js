@@ -119,6 +119,8 @@ async function loadAllFromSupabase() {
     const rows = await sbGet('kpi_config');
     if(rows.length) {
       KPI_CONFIG = {...DEFAULT_KPI_CONFIG, ...rows[0].config};
+      // Synka Provision%-nyckel från sparad KPI_CONFIG
+      if(KPI_CONFIG.avd24_provision_pct) AVD_PROVISION_BV_PCT = KPI_CONFIG.avd24_provision_pct;
       if(rows[0].ean_dept_map) EAN_DEPT_MAP = rows[0].ean_dept_map;
       if(rows[0].ean_by_store) EAN_BY_STORE = rows[0].ean_by_store;
     }

@@ -71,6 +71,25 @@ function renderKPIAdmin(){
         </button>
       </div>
     </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="ct">&#127978; Avd 24 &mdash; Tjänster &amp; Provision</div>
+          <div class="cs">Provision%-nyckel för estimerad BV kr &middot; Gäller alla butiker</div>
+        </div>
+      </div>
+      <div style="padding:1rem 1.25rem;display:flex;align-items:center;gap:.75rem">
+        <label style="font-size:13px;font-weight:600;color:var(--ö-text);white-space:nowrap">Provision %:</label>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <input id="kpi-provision-pct" type="number" min="0" max="100" step="0.5"
+            value="${Math.round((KPI_CONFIG.avd24_provision_pct||0.12)*100)}"
+            style="width:80px;padding:.4rem .6rem;border:1px solid var(--ö-border);border-radius:6px;font-size:15px;font-weight:600;text-align:right">
+          <span style="font-size:14px;color:var(--ö-muted)">%</span>
+        </div>
+        <span style="font-size:11px;color:var(--ö-muted)">Sparas med KPI-inställningarna ovan</span>
+      </div>
     </div>`;
 }
 
@@ -99,8 +118,16 @@ function toggleKPITier(key, tier, btn) {
 }
 
 async function saveKPIConfig() {
+  // Läs provision% och spara i KPI_CONFIG
+  const provEl = document.getElementById('kpi-provision-pct');
+  if(provEl) {
+    const pct = parseFloat(provEl.value) || 12;
+    KPI_CONFIG.avd24_provision_pct = pct / 100;
+    // Uppdatera global konstant i sessionen
+    window.AVD_PROVISION_BV_PCT = KPI_CONFIG.avd24_provision_pct;
+  }
   await sbUpsert('kpi_config', {id:'global', config:KPI_CONFIG, updated_at:new Date().toISOString()});
-  toast('KPI-inställningar sparade ✓');
+  toast(`KPI-inställningar sparade ✓ (Provision: ${Math.round((KPI_CONFIG.avd24_provision_pct||0.12)*100)}%)`);
   renderKPIAdmin();
 }
 

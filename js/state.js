@@ -83,7 +83,8 @@ const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','1
 // ── STATE ─────────────────────────────────────────────
 // ── Avd 24 — Tjänster/Provision (exkluderas från butikstotal, visas separat)
 const AVD_PROVISION = '24';
-const AVD_PROVISION_BV_PCT = 0.12; // Manuell BV%-nyckel för Avd 24 (12% provision)
+// Provision%-nyckel — laddas från KPI_CONFIG efter Supabase-laddning, default 12%
+let AVD_PROVISION_BV_PCT = 0.12;
 
 // Hjälpfunktion: hämta Avd 24-data för en butik/period
 function getAvd24Data(storeId, weeks) {
