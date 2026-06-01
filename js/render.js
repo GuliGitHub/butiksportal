@@ -724,11 +724,13 @@ function renderDeptTable(sd,wData,aData,mode){
 
   // ── Top 5 TB kr per avdelning ─────────────────────────
   function top5TB(code) {
-    // Summera artikeldata över ALLA valda veckor (ackumulerat)
+    // Summera artikeldata över ALLA valda veckor
     const m = {};
+    let veckorMedData = 0;
     wks.forEach(pk => {
       const arts = REPORT_DB[pk]?.[sid]?.depts?.find(d=>d.code===code)?.articles;
-      if(!arts) return;
+      if(!arts || !arts.length) return;
+      veckorMedData++;
       arts.forEach(a => {
         if(!a.artNr || (!a.bvKr && !a.oms)) return;
         if(!m[a.artNr]) m[a.artNr] = {artName:a.namn||a.artNr, bvKr:0, oms:0, weeks:0};
@@ -737,7 +739,6 @@ function renderDeptTable(sd,wData,aData,mode){
         m[a.artNr].weeks++;
       });
     });
-    // Om dept.articles finns — använd dem
     if(Object.keys(m).length > 0) {
       return Object.values(m)
         .filter(a => a.bvKr > 0)
@@ -745,20 +746,24 @@ function renderDeptTable(sd,wData,aData,mode){
         .slice(0,5)
         .map(a => ({...a, bvPct: a.oms>0 ? a.bvKr/a.oms : null}));
     }
-    // Fallback: EAN_BY_STORE × antal veckor
+    // Fallback: EAN_BY_STORE (sparad via Edge Function)
     const eanSource = EAN_BY_STORE[sid];
-    if(!eanSource || Object.keys(eanSource).length === 0) return [];
-    const fb = {};
-    Object.entries(eanSource).forEach(([artnr,info]) => {
-      if(info.dept!==code || !info.bvKr || info.bvKr<=0) return;
-      fb[artnr] = {
-        artName: info.namn||artnr,
-        bvKr: info.bvKr * wks.size,
-        oms:  info.oms  * wks.size,
-        bvPct: info.bvPct || (info.oms>0 ? info.bvKr/info.oms : null),
-      };
-    });
-    return Object.values(fb).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
+    if(eanSource && Object.keys(eanSource).length > 0) {
+      const fb = {};
+      Object.entries(eanSource).forEach(([artnr,info]) => {
+        if(info.dept!==code || !info.bvKr || info.bvKr<=0) return;
+        fb[artnr] = {
+          artName: info.namn||artnr,
+          bvKr: info.bvKr,
+          oms:  info.oms,
+          bvPct: info.bvPct || (info.oms>0 ? info.bvKr/info.oms : null),
+        };
+      });
+      if(Object.keys(fb).length > 0)
+        return Object.values(fb).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
+    }
+    // Ingen data — returnera sentinel med felmeddelande
+    return [{_noData: true, msg: 'Artikeldata saknas för valda veckor — ladda upp HGR-filen för aktuell period'}];
   }
 
   // ── KPI-cell (kompakt box-stil) ───────────────────────
@@ -829,7 +834,8 @@ function renderDeptTable(sd,wData,aData,mode){
       const svinnRows=top5Svinn(d.code);
       const tbRows=top5TB(d.code);
       const hasSvinn=svinnRows.length>0;
-      const hasTB=tbRows.length>0;
+      const hasTB=tbRows.length>0 && !tbRows[0]?._noData;
+      const tbNoData=tbRows.length>0 && tbRows[0]?._noData;
 
       return`<div style="background:var(--ö-card);border-bottom:2px solid var(--ö-border)">
 
@@ -891,7 +897,7 @@ function renderDeptTable(sd,wData,aData,mode){
             </div>
           </div>`;})()}
         <!-- Actions + Top 5-listor -->
-        ${acts.length||hasSvinn||hasTB?`
+        ${acts.length||hasSvinn||hasTB||tbNoData?`
         <div style="padding:.75rem 1rem 1rem 1rem;border-top:1px solid var(--ö-border);background:#faf9f6">
 
           ${acts.length?`
@@ -909,8 +915,8 @@ function renderDeptTable(sd,wData,aData,mode){
             </div>
           </div>`:''}
 
-          ${hasSvinn||hasTB?`
-          <div style="display:grid;grid-template-columns:${hasSvinn&&hasTB?'1fr 1fr':'1fr'};gap:20px">
+          ${hasSvinn||hasTB||tbNoData?`
+          <div style="display:grid;grid-template-columns:${hasSvinn&&(hasTB||tbNoData)?'1fr 1fr':'1fr'};gap:20px">
 
             ${hasSvinn?`
             <div>
@@ -927,6 +933,14 @@ function renderDeptTable(sd,wData,aData,mode){
               </table>
             </div>`:''}
 
+            ${tbNoData?`
+            <div>
+              <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Top 5 TB kr</div>
+              <div style="font-size:11px;color:#B45309;background:#FEF3C7;border:1px solid #FCD34D;border-radius:6px;padding:.5rem .75rem;display:flex;align-items:center;gap:.5rem">
+                <span style="font-size:14px">⚠</span>
+                <span>${tbRows[0].msg}</span>
+              </div>
+            </div>`:''}
             ${hasTB?`
             <div>
               <div style="font-size:10px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">Top 5 TB kr${wks.size>1?` (ack. ${wks.size} v)`:''}</div>
