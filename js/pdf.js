@@ -1193,6 +1193,60 @@ async function _appendStoreTrendPage(doc, storeId) {
     // Lägg till ny sida i PDF
     const W=210, M=14;
     const BLUE=[0,47,109], RED=[226,0,0], GR=[107,104,96], DK=[26,26,24], BEIGE=[233,229,224], WHITE=[255,255,255];
+    // ── OMSÄTTNING PER VECKA (ny sida) ──────────────────────────────
+    doc.addPage();
+    let yOms = 0;
+    doc.setFillColor(...BLUE); doc.rect(0,0,W,18,'F');
+    doc.setFillColor(...RED);  doc.rect(0,16,W,2,'F');
+    doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.text(STORES[storeId]||storeId, W-M, 8, {align:'right'});
+    doc.text(`Genererad ${new Date().toLocaleDateString('sv-SE')}`, W-M, 13.5, {align:'right'});
+    yOms = 26;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
+    doc.text('Omsättning per vecka', M, yOms); yOms += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
+    doc.text('Veckovis omsättning och BV kr baserat på ÖS20-data', M, yOms); yOms += 8;
+
+    try {
+      // Rita diagram med Chart.js-canvas om möjligt, annars enkel stapelgraf
+      const omsCanvas = document.createElement('canvas');
+      omsCanvas.width = 800; omsCanvas.height = 300;
+      const omsCtx = omsCanvas.getContext('2d');
+
+      const omsPks = [...new Set([...Object.keys(OS20_DB),...Object.keys(REPORT_DB)])].sort().slice(-24);
+      const omsLabels = omsPks.map(pk=>pk.replace(/^\d{4}-/,''));
+      const omsFors = omsPks.map(pk=>Math.round((_getOmsFors ? _getOmsFors(pk,storeId) : (OS20_DB[pk]?.[storeId]?.forsaljning||REPORT_DB[pk]?.[storeId]?.forsaljning||0))/1000));
+      const omsBv   = omsPks.map(pk=>Math.round((_getOmsBvKr  ? _getOmsBvKr(pk,storeId)  : (OS20_DB[pk]?.[storeId]?.bvKr||REPORT_DB[pk]?.[storeId]?.bvKr||0))/1000));
+
+      const omsChart = new Chart(omsCtx, {
+        type:'line',
+        data:{
+          labels: omsLabels,
+          datasets:[
+            {label:'Omsättning (tkr)',data:omsFors,borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.07)',borderWidth:2,fill:true,tension:0.3,pointRadius:2},
+            {label:'BV kr (tkr)',data:omsBv,borderColor:'#16A34A',backgroundColor:'transparent',borderWidth:2,borderDash:[4,3],tension:0.3,pointRadius:2},
+          ]
+        },
+        options:{
+          responsive:false,animation:false,
+          plugins:{legend:{position:'top',labels:{font:{size:9},boxWidth:10}}},
+          scales:{
+            x:{ticks:{font:{size:8},maxTicksLimit:12}},
+            y:{ticks:{font:{size:8},callback:v=>v.toLocaleString('sv-SE')+' tkr'}}
+          }
+        }
+      });
+      const omsImgData = omsCanvas.toDataURL('image/png');
+      omsChart.destroy();
+      doc.addImage(omsImgData,'PNG',M,yOms,W-2*M,70);
+      yOms += 76;
+    } catch(e) {
+      console.error('Omsättningsdiagram PDF-fel:', e);
+    }
+
     doc.addPage();
     let y = 0;
 

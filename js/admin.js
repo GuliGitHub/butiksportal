@@ -566,3 +566,132 @@ async function saveRatReportSetting(val) {
 })();
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
+
+// ══════════════════════════════════════════════════════════════════
+// OMSÄTTNINGSDIAGRAM PER VECKA (baserat på ÖS20-data)
+// ══════════════════════════════════════════════════════════════════
+
+// Hämta omsättningsdata från OS20_DB med fallback till REPORT_DB
+function _getOmsFors(pk, sid) {
+  return OS20_DB[pk]?.[sid]?.forsaljning || REPORT_DB[pk]?.[sid]?.forsaljning || 0;
+}
+function _getOmsBvKr(pk, sid) {
+  return OS20_DB[pk]?.[sid]?.bvKr || REPORT_DB[pk]?.[sid]?.bvKr || 0;
+}
+
+// Bygger Chart.js diagram för omsättning/vecka
+// containerId: id på element att rita i
+// storeIds: array av butik-IDs, null = alla
+// nWeeks: antal veckor bakåt (default 12)
+function renderOmsattningDiagram(containerId, storeIds, nWeeks) {
+  const el = document.getElementById(containerId);
+  if(!el) return;
+
+  // Hämta veckor från OS20_DB (mest komplett)
+  const allPks = [...new Set([...Object.keys(OS20_DB), ...Object.keys(REPORT_DB)])].sort();
+  const pks = (nWeeks ? allPks.slice(-nWeeks) : allPks);
+
+  if(!pks.length) {
+    el.innerHTML = '<div style="color:var(--ö-muted);font-size:12px;text-align:center;padding:2rem">Ingen data</div>';
+    return;
+  }
+
+  const stores = storeIds || Object.keys(STORES);
+  const labels = pks.map(pk => pk.replace(/^\d{4}-/,''));
+  const COLORS = ['#2563EB','#16A34A','#DC2626','#D97706','#7C3AED','#0891B2','#BE185D','#059669','#B45309'];
+
+  let datasets = [];
+
+  if(stores.length === 1) {
+    // En butik — omsättning + BV kr
+    const sid = stores[0];
+    datasets = [
+      {
+        label: 'Omsättning (tkr)',
+        data: pks.map(pk => +(_getOmsFors(pk,sid)/1000).toFixed(0)),
+        borderColor: '#2563EB',
+        backgroundColor: 'rgba(37,99,235,0.07)',
+        borderWidth: 2.5,
+        pointRadius: 3,
+        tension: 0.35,
+        fill: true,
+        yAxisID: 'y',
+      },
+      {
+        label: 'BV kr (tkr)',
+        data: pks.map(pk => +(_getOmsBvKr(pk,sid)/1000).toFixed(0)),
+        borderColor: '#16A34A',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 3,
+        tension: 0.35,
+        borderDash: [5,3],
+        yAxisID: 'y',
+      }
+    ];
+  } else {
+    // Flera butiker — en linje per butik
+    stores.forEach((sid, i) => {
+      datasets.push({
+        label: (STORES[sid]||sid).replace('Hemköp ',''),
+        data: pks.map(pk => +(_getOmsFors(pk,sid)/1000).toFixed(0)),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 3,
+        tension: 0.35,
+      });
+    });
+  }
+
+  // Förstör gammal chart om den finns
+  const existing = Chart.getChart(containerId+'-canvas');
+  if(existing) existing.destroy();
+
+  el.innerHTML = `<canvas id="${containerId}-canvas" style="width:100%;height:220px"></canvas>`;
+  const ctx = document.getElementById(containerId+'-canvas').getContext('2d');
+
+  new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: {
+          display: datasets.length > 1,
+          position: 'top',
+          labels: { font:{size:10}, boxWidth:12, padding:8 }
+        },
+        tooltip: {
+          callbacks: {
+            label: c => ` ${c.dataset.label}: ${c.parsed.y.toLocaleString('sv-SE')} tkr`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color:'rgba(0,0,0,0.05)' },
+          ticks: { font:{size:10}, color:'#6B7280', maxTicksLimit:16 }
+        },
+        y: {
+          grid: { color:'rgba(0,0,0,0.05)' },
+          ticks: {
+            font:{size:10}, color:'#6B7280',
+            callback: v => v.toLocaleString('sv-SE')+' tkr'
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderOmsattningAnalys(containerId, nWeeks) {
+  renderOmsattningDiagram(containerId, null, nWeeks||24);
+}
+
+function renderOmsattningButik(containerId, sid, nWeeks) {
+  renderOmsattningDiagram(containerId, [sid], nWeeks||24);
+}
+
