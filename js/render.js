@@ -687,25 +687,41 @@ function renderDeptTable(sd,wData,aData,mode){
 
   // ── Top 5 TB kr per avdelning ─────────────────────────
   function top5TB(code) {
-    // Försök hämta artikeldata från rapport_data (dept.articles) — senaste veckan
-    const latestPk = [...wks].sort().slice(-1)[0];
-    const deptArts = REPORT_DB[latestPk]?.[sid]?.depts?.find(d=>d.code===code)?.articles;
-    if(deptArts && deptArts.length > 0) {
-      return deptArts
+    // Summera artikeldata över ALLA valda veckor (ackumulerat)
+    const m = {};
+    wks.forEach(pk => {
+      const arts = REPORT_DB[pk]?.[sid]?.depts?.find(d=>d.code===code)?.articles;
+      if(!arts) return;
+      arts.forEach(a => {
+        if(!a.artNr || (!a.bvKr && !a.oms)) return;
+        if(!m[a.artNr]) m[a.artNr] = {artName:a.namn||a.artNr, bvKr:0, oms:0, weeks:0};
+        m[a.artNr].bvKr += a.bvKr || 0;
+        m[a.artNr].oms  += a.oms  || 0;
+        m[a.artNr].weeks++;
+      });
+    });
+    // Om dept.articles finns — använd dem
+    if(Object.keys(m).length > 0) {
+      return Object.values(m)
         .filter(a => a.bvKr > 0)
         .sort((a,b) => b.bvKr - a.bvKr)
         .slice(0,5)
-        .map(a => ({artName:a.namn||a.artNr, bvKr:a.bvKr, oms:a.oms, bvPct:a.bvPct||( a.oms>0?a.bvKr/a.oms:null)}));
+        .map(a => ({...a, bvPct: a.oms>0 ? a.bvKr/a.oms : null}));
     }
-    // Fallback: EAN_BY_STORE (aggregerad från senaste uppladdning)
+    // Fallback: EAN_BY_STORE × antal veckor
     const eanSource = EAN_BY_STORE[sid];
     if(!eanSource || Object.keys(eanSource).length === 0) return [];
-    const m={};
-    Object.entries(eanSource).forEach(([artnr,info])=>{
-      if(info.dept!==code||!info.bvKr||info.bvKr<=0)return;
-      m[artnr]={artName:info.namn||artnr, bvKr:info.bvKr, oms:info.oms, bvPct:info.bvPct||(info.oms>0?info.bvKr/info.oms:null)};
+    const fb = {};
+    Object.entries(eanSource).forEach(([artnr,info]) => {
+      if(info.dept!==code || !info.bvKr || info.bvKr<=0) return;
+      fb[artnr] = {
+        artName: info.namn||artnr,
+        bvKr: info.bvKr * wks.size,
+        oms:  info.oms  * wks.size,
+        bvPct: info.bvPct || (info.oms>0 ? info.bvKr/info.oms : null),
+      };
     });
-    return Object.values(m).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
+    return Object.values(fb).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
   }
 
   // ── KPI-cell (kompakt box-stil) ───────────────────────
