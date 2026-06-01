@@ -199,7 +199,7 @@ function renderRekommendationer() {
       </div>
     </div>` : '';
 
-  document.getElementById('panel').innerHTML = `
+  document.getElementById('panel-rekommendationer').innerHTML = `
     <div class="ph">
       <div>
         <div class="pt">💡 Artikelrekommendationer</div>

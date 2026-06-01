@@ -177,6 +177,7 @@ function buildNav(){
     :`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
       <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
+      <div class="ni" onclick="showTab('rekommendationer',this)">💡 Rekommendationer</div>
       <div class="ni" onclick="showTab('actions',this)">Actions</div>
       <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>`;
 }
