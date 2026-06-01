@@ -316,9 +316,21 @@ async function renderRAT() {
       </div>
 
       <div id="rat-charts-wrap" style="display:flex;flex-direction:column;gap:1.5rem"></div>
+    </div>
+
+    <div style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem;margin-bottom:1rem">
+      <div style="font-size:13px;font-weight:700;color:var(--ö-blue);margin-bottom:.75rem">&#128200; Omsättning per vecka &mdash; alla butiker</div>
+      <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <button class="btn-sm" onclick="renderOmsattningAnalys('oms-chart-analys',12)">12v</button>
+        <button class="btn-sm" onclick="renderOmsattningAnalys('oms-chart-analys',24)">24v</button>
+        <button class="btn-sm" onclick="renderOmsattningAnalys('oms-chart-analys',52)">52v</button>
+        <button class="btn-sm" onclick="renderOmsattningAnalys('oms-chart-analys',0)">Alla</button>
+      </div>
+      <div id="oms-chart-analys" style="height:240px"></div>
     </div>`;
 
   const data = await loadRatData();
+  setTimeout(()=>renderOmsattningAnalys('oms-chart-analys',24), 100);
   if(!data || !Object.keys(data).length) {
     el.querySelector('#rat-charts-wrap').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--ö-muted)">Ingen data tillgänglig</div>';
     return;

@@ -1065,9 +1065,9 @@ function _buildPDFDoc(storeId,pdfMode){
       const wks=selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
           // HGR-svinn: direkt från avdelningsdata
       let _hS2=0,_hN2=0;
-      wks.forEach(pk=>{storeLoop.forEach(sid=>{const dept=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);if(dept?.svinnPct!=null){_hS2+=dept.svinnPct;_hN2++;}});});
+      wks.forEach(pk=>{[storeId].forEach(sid=>{const dept=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);if(dept?.svinnPct!=null){_hS2+=dept.svinnPct;_hN2++;}});});
       let totS=0,totF=0;
-      if(_hN2===0){wks.forEach(pk=>{storeLoop.forEach(sid=>{
+      if(_hN2===0){wks.forEach(pk=>{[storeId].forEach(sid=>{
         (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc3=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc3===d.code)totS+=r.svinnKr||0;});
         const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);
         if(rd)totF+=rd.forsaljning||0;
@@ -1076,7 +1076,7 @@ function _buildPDFDoc(storeId,pdfMode){
 
       const svinnMap={};
       wks.forEach(pk=>{
-        storeLoop.forEach(sid=>{
+        [storeId].forEach(sid=>{
         (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
           const _dc=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;
           if(_dc!==d.code)return;
@@ -1086,7 +1086,7 @@ function _buildPDFDoc(storeId,pdfMode){
           const bi=EAN_DEPT_MAP[r.artNr||r.ean];
           if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;
         });
-        }); // storeLoop
+        }); // [storeId]
       });
       const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5)
         .map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
