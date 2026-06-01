@@ -106,27 +106,66 @@ function updPdfSel(){const m=document.querySelector('input[name=pmode]:checked')
 
 // Auto-send: kolla om nya veckans data är komplett och skicka rapporter
 async function checkAndTriggerAutoSend(periodKey) {
-  const storesWithData = Object.keys(OS20_DB[periodKey] || {});
+  // Hitta FÖREGÅENDE vecka — rapporten ska visa senast inlästa data, inte pågående vecka
+  const allPks = Object.keys(OS20_DB).sort();
+  const pkIdx = allPks.indexOf(periodKey);
+  // Använd föregående vecka om den finns, annars aktuell
+  const reportPk = pkIdx > 0 ? allPks[pkIdx - 1] : periodKey;
+  const storesWithData = Object.keys(OS20_DB[reportPk] || {});
   if(storesWithData.length < 1) return;
 
-  console.log('Auto-send check för', periodKey, '—', storesWithData.length, 'butiker');
+  console.log('Auto-send check för', reportPk, '(ny data:', periodKey, ') —', storesWithData.length, 'butiker');
 
   let sent = 0;
   for(const storeId of Object.keys(STORES)) {
     const sd = getSD(storeId);
     if(!sd.autoSend) continue;
     if(!sd.emails || !sd.emails.length) continue;
-    if(!OS20_DB[periodKey]?.[storeId]) continue;
+    if(!OS20_DB[reportPk]?.[storeId]) continue;
 
-    console.log('Auto-send: skickar', storeId, 'till', sd.emails);
+    console.log('Auto-send: skickar', storeId, 'rapport för', reportPk, 'till', sd.emails);
     try {
-      await sendStoreReport(storeId, 'week');
+      await sendStoreReportForWeek(storeId, reportPk);
       sent++;
     } catch(e) {
       console.error('Auto-send misslyckades för', storeId, e);
     }
   }
-  if(sent > 0) toast(`✓ Auto-send: ${sent} rapport(er) skickade för ${periodKey}`);
+  if(sent > 0) toast(`✓ Auto-send: ${sent} rapport(er) skickade för ${reportPk}`);
+}
+
+// Skicka rapport för en specifik vecka (för auto-send)
+async function sendStoreReportForWeek(storeId, pk) {
+  const storeName = STORES[storeId] || storeId;
+  const vLabel = pk.replace('-V', 'V'); // ex 2026V22
+  const periodLabel = pk.replace('-', ' · ').replace('V', 'V'); // ex 2026 · V22
+  const displayLabel = pk.replace(/^\d{4}-/, ''); // ex V22
+  const fileName = `Veckorapport_${storeName.replace(/\s+/g,'_')}_${vLabel}.pdf`;
+  const subject = `Veckorapport ${storeName} — ${displayLabel}`;
+
+  // Sätt selWeeks temporärt till just denna vecka för PDF-generering
+  const prevWks = new Set(selWeeks);
+  selWeeks.clear(); selWeeks.add(pk);
+
+  let pdfBase64;
+  try {
+    pdfBase64 = await generatePDFBase64(storeId, 'week');
+  } finally {
+    selWeeks.clear(); prevWks.forEach(w => selWeeks.add(w));
+  }
+
+  if(!pdfBase64) throw new Error('PDF-generering misslyckades');
+
+  const sd = getSD(storeId);
+  const emails = sd.emails || [];
+  if(!emails.length) throw new Error('Inga e-postadresser konfigurerade');
+
+  const resp = await fetch(EDGE_FUNCTION_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ storeId, storeName, periodLabel: displayLabel, fileName, pdfBase64, to: emails, subject })
+  });
+  if(!resp.ok) throw new Error('HTTP ' + resp.status);
 }
 
 // ── MAILUTSKICK ───────────────────────────────────────
