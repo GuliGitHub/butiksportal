@@ -300,20 +300,51 @@ function sokArtiklar(query) {
   if(!query || query.length < 2) { res.style.display='none'; return; }
   const q = query.toLowerCase();
 
-  // Sök i EAN_DEPT_MAP
+  // 1. Sök i EAN_DEPT_MAP (vanliga artiklar)
   const hits = Object.entries(EAN_DEPT_MAP||{})
     .filter(([artNr,info]) => artNr.includes(q) || (info.namn||'').toLowerCase().includes(q))
-    .slice(0,20);
+    .slice(0,18);
 
-  if(!hits.length) { res.innerHTML='<div style="padding:.5rem .75rem;font-size:12px;color:var(--ö-muted)">Inga träffar</div>'; res.style.display='block'; return; }
+  // 2. Sök Avd 24-artiklar från REPORT_DB dept.articles (Edge Function strippar dem ej)
+  const avd24Arts = {};
+  Object.values(REPORT_DB).forEach(weekData => {
+    Object.values(weekData).forEach(sd => {
+      const avd24 = (sd.depts||[]).find(d=>d.code===AVD_PROVISION);
+      (avd24?.articles||[]).forEach(a => {
+        if(!avd24Arts[a.artNr]) avd24Arts[a.artNr] = {artNr:a.artNr, namn:a.namn||a.artNr, dept:AVD_PROVISION};
+      });
+    });
+  });
+  const avd24Hits = Object.values(avd24Arts)
+    .filter(a => a.artNr.includes(q) || a.namn.toLowerCase().includes(q))
+    .slice(0,10).map(a => [a.artNr, {namn:a.namn, dept:a.dept}]);
 
-  res.innerHTML = hits.map(([artNr,info]) => `
-    <div onclick="laggTillArtikel('${artNr}','${(info.namn||artNr).replace(/'/g,"\\'")}','${info.dept||''}')"
-      style="padding:.5rem .75rem;cursor:pointer;font-size:12px;border-bottom:1px solid var(--ö-border)"
-      onmouseover="this.style.background='var(--ö-bg)'" onmouseout="this.style.background=''">
+  // 3. Avd 24 som helhet — sökbar via nyckelord
+  const avd24Kw = ['tjänst','provision','avd24','avd 24','förbutik','lotto','postnord','ombud'];
+  const showAvd24 = avd24Kw.some(k=>k.includes(q)||q.includes(k.slice(0,3)));
+  const deptHit = showAvd24
+    ? [['AVD24', {namn:'Avd 24 — Tjänster & Provision (hela avdelningen)', dept:AVD_PROVISION}]]
+    : [];
+
+  const allHits = [...hits, ...avd24Hits, ...deptHit];
+
+  if(!allHits.length) {
+    res.innerHTML='<div style="color:var(--ö-muted);font-size:12px;padding:.5rem .75rem">Inga träffar</div>';
+    res.style.display='block'; return;
+  }
+
+  res.innerHTML = allHits.map(([artNr,info]) => {
+    const isAvd = artNr==='AVD24';
+    const isAvd24Art = info.dept===AVD_PROVISION && !isAvd;
+    return `<div onclick="laggTillArtikel('${artNr}','${(info.namn||artNr).replace(/'/g,"\'").replace(/"/g,'&quot;')}','${info.dept||''}')"
+      style="padding:.5rem .75rem;cursor:pointer;font-size:12px;border-bottom:1px solid var(--ö-border);${isAvd?'background:rgba(37,99,235,0.04)':''}"
+      onmouseover="this.style.background='var(--ö-bg)'" onmouseout="this.style.background='${isAvd?'rgba(37,99,235,0.04)':''}'"'>
+      ${isAvd?'<span style="font-size:10px;background:#EFF6FF;color:#1D4ED8;padding:1px 5px;border-radius:3px;margin-right:4px">AVDELNING</span>':''}
+      ${isAvd24Art?'<span style="font-size:10px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:3px;margin-right:4px">Avd 24</span>':''}
       <span style="font-weight:600">${info.namn||artNr}</span>
-      <span style="color:var(--ö-muted);margin-left:.5rem">${artNr}</span>
-    </div>`).join('');
+      ${!isAvd?`<span style="color:var(--ö-muted);margin-left:.5rem">${artNr}</span>`:''}
+    </div>`;
+  }).join('');
   res.style.display = 'block';
 }
 
