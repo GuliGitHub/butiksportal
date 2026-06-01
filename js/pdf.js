@@ -748,16 +748,30 @@ function _buildPDFDoc(storeId,pdfMode){
     y+=10;
 
     // KPI-tiles med ackumulerad data
+    // Beräkna Förs KR delta och BV KR delta för ackumulerat
+    const _accPks = getPeriodKeys?.(activePeriod) || [];
+    const _accBvKrDelta = (()=>{
+      let totBvKr=0, totBvKrFgAr=0, found=0;
+      _accPks.forEach(pk=>{
+        const d=REPORT_DB[pk]?.[storeId];
+        if(d&&d.bvKr!=null&&d.bvKrFgAr!=null){totBvKr+=d.bvKr;totBvKrFgAr+=d.bvKrFgAr;found++;}
+      });
+      return found>0&&totBvKrFgAr>0?totBvKr-totBvKrFgAr:null;
+    })();
+    const _accForsKrDelta = (()=>{
+      let totFors=0, totForsAr=0, found=0;
+      _accPks.forEach(pk=>{
+        const d=REPORT_DB[pk]?.[storeId];
+        if(d&&d.forsaljning!=null&&d.forsaljningFgAr!=null){totFors+=d.forsaljning;totForsAr+=d.forsaljningFgAr;found++;}
+      });
+      return found>0?{delta:totFors-totForsAr,fors:totFors}:null;
+    })();
     const accKpis=[
-      {label:'OMSÄTTNING',    val:accPeriodData.forsaljningDelta!=null?(accPeriodData.forsaljningDelta>=0?'+':'')+(accPeriodData.forsaljningDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.oms, lb:false},
-      {label:'MARGINAL BV%',  val:accPeriodData.bvPct!=null?(accPeriodData.bvPct*100).toFixed(1)+'%':null, goal:sd.storeGoals.marginal, lb:false},
-      {label:'MARGINAL BV KR Δ',val:(()=>{
-        const delta=calcBvKrDelta(getAccDataFromWeeks?.(storeId, getPeriodKeys?.(activePeriod)?.reduce((s,k)=>{s.add(k);return s;},new Set())));
-        if(delta==null)return null;
-        return pdfFmtKr(delta);
-      })(), goal:null, lb:false},
-      {label:'FÖRS. KR',      val:accPeriodData.forsaljning!=null?pdfFmtKr(accPeriodData.forsaljning):null, goal:null, lb:false},
-      {label:'ANTAL SÅLDA',   val:accPeriodData.antalDelta!=null?(accPeriodData.antalDelta>=0?'+':'')+(accPeriodData.antalDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.antal, lb:false},
+      {label:'OMSÄTTNING',      val:accPeriodData.forsaljningDelta!=null?(accPeriodData.forsaljningDelta>=0?'+':'')+(accPeriodData.forsaljningDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.oms, lb:false},
+      {label:'MARGINAL BV%',    val:accPeriodData.bvPct!=null?(accPeriodData.bvPct*100).toFixed(1)+'%':null, goal:sd.storeGoals.marginal, lb:false},
+      {label:'MARGINAL BV KR *',val:_accBvKrDelta!=null?(_accBvKrDelta>=0?'+':'')+pdfFmtKr(_accBvKrDelta):null, goal:null, lb:false},
+      {label:'FÖRS. KR *',      val:_accForsKrDelta?(_accForsKrDelta.delta>=0?'+':'')+pdfFmtKr(_accForsKrDelta.delta):null, goal:null, lb:false},
+      {label:'ANTAL SÅLDA',     val:accPeriodData.antalDelta!=null?(accPeriodData.antalDelta>=0?'+':'')+(accPeriodData.antalDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.antal, lb:false},
     ];
     const tW2=(W-2*M)/3, tH2=16;
     accKpis.forEach((k,i)=>{
