@@ -98,8 +98,10 @@ function buildRecommendations(forStoreId) {
 // ── RENDER REKOMMENDATIONER ────────────────────────────────────────
 function renderRekommendationer() {
   const isAdm = role === 'admin';
-  const storeList = isAdm ? Object.entries(STORES) : [[curSid, STORES[curSid]]];
-  const selectedSid = window._rekSid || (isAdm ? Object.keys(STORES)[0] : curSid);
+  // sid kan vara definierad i render.js — fallback om inte
+
+  const storeList = isAdm ? Object.entries(STORES) : [[sid, STORES[sid]]];
+  const selectedSid = window._rekSid || (isAdm ? Object.keys(STORES)[0] : sid);
   const cfg = KPI_CONFIG;
 
   // Butiksväljare (admin)
