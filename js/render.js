@@ -170,6 +170,7 @@ function buildNav(){
       <div class="ni" onclick="showTab('upload-försäljning',this)">📊 Försäljning</div>
       <div class="ni" onclick="showTab('upload-svinn',this)">🗑 Svinn</div>
       <div class="ni" onclick="showTab('rekommendationer',this)">💡 Rekommendationer</div>
+      <div class="ni" onclick="showTab('tavlingar',this)">🏆 Tävlingar</div>
       <div class="ni" onclick="showTab('perioder',this)">📅 Perioder</div>
       <div class="ni" onclick="showTab('kpi-admin',this)">KPI-inställningar</div>
       <div class="ni" onclick="showTab('rat',this)">&#128200; Analys/trender</div>
@@ -190,7 +191,7 @@ function showTab(tab,el){
 }
 function renderPanel(tab){
   ({overview:renderOverview,storemål:renderStoreMål,deptmål:renderDeptMål,actions:renderActions,
-    pdf:renderPdfPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,
+    pdf:renderPdfPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,
     perioder:renderPerioder,'kpi-admin':renderKPIAdmin,rat:renderRAT,admin:renderAdmin})[tab]?.();
 }
 
