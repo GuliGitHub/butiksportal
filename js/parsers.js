@@ -634,9 +634,14 @@ function _parseSheet(rows, periodKey, isVeckovis) {
     const row = rows[i] || [];
     const c0=row[0], c1=row[1], c2=row[2], c3=row[3], c4=row[4], c5=row[5], c6=row[6];
 
-    // Butikrad: kol[1]=butikId, kol[0]=tom (båda format)
-    if(c1 && typeof c1 === 'number' && STORE_IDS.includes(String(c1)) && !c0) {
-      curStore = String(c1); curHGR = null;
+    // Butikrad:
+    //   Veckovis (isVeckovis=true):  c0=tom, c1=butikId
+    //   Historisk (isVeckovis=false): c0=butikId, c1=butikNamn
+    const butikId = isVeckovis
+      ? (c1 && typeof c1==='number' && STORE_IDS.includes(String(c1)) && !c0 ? String(c1) : null)
+      : (c0 && typeof c0==='number' && STORE_IDS.includes(String(c0)) ? String(c0) : null);
+    if(butikId) {
+      curStore = butikId; curHGR = null;
       if(!storeData[curStore]) { storeData[curStore]={depts:[]}; eanByStore[curStore]={}; }
       continue;
     }
