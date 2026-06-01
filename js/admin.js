@@ -579,131 +579,197 @@ async function saveRatReportSetting(val) {
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
 
+
 // ══════════════════════════════════════════════════════════════════
 // OMSÄTTNINGSDIAGRAM PER VECKA (baserat på ÖS20-data)
 // ══════════════════════════════════════════════════════════════════
 
-// Hämta omsättningsdata från OS20_DB med fallback till REPORT_DB
-function _getOmsFors(pk, sid) {
-  return OS20_DB[pk]?.[sid]?.forsaljning || REPORT_DB[pk]?.[sid]?.forsaljning || 0;
-}
-function _getOmsBvKr(pk, sid) {
-  return OS20_DB[pk]?.[sid]?.bvKr || REPORT_DB[pk]?.[sid]?.bvKr || 0;
-}
+function _getOmsFors(pk,sid){return OS20_DB[pk]?.[sid]?.forsaljning||REPORT_DB[pk]?.[sid]?.forsaljning||0;}
+function _getOmsBvKr(pk,sid){return OS20_DB[pk]?.[sid]?.bvKr||REPORT_DB[pk]?.[sid]?.bvKr||0;}
 
-// Bygger Chart.js diagram för omsättning/vecka
-// containerId: id på element att rita i
-// storeIds: array av butik-IDs, null = alla
-// nWeeks: antal veckor bakåt (default 12)
-function renderOmsattningDiagram(containerId, storeIds, nWeeks) {
+// Bygg och visa omsättningsdiagrammet
+// containerId: container-div id
+// opts: {storeIds, years, weeks} — alla valfria, defaults till alla
+function renderOmsattningDiagram(containerId, opts) {
   const el = document.getElementById(containerId);
   if(!el) return;
 
-  // Hämta veckor från OS20_DB (mest komplett)
-  const allPks = [...new Set([...Object.keys(OS20_DB), ...Object.keys(REPORT_DB)])].sort();
-  const pks = (nWeeks ? allPks.slice(-nWeeks) : allPks);
+  opts = opts || {};
+  const storeIds = opts.storeIds || Object.keys(STORES);
+  const activeYears = opts.years || [new Date().getFullYear()];
+  const activeWeeks = opts.weeks || [...Array(52)].map((_,i)=>i+1);
 
-  if(!pks.length) {
-    el.innerHTML = '<div style="color:var(--ö-muted);font-size:12px;text-align:center;padding:2rem">Ingen data</div>';
-    return;
-  }
-
-  const stores = storeIds || Object.keys(STORES);
-  const labels = pks.map(pk => pk.replace(/^\d{4}-/,''));
-  const COLORS = ['#2563EB','#16A34A','#DC2626','#D97706','#7C3AED','#0891B2','#BE185D','#059669','#B45309'];
-
-  let datasets = [];
-
-  if(stores.length === 1) {
-    // En butik — omsättning + BV kr
-    const sid = stores[0];
-    datasets = [
-      {
-        label: 'Omsättning (tkr)',
-        data: pks.map(pk => +(_getOmsFors(pk,sid)/1000).toFixed(0)),
-        borderColor: '#2563EB',
-        backgroundColor: 'rgba(37,99,235,0.07)',
-        borderWidth: 2.5,
-        pointRadius: 3,
-        tension: 0.35,
-        fill: true,
-        yAxisID: 'y',
-      },
-      {
-        label: 'BV kr (tkr)',
-        data: pks.map(pk => +(_getOmsBvKr(pk,sid)/1000).toFixed(0)),
-        borderColor: '#16A34A',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: 0.35,
-        borderDash: [5,3],
-        yAxisID: 'y',
-      }
-    ];
-  } else {
-    // Flera butiker — en linje per butik
-    stores.forEach((sid, i) => {
-      datasets.push({
-        label: (STORES[sid]||sid).replace('Hemköp ',''),
-        data: pks.map(pk => +(_getOmsFors(pk,sid)/1000).toFixed(0)),
-        borderColor: COLORS[i % COLORS.length],
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: 0.35,
-      });
+  // Bygg labels + data
+  const items = [];
+  [...activeYears].sort().forEach(yr => {
+    const maxWk = Math.max(...Object.keys({...OS20_DB,...REPORT_DB})
+      .filter(pk=>pk.startsWith(yr+'-'))
+      .map(pk=>parseInt(pk.split('-V')[1])||0), 0) || 52;
+    activeWeeks.filter(w=>w<=maxWk).sort((a,b)=>a-b).forEach(w=>{
+      const pk = `${yr}-V${String(w).padStart(2,'0')}`;
+      let totOms=0, totBv=0;
+      storeIds.forEach(sid=>{totOms+=_getOmsFors(pk,sid); totBv+=_getOmsBvKr(pk,sid);});
+      if(totOms>0) items.push({label:pk.replace(/^\d{4}-/,'')+'\n'+yr, fullLabel:pk, oms:totOms, bv:totBv, rest:totOms-totBv});
     });
-  }
+  });
 
-  // Förstör gammal chart om den finns
+  if(!items.length){el.innerHTML='<div style="color:var(--ö-muted);text-align:center;padding:2rem;font-size:12px">Ingen data för valda veckor/år</div>';return;}
+
   const existing = Chart.getChart(containerId+'-canvas');
   if(existing) existing.destroy();
 
-  el.innerHTML = `<canvas id="${containerId}-canvas" style="width:100%;height:220px"></canvas>`;
+  const maxTick = items.length > 20 ? Math.ceil(items.length/8) : 1;
+
+  el.innerHTML = `<canvas id="${containerId}-canvas" style="width:100%;height:280px" role="img" aria-label="Omsättning per vecka"></canvas>`;
   const ctx = document.getElementById(containerId+'-canvas').getContext('2d');
 
   new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode:'index', intersect:false },
-      plugins: {
-        legend: {
-          display: datasets.length > 1,
-          position: 'top',
-          labels: { font:{size:10}, boxWidth:12, padding:8 }
-        },
-        tooltip: {
-          callbacks: {
-            label: c => ` ${c.dataset.label}: ${c.parsed.y.toLocaleString('sv-SE')} tkr`
+    type:'bar',
+    data:{
+      labels: items.map(i=>i.label),
+      datasets:[
+        {label:'BV kr (tkr)',data:items.map(i=>Math.round(i.bv/1000)),backgroundColor:'#2563EB',borderColor:'#1D4ED8',borderWidth:1,order:2,stack:'tot'},
+        {label:'Övrigt (tkr)',data:items.map(i=>Math.round(i.rest/1000)),backgroundColor:'rgba(37,99,235,0.22)',borderColor:'rgba(37,99,235,0.3)',borderWidth:1,order:3,stack:'tot'},
+        {label:'BV kr trend',data:items.map(i=>Math.round(i.bv/1000)),type:'line',borderColor:'#F59E0B',backgroundColor:'transparent',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#F59E0B',pointBorderColor:'#fff',pointBorderWidth:1.5,tension:0.35,order:1},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{mode:'index',intersect:false,callbacks:{
+          title:ctx=>items[ctx[0].dataIndex]?.fullLabel||'',
+          label:c=>c.dataset.label==='Övrigt (tkr)'||c.dataset.label==='BV kr trend'?null:` ${c.dataset.label}: ${Math.round(c.parsed.y).toLocaleString('sv-SE')} tkr`,
+          afterBody:ctx=>{
+            const bv=Math.round((ctx[0]?.parsed?.y||0)*1000);
+            const rest=Math.round((ctx[1]?.parsed?.y||0)*1000);
+            const tot=bv+rest;
+            return [`BV%: ${tot>0?Math.round(bv/tot*100):0}%`, `Total: ${Math.round(tot/1000).toLocaleString('sv-SE')} tkr`];
           }
-        }
+        }}
       },
-      scales: {
-        x: {
-          grid: { color:'rgba(0,0,0,0.05)' },
-          ticks: { font:{size:10}, color:'#6B7280', maxTicksLimit:16 }
-        },
-        y: {
-          grid: { color:'rgba(0,0,0,0.05)' },
-          ticks: {
-            font:{size:10}, color:'#6B7280',
-            callback: v => v.toLocaleString('sv-SE')+' tkr'
-          }
-        }
+      scales:{
+        x:{stacked:true,grid:{color:'rgba(0,0,0,0.04)'},ticks:{font:{size:10},maxRotation:45,callback:(v,i)=>i%maxTick===0?items[i]?.label.split('\n')[0]:''}},
+        y:{stacked:true,grid:{color:'rgba(0,0,0,0.04)'},ticks:{font:{size:10},callback:v=>v>=1000?Math.round(v/1000)+'M tkr':v+' tkr'}}
       }
     }
   });
 }
 
-function renderOmsattningAnalys(containerId, nWeeks) {
-  renderOmsattningDiagram(containerId, null, nWeeks||24);
+// Bygg hela omsättnings-widget med kontroller
+// containerId: wrapper-div som widget ritas i
+// initStoreIds: förvalda butiker (null = alla)
+function renderOmsattningWidget(containerId, initStoreIds) {
+  const el = document.getElementById(containerId);
+  if(!el) return;
+
+  const allPks = [...new Set([...Object.keys(OS20_DB),...Object.keys(REPORT_DB)])].sort();
+  const allYears = [...new Set(allPks.map(pk=>parseInt(pk.split('-V')[0])))].sort();
+  const activeYears = new Set([allYears[allYears.length-1]]);
+  const activeWeeks = new Set([...Array(52)].map((_,i)=>i+1));
+  const activeStores = new Set(initStoreIds || Object.keys(STORES));
+  let lastWkClick = null;
+
+  const chartId = containerId+'-chart';
+  const isAdmin = role==='admin';
+
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:1rem">
+      ${isAdmin ? `<div style="flex:1;min-width:200px">
+        <div style="font-size:11px;font-weight:600;color:var(--ö-muted);margin-bottom:6px">BUTIKER</div>
+        <div id="${containerId}-stores" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+      </div>` : ''}
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--ö-muted);margin-bottom:6px">ÅR</div>
+        <div id="${containerId}-years" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:600;color:var(--ö-muted)">VECKOR</span>
+        <button onclick="window['${containerId}_selAll']()" style="font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--ö-border);cursor:pointer;background:transparent">Välj alla</button>
+        <button onclick="window['${containerId}_clearAll']()" style="font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--ö-border);cursor:pointer;background:transparent">Rensa</button>
+        <span id="${containerId}-wkcount" style="font-size:10px;color:var(--ö-muted)"></span>
+      </div>
+      <div id="${containerId}-weeks" style="display:grid;grid-template-columns:repeat(13,1fr);gap:3px;max-width:560px"></div>
+      <div style="font-size:10px;color:var(--ö-muted);margin-top:4px">Shift+klicka för att välja ett intervall</div>
+    </div>
+
+    <div style="display:flex;gap:16px;margin-bottom:8px;font-size:11px;color:var(--ö-muted)">
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#2563EB;opacity:0.3"></span>Omsättning exkl. BV</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#2563EB"></span>BV kr</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:20px;height:2px;background:#F59E0B;display:inline-block;border-radius:1px"></span>BV kr trend</span>
+    </div>
+
+    <div id="${chartId}" style="height:280px"></div>`;
+
+  function rerender() {
+    renderOmsattningDiagram(chartId, {
+      storeIds:[...activeStores],
+      years:[...activeYears],
+      weeks:[...activeWeeks]
+    });
+  }
+
+  // År-knappar
+  const yEl = document.getElementById(containerId+'-years');
+  allYears.forEach(yr=>{
+    const btn=document.createElement('button');
+    btn.textContent=yr;
+    btn.style.cssText='font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid;cursor:pointer';
+    const upd=()=>{const on=activeYears.has(yr);btn.style.background=on?'#1D4ED8':'transparent';btn.style.color=on?'#fff':'var(--ö-text)';btn.style.borderColor=on?'#1D4ED8':'var(--ö-border)';};
+    btn.onclick=()=>{if(activeYears.has(yr)){if(activeYears.size>1)activeYears.delete(yr);}else activeYears.add(yr);upd();rerender();};
+    upd();yEl.appendChild(btn);
+  });
+
+  // Butik-knappar (admin)
+  if(isAdmin){
+    const sEl=document.getElementById(containerId+'-stores');
+    Object.entries(STORES).forEach(([sid,name])=>{
+      const btn=document.createElement('button');
+      btn.textContent=name.replace('Hemköp ','');
+      btn.style.cssText='font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid;cursor:pointer';
+      const upd=()=>{const on=activeStores.has(sid);btn.style.background=on?'#1D4ED8':'transparent';btn.style.color=on?'#fff':'var(--ö-text)';btn.style.borderColor=on?'#1D4ED8':'var(--ö-border)';};
+      btn.onclick=()=>{if(activeStores.has(sid)){if(activeStores.size>1)activeStores.delete(sid);}else activeStores.add(sid);upd();rerender();};
+      upd();sEl.appendChild(btn);
+    });
+  }
+
+  // Vecko-grid
+  function buildWkGrid(){
+    const wEl=document.getElementById(containerId+'-weeks');
+    wEl.innerHTML='';
+    for(let w=1;w<=52;w++){
+      const btn=document.createElement('button');
+      btn.textContent=w;btn.dataset.w=w;
+      btn.style.cssText='font-size:10px;padding:3px 2px;border-radius:4px;border:1px solid;cursor:pointer;text-align:center';
+      const upd=()=>{const on=activeWeeks.has(w);btn.style.background=on?'#1D4ED8':'transparent';btn.style.color=on?'#fff':'var(--ö-text)';btn.style.borderColor=on?'#1D4ED8':'var(--ö-border)';};
+      btn.onclick=(e)=>{
+        if(e.shiftKey&&lastWkClick!==null){
+          const lo=Math.min(lastWkClick,w),hi=Math.max(lastWkClick,w);
+          const add=!activeWeeks.has(w);
+          for(let i=lo;i<=hi;i++){if(add)activeWeeks.add(i);else if(activeWeeks.size>1)activeWeeks.delete(i);}
+          buildWkGrid();
+        } else {
+          if(activeWeeks.has(w)){if(activeWeeks.size>1)activeWeeks.delete(w);}else activeWeeks.add(w);
+          lastWkClick=w;upd();
+        }
+        document.getElementById(containerId+'-wkcount').textContent=activeWeeks.size===52?'Alla 52 veckor':activeWeeks.size+' veckor';
+        rerender();
+      };
+      upd();wEl.appendChild(btn);
+    }
+    document.getElementById(containerId+'-wkcount').textContent=activeWeeks.size===52?'Alla 52 veckor':activeWeeks.size+' veckor';
+  }
+
+  window[containerId+'_selAll']=()=>{for(let i=1;i<=52;i++)activeWeeks.add(i);buildWkGrid();rerender();};
+  window[containerId+'_clearAll']=()=>{activeWeeks.clear();activeWeeks.add(1);buildWkGrid();rerender();};
+
+  buildWkGrid();
+  rerender();
 }
 
-function renderOmsattningButik(containerId, sid, nWeeks) {
-  renderOmsattningDiagram(containerId, [sid], nWeeks||24);
-}
+function renderOmsattningAnalys(containerId){renderOmsattningWidget(containerId, null);}
+function renderOmsattningButik(containerId, sid){renderOmsattningWidget(containerId, [sid]);}
 
