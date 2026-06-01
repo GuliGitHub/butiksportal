@@ -184,9 +184,6 @@ function renderNyTavling(id) {
   };
   if(!t) return;
 
-  const pks = Object.keys(REPORT_DB).sort();
-  const pkOptions = pks.map(pk => `<option value="${pk}">${pk}</option>`).join('');
-
   const panel = document.getElementById('panel-tavlingar');
   panel.innerHTML = `
     <div class="ph">
@@ -222,32 +219,28 @@ function renderNyTavling(id) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
           <div>
             <label style="font-size:11px;font-weight:700;color:var(--ö-muted);display:block;margin-bottom:4px">TÄVLINGSPERIOD FRÅN</label>
-            <select id="tv-pfrom" style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px">
-              ${pkOptions.replace(`value="${t.period_from}"`,`value="${t.period_from}" selected`)}
-            </select>
+            <input id="tv-pfrom" value="${t.period_from||''}" placeholder="t.ex. 2026-V24"
+              style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px;box-sizing:border-box">
+            <div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Format: ÅÅÅÅ-VVV (t.ex. 2026-V24)</div>
           </div>
           <div>
             <label style="font-size:11px;font-weight:700;color:var(--ö-muted);display:block;margin-bottom:4px">TÄVLINGSPERIOD TILL</label>
-            <select id="tv-pto" style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px">
-              ${pkOptions.replace(`value="${t.period_to}"`,`value="${t.period_to}" selected`)}
-            </select>
+            <input id="tv-pto" value="${t.period_to||''}" placeholder="t.ex. 2026-V25"
+              style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px;box-sizing:border-box">
           </div>
         </div>
 
         <div id="tv-jamfor-section" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
           <div>
             <label style="font-size:11px;font-weight:700;color:var(--ö-muted);display:block;margin-bottom:4px">JÄMFÖRELSEPERIOD FRÅN</label>
-            <select id="tv-jfrom" style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px">
-              <option value="">— Välj —</option>
-              ${pkOptions.replace(`value="${t.jamfor_period_from}"`,`value="${t.jamfor_period_from}" selected`)}
-            </select>
+            <input id="tv-jfrom" value="${t.jamfor_period_from||''}" placeholder="t.ex. 2025-V24"
+              style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px;box-sizing:border-box">
+            <div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Samma period föregående år</div>
           </div>
           <div>
             <label style="font-size:11px;font-weight:700;color:var(--ö-muted);display:block;margin-bottom:4px">JÄMFÖRELSEPERIOD TILL</label>
-            <select id="tv-jto" style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px">
-              <option value="">— Välj —</option>
-              ${pkOptions.replace(`value="${t.jamfor_period_to}"`,`value="${t.jamfor_period_to}" selected`)}
-            </select>
+            <input id="tv-jto" value="${t.jamfor_period_to||''}" placeholder="t.ex. 2025-V25"
+              style="width:100%;padding:.5rem .75rem;border:1px solid var(--ö-border);border-radius:6px;font-size:13px;box-sizing:border-box">
           </div>
         </div>
 
