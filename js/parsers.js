@@ -609,20 +609,35 @@ async function delPK(type,pk){
 //                 c2=avdKod, c0=butikId, c4=artNr (Format B: c0 tom, c2 finns, c4 tom)
 //   Artikelrad:   c5=artNr, c3=tom                (Format A)
 
-function _hgrCols(shift) {
-  return {
-    fors:    10+shift, forsAr:  11+shift,
-    antal:   12+shift, bvKr:    13+shift,
-    antalAr: 14+shift, bvKrAr:  15+shift,
-    bvPct:   16+shift, bvPctAr: 17+shift,
-    svinn:   18+shift, svinnAr: 19+shift,
-    driftlck:20+shift, bvEft:   22+shift,
-  };
-}
+// _hgrCols ersatt av dynamisk kolumndetektion i _parseSheet
 
 // ── Gemensam rad-parser ───────────────────────────────────────────
 function _parseSheet(rows, periodKey, isVeckovis) {
-  const COL = _hgrCols(isVeckovis ? 1 : 0);
+  // Dynamisk kolumndetektion från headerraden
+  // Headerraden finns på rad 2 (veckovis) eller rad 8 (historisk)
+  const headerRowIdx = isVeckovis ? 2 : 8;
+  const headerRow = (rows[headerRowIdx] || []).map(v => String(v||'').toLowerCase());
+  function colIdx(name) {
+    const idx = headerRow.findIndex(v => v.includes(name.toLowerCase()));
+    return idx >= 0 ? idx : -1;
+  }
+
+  // Hitta kolumner dynamiskt — faller tillbaka på shift-baserade värden
+  const shift = isVeckovis ? 1 : 0;
+  const COL = {
+    fors:     colIdx('förs belopp exkl moms') >= 0 && headerRow.filter(v=>v.includes('förs belopp exkl moms'))[0] ? (() => { const i=headerRow.findIndex(v=>v.includes('förs belopp exkl moms')&&!v.includes('fg')); return i>=0?i:10+shift; })() : 10+shift,
+    forsAr:   (() => { const i=headerRow.findIndex(v=>v.includes('förs belopp exkl moms')&&v.includes('fg')); return i>=0?i:11+shift; })(),
+    antal:    (() => { const i=headerRow.findIndex(v=>v==='antal sålda'); return i>=0?i:12+shift; })(),
+    bvKr:     (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst kr')&&!v.includes('fg')&&!v.includes('%')); return i>=0?i:13+shift; })(),
+    antalAr:  (() => { const i=headerRow.findIndex(v=>v.includes('antal sålda fg')); return i>=0?i:14+shift; })(),
+    bvKrAr:   (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst kr fg')); return i>=0?i:15+shift; })(),
+    bvPct:    (() => { const i=headerRow.findIndex(v=>v==='bruttovinst %'); return i>=0?i:16+shift; })(),
+    bvPctAr:  (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst % fg')); return i>=0?i:17+shift; })(),
+    svinn:    (() => { const i=headerRow.findIndex(v=>v.includes('känt svinn %')&&!v.includes('fg')); return i>=0?i:18+shift; })(),
+    svinnAr:  (() => { const i=headerRow.findIndex(v=>v.includes('känt svinn % fg')); return i>=0?i:19+shift; })(),
+    driftlck: (() => { const i=headerRow.findIndex(v=>v.includes('driftläckage %')&&!v.includes('fg')); return i>=0?i:20+shift; })(),
+    bvEft:    (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst efter')&&!v.includes('fg')); return i>=0?i:22+shift; })(),
+  };
   const STORE_IDS = Object.keys(STORES);
   const storeData = {}, eanByStore = {};
   let curStore = null, curHGR = null, artCount = 0;
