@@ -476,6 +476,41 @@ function renderOverview(){
     ${renderDeptTable(sd,wData,aData,viewMode)}`;
   setTimeout(()=>drawStoreTrendCharts(sid), 50);
   setTimeout(()=>loadAndRenderWeather(sid), 100);
+
+  // ── Avd 24 — Tjänster & Provision ────────────────────────────
+  const _wks24 = viewMode==='period'&&selPeriodId ? getPeriodKeys(PERIODS.find(p=>p.id===selPeriodId)||{}).reduce((s,k)=>{s.add(k);return s;},new Set()) : new Set(Object.keys(REPORT_DB).sort().slice(-1));
+  const avd24 = getAvd24Data(sid, _wks24);
+  if(avd24 && avd24.forsaljning > 0) {
+    const ov = document.getElementById('panel-overview');
+    const avd24Div = document.createElement('div');
+    avd24Div.style.cssText = 'margin-top:1rem;background:var(--ö-card);border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem';
+    const fmt = v => Math.round(v).toLocaleString('sv-SE');
+    avd24Div.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--ö-blue)">🏪 Avd 24 — Tjänster &amp; Provision</div>
+          <div style="font-size:11px;color:var(--ö-muted)">Exkluderat från butikstotal · Trafikmått för förbutiken</div>
+        </div>
+        <div style="font-size:10px;color:var(--ö-muted);background:var(--ö-bg);padding:3px 8px;border-radius:20px;border:1px solid var(--ö-border)">
+          BV-nyckel: ${(AVD_PROVISION_BV_PCT*100).toFixed(0)}%
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+        <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+          <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">OMSÄTTNING</div>
+          <div style="font-size:18px;font-weight:700;color:var(--ö-text)">${fmt(avd24.forsaljning)} kr</div>
+        </div>
+        <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+          <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">PROVISION EST.</div>
+          <div style="font-size:18px;font-weight:700;color:var(--ö-blue)">${fmt(avd24.bvKr)} kr</div>
+        </div>
+        <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+          <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">PROVISION %</div>
+          <div style="font-size:18px;font-weight:700;color:var(--ö-blue)">${avd24.bvPct ? (avd24.bvPct*100).toFixed(1)+'%' : '—'}</div>
+        </div>
+      </div>`;
+    if(ov) ov.appendChild(avd24Div);
+  }
 }
 
 function getKPIVal(key, storeId, weeks) {

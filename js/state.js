@@ -81,6 +81,34 @@ const DEF_ACTIVE=['01','02','03','04','05','06','07','08','10','11','12','13','1
 
 
 // ── STATE ─────────────────────────────────────────────
+// ── Avd 24 — Tjänster/Provision (exkluderas från butikstotal, visas separat)
+const AVD_PROVISION = '24';
+const AVD_PROVISION_BV_PCT = 0.12; // Manuell BV%-nyckel för Avd 24 (12% provision)
+
+// Hjälpfunktion: hämta Avd 24-data för en butik/period
+function getAvd24Data(storeId, weeks) {
+  const pks = weeks ? [...weeks].sort() : Object.keys(REPORT_DB).sort().slice(-1);
+  let totFors = 0, totBvKr = 0, found = 0;
+  pks.forEach(pk => {
+    const d = REPORT_DB[pk]?.[storeId];
+    if(!d) return;
+    const avd24 = (d.depts||[]).find(x=>x.code===AVD_PROVISION);
+    if(avd24) {
+      totFors += avd24.forsaljning || 0;
+      // BV kr = omsättning × manuell nyckel om HGR inte har det
+      const bvKr = avd24.bvKr > 0 ? avd24.bvKr : (avd24.forsaljning||0) * AVD_PROVISION_BV_PCT;
+      totBvKr += bvKr;
+      found++;
+    }
+  });
+  return found > 0 ? {
+    forsaljning: totFors,
+    bvKr: totBvKr,
+    bvPct: totFors > 0 ? totBvKr/totFors : null,
+    weeks: found,
+  } : null;
+}
+
 let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, AO_DB={}, PERIODS=[], PINS={};
 let EAN_BY_STORE={}; // {storeId: {ean: {dept,oms,bvKr,namn}}}
 let role=null, sid=null, viewMode='week', selPeriodId=null;
@@ -107,7 +135,21 @@ function getWeekNum(d){const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d
 
 function getLatestWeekData(storeId){
   const keys=Object.keys(REPORT_DB).sort().reverse();
-  for(const k of keys)if(REPORT_DB[k][storeId])return{pk:k,...REPORT_DB[k][storeId]};
+  for(const k of keys){
+    const pd=REPORT_DB[k][storeId];
+    if(!pd) continue;
+    // Exkludera Avd 24 från totalsummorna
+    const depts24 = (pd.depts||[]).filter(d=>d.code!==AVD_PROVISION);
+    const fors24  = depts24.reduce((s,d)=>s+(d.forsaljning||0),0);
+    const bvKr24  = depts24.reduce((s,d)=>s+(d.bvKr||0),0);
+    return {
+      pk:k, ...pd,
+      forsaljning: fors24 || pd.forsaljning,
+      bvKr: bvKr24 || pd.bvKr,
+      bvPct: fors24>0 ? bvKr24/fors24 : pd.bvPct,
+      depts: depts24,
+    };
+  }
   return null;
 }
 
@@ -118,8 +160,10 @@ function getAccData(storeId,period){
     const pk=periodKey(period.year,w);
     const pd=REPORT_DB[pk]?.[storeId];
     if(!pd)continue;
-    found++;totF+=pd.forsaljning||0;totBvKr+=pd.bvKr||0;
-    (pd.depts||[]).forEach(d=>{
+    found++;
+    // Exkludera Avd 24 (Tjänster/Provision) från butikstotalen
+    (pd.depts||[]).filter(d=>d.code!==AVD_PROVISION).forEach(d=>{
+      totF+=d.forsaljning||0; totBvKr+=d.bvKr||0;
       if(!dAcc[d.code])dAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0};
       dAcc[d.code].forsaljning+=d.forsaljning||0;dAcc[d.code].bvKr+=d.bvKr||0;
     });
