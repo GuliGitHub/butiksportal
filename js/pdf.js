@@ -769,8 +769,8 @@ function _buildPDFDoc(storeId,pdfMode){
     const accKpis=[
       {label:'OMSÄTTNING',      val:accPeriodData.forsaljningDelta!=null?(accPeriodData.forsaljningDelta>=0?'+':'')+(accPeriodData.forsaljningDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.oms, lb:false},
       {label:'MARGINAL BV%',    val:accPeriodData.bvPct!=null?(accPeriodData.bvPct*100).toFixed(1)+'%':null, goal:sd.storeGoals.marginal, lb:false},
-      {label:'MARGINAL BV KR *',val:_accBvKrDelta!=null?(_accBvKrDelta>=0?'+':'')+pdfFmtKr(_accBvKrDelta):null, goal:null, lb:false},
-      {label:'FÖRS. KR *',      val:_accForsKrDelta?(_accForsKrDelta.delta>=0?'+':'')+pdfFmtKr(_accForsKrDelta.delta):null, goal:null, lb:false},
+      {label:'MARGINAL BV KR *',val:_accBvKrDelta!=null?pdfFmtKr(_accBvKrDelta):null, goal:null, lb:false},
+      {label:'FÖRS. KR *',      val:_accForsKrDelta?pdfFmtKr(_accForsKrDelta.delta):null, goal:null, lb:false},
       {label:'ANTAL SÅLDA',     val:accPeriodData.antalDelta!=null?(accPeriodData.antalDelta>=0?'+':'')+(accPeriodData.antalDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.antal, lb:false},
     ];
     const tW2=(W-2*M)/3, tH2=16;
