@@ -86,6 +86,11 @@ const AVD_PROVISION = '24';
 // Provision%-nyckel — laddas från KPI_CONFIG efter Supabase-laddning, default 12%
 let AVD_PROVISION_BV_PCT = 0.12;
 
+// Avdelningar som exkluderas från butikstotalen för att matcha OS20:
+// 24=Tjänster/Provision, 28=Presentkort, 91=Viktvarugrupp, 31/32/33=Intern
+const EXCLUDED_FROM_TOTAL = new Set(['24','28','91','31','32','33']);
+
+
 // Hjälpfunktion: hämta Avd 24-data för en butik/period
 function getAvd24Data(storeId, weeks) {
   const pks = weeks ? [...weeks].sort() : Object.keys(REPORT_DB).sort().slice(-1);
@@ -140,7 +145,7 @@ function getLatestWeekData(storeId){
     const pd=REPORT_DB[k][storeId];
     if(!pd) continue;
     // Exkludera Avd 24 från totalsummorna
-    const depts24 = (pd.depts||[]).filter(d=>d.code!==AVD_PROVISION);
+    const depts24 = (pd.depts||[]).filter(d=>!EXCLUDED_FROM_TOTAL.has(d.code));
     const fors24  = depts24.reduce((s,d)=>s+(d.forsaljning||0),0);
     const bvKr24  = depts24.reduce((s,d)=>s+(d.bvKr||0),0);
     return {
@@ -163,7 +168,7 @@ function getAccData(storeId,period){
     if(!pd)continue;
     found++;
     // Exkludera Avd 24 (Tjänster/Provision) från butikstotalen
-    (pd.depts||[]).filter(d=>d.code!==AVD_PROVISION).forEach(d=>{
+    (pd.depts||[]).filter(d=>!EXCLUDED_FROM_TOTAL.has(d.code)).forEach(d=>{
       totF+=d.forsaljning||0; totBvKr+=d.bvKr||0;
       if(!dAcc[d.code])dAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0};
       dAcc[d.code].forsaljning+=d.forsaljning||0;dAcc[d.code].bvKr+=d.bvKr||0;
