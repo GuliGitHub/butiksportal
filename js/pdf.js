@@ -1,32 +1,3 @@
-// ── Avdelningsfärger och ikoner ─────────────────────────────────
-const DEPT_STYLE = {
-  '03': {color:'#639922',bg:'#EAF3DE',iconBg:'#C0DD97',iconColor:'#27500A',icon:'🥦'},
-  '04': {color:'#378ADD',bg:'#E6F1FB',iconBg:'#85B7EB',iconColor:'#0C447C',icon:'🥛'},
-  '05': {color:'#378ADD',bg:'#E6F1FB',iconBg:'#85B7EB',iconColor:'#0C447C',icon:'🧀'},
-  '01': {color:'#BA7517',bg:'#FAEEDA',iconBg:'#FAC775',iconColor:'#633806',icon:'🍞'},
-  '02': {color:'#BA7517',bg:'#FAEEDA',iconBg:'#FAC775',iconColor:'#633806',icon:'🍲'},
-  '06': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🥩'},
-  '07': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🥩'},
-  '08': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🐟'},
-  '12': {color:'#7F77DD',bg:'#EEEDFE',iconBg:'#AFA9EC',iconColor:'#3C3489',icon:'❄️'},
-  '10': {color:'#1D9E75',bg:'#E1F5EE',iconBg:'#5DCAA5',iconColor:'#085041',icon:'🛒'},
-  '11': {color:'#1D9E75',bg:'#E1F5EE',iconBg:'#5DCAA5',iconColor:'#085041',icon:'🥤'},
-  '13': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🍿'},
-  '14': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🍫'},
-  '15': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🧸'},
-  _default: {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '09': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '16': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '17': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '18': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '19': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '20': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '21': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '22': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-  '30': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
-};
-function deptStyle(code) { return DEPT_STYLE[code] || DEPT_STYLE._default; }
-
 // ═══ PDF.JS — Östenssons Butiksportal ═══
 // Auto-genererad modul. Redigera ej manuellt.
 
