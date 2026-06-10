@@ -1401,3 +1401,72 @@ function renderUploadFörsäljning(){
     </div>`;
 }
 
+
+
+// ── Lazy load full artikellista per avdelning ─────────────────────────
+async function loadAllArticles(storeId, deptCode, btnEl) {
+  const container = btnEl?.closest('div')?.parentElement;
+  if(!container) return;
+  btnEl.textContent = 'Laddar...';
+  btnEl.disabled = true;
+
+  try {
+    // Hämta senaste veckan med data för denna butik
+    const latestPk = Object.keys(REPORT_DB).sort().filter(pk => REPORT_DB[pk]?.[storeId]).slice(-1)[0];
+    if(!latestPk) throw new Error('Ingen data');
+
+    // Hämta EAN_BY_STORE för denna butik+avdelning
+    const ean = EAN_BY_STORE[storeId] || {};
+    const arts = Object.values(ean)
+      .filter(a => a.dept === deptCode && (a.bvKr > 0 || a.oms > 0))
+      .sort((a,b) => (b.bvKr||0) - (a.bvKr||0));
+
+    if(!arts.length) {
+      btnEl.textContent = 'Ingen data';
+      return;
+    }
+
+    // Bygg tabell med alla artiklar
+    const rows = arts.slice(0,50).map((a,i) => `
+      <tr style="border-bottom:1px solid var(--ö-border)">
+        <td style="padding:3px 8px;font-size:11px;color:var(--ö-muted)">${i+1}</td>
+        <td style="padding:3px 8px;font-size:11px">${a.namn||a.artNr}</td>
+        <td style="padding:3px 8px;font-size:11px;text-align:right">${Math.round(a.oms||0).toLocaleString('sv-SE')}</td>
+        <td style="padding:3px 8px;font-size:11px;text-align:right;font-weight:600;color:var(--ö-blue)">${Math.round(a.bvKr||0).toLocaleString('sv-SE')}</td>
+        <td style="padding:3px 8px;font-size:11px;text-align:right">${a.bvPct?(a.bvPct*100).toFixed(1)+'%':'—'}</td>
+      </tr>`).join('');
+
+    const table = document.createElement('div');
+    table.style.cssText = 'margin-top:8px;border:1px solid var(--ö-border);border-radius:6px;overflow:hidden';
+    table.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--ö-bg);border-bottom:1px solid var(--ö-border)">
+        <span style="font-size:11px;font-weight:600">Alla artiklar — ${arts.length} st</span>
+        <button onclick="this.closest('div[style]').remove();btnEl&&(btnEl.textContent='Visa alla ▾',btnEl.disabled=false)" style="font-size:10px;color:var(--ö-muted);background:none;border:none;cursor:pointer">✕ Stäng</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--ö-bg);border-bottom:1px solid var(--ö-border)">
+              <th style="padding:4px 8px;font-size:10px;text-align:left;color:var(--ö-muted)">#</th>
+              <th style="padding:4px 8px;font-size:10px;text-align:left;color:var(--ö-muted)">Artikel</th>
+              <th style="padding:4px 8px;font-size:10px;text-align:right;color:var(--ö-muted)">Oms kr</th>
+              <th style="padding:4px 8px;font-size:10px;text-align:right;color:var(--ö-muted)">BV kr</th>
+              <th style="padding:4px 8px;font-size:10px;text-align:right;color:var(--ö-muted)">BV%</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${arts.length>50?`<div style="padding:6px 8px;font-size:10px;color:var(--ö-muted);text-align:center">Visar 50 av ${arts.length} artiklar</div>`:''}`;
+
+    container.appendChild(table);
+    btnEl.textContent = 'Göm ▲';
+    btnEl.disabled = false;
+    btnEl.onclick = () => { table.remove(); btnEl.textContent='Visa alla ▾'; };
+
+  } catch(e) {
+    btnEl.textContent = '⚠ Fel';
+    btnEl.disabled = false;
+    console.error('loadAllArticles:', e);
+  }
+}
