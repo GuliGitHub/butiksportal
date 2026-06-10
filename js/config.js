@@ -50,9 +50,25 @@ async function sbDelete(table, match) {
 async function loadAllFromSupabase() {
   showLoadingOverlay('Hämtar data...');
 
-  async function tryLoad(label, fn) {
-    try { await fn(); }
-    catch(e) { console.warn(`loadAllFromSupabase: ${label} misslyckades`, e.message); }
+  // tryLoad med timeout och retry
+  async function tryLoad(label, fn, retries=2, timeoutMs=12000) {
+    for(let attempt=1; attempt<=retries; attempt++) {
+      try {
+        await Promise.race([
+          fn(),
+          new Promise((_,reject) => setTimeout(()=>reject(new Error('timeout')), timeoutMs))
+        ]);
+        return; // Lyckades
+      } catch(e) {
+        const isLast = attempt===retries;
+        if(isLast) {
+          console.warn(`loadAllFromSupabase: ${label} misslyckades efter ${retries} försök — ${e.message}`);
+        } else {
+          console.warn(`loadAllFromSupabase: ${label} försök ${attempt} misslyckades, försöker igen...`);
+          await new Promise(r=>setTimeout(r, 800*attempt)); // Backoff
+        }
+      }
+    }
   }
 
   await tryLoad('store_settings', async () => {
@@ -81,11 +97,24 @@ async function loadAllFromSupabase() {
     });
   });
 
-  await tryLoad('report_data', async () => {
-    const rows = await sbGet('report_data');
-    rows.forEach(row => { REPORT_DB[row.period_key] = row.data; });
-  });
-
+  // Ladda report_data och kpi_config parallellt (tyngsta tabellerna)
+  await Promise.all([
+    tryLoad('report_data', async () => {
+      const rows = await sbGet('report_data');
+      rows.forEach(row => { REPORT_DB[row.period_key] = row.data; });
+    }),
+    tryLoad('kpi_config_parallel', async () => {
+      const rows = await sbGet('kpi_config');
+      if(rows.length) {
+        const r0 = rows[0];
+        KPI_CONFIG = {...DEFAULT_KPI_CONFIG, ...r0.config};
+        if(KPI_CONFIG.avd24_provision_pct) AVD_PROVISION_BV_PCT = KPI_CONFIG.avd24_provision_pct;
+        if(r0.ean_dept_map) EAN_DEPT_MAP = r0.ean_dept_map;
+        if(r0.ean_by_store) EAN_BY_STORE = r0.ean_by_store;
+        if(r0.rat_in_report !== undefined) RAT_IN_REPORT = r0.rat_in_report;
+      }
+    }),
+  ]);
 
   await tryLoad('ao_data', async () => {
     const rows = await sbGet('ao_data');
@@ -142,6 +171,11 @@ async function loadAllFromSupabase() {
     rows.forEach(row => { PINS[row.store_id] = row.pin; });
   });
 
+  // Logga laddningsresultat
+  console.log(`Data laddad: REPORT_DB=${Object.keys(REPORT_DB).length}v OS20=${Object.keys(OS20_DB).length}v EAN=${Object.keys(EAN_DEPT_MAP).length}art`);
+  if(Object.keys(REPORT_DB).length === 0) {
+    console.warn('⚠ REPORT_DB tom efter laddning — render kan sakna data');
+  }
   hideLoadingOverlay();
 }
 

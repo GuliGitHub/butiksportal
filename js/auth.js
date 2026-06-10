@@ -39,6 +39,18 @@ async function login(){
   sessionStorage.setItem('o_role', r);
   sessionStorage.setItem('o_sid', s||'');
   await loadAllFromSupabase();
+
+  // Kontroll — om REPORT_DB är tom trots lyckad laddning, försök en gång till
+  if(Object.keys(REPORT_DB).length === 0 && Object.keys(OS20_DB).length > 0) {
+    console.warn('REPORT_DB tom efter första laddning — försöker igen...');
+    showLoadingOverlay('Laddar om försäljningsdata...');
+    await new Promise(res => setTimeout(res, 1200));
+    const rows = await sbGet('report_data');
+    rows.forEach(row => { REPORT_DB[row.period_key] = row.data; });
+    hideLoadingOverlay();
+    console.log(`Retry: REPORT_DB=${Object.keys(REPORT_DB).length} veckor`);
+  }
+
   buildNav(); renderPanel('overview');
 }
 function openBlommor(){
