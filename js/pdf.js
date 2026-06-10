@@ -1,3 +1,32 @@
+// ── Avdelningsfärger och ikoner ─────────────────────────────────
+const DEPT_STYLE = {
+  '03': {color:'#639922',bg:'#EAF3DE',iconBg:'#C0DD97',iconColor:'#27500A',icon:'🥦'},
+  '04': {color:'#378ADD',bg:'#E6F1FB',iconBg:'#85B7EB',iconColor:'#0C447C',icon:'🥛'},
+  '05': {color:'#378ADD',bg:'#E6F1FB',iconBg:'#85B7EB',iconColor:'#0C447C',icon:'🧀'},
+  '01': {color:'#BA7517',bg:'#FAEEDA',iconBg:'#FAC775',iconColor:'#633806',icon:'🍞'},
+  '02': {color:'#BA7517',bg:'#FAEEDA',iconBg:'#FAC775',iconColor:'#633806',icon:'🍲'},
+  '06': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🥩'},
+  '07': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🥩'},
+  '08': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🐟'},
+  '12': {color:'#7F77DD',bg:'#EEEDFE',iconBg:'#AFA9EC',iconColor:'#3C3489',icon:'❄️'},
+  '10': {color:'#1D9E75',bg:'#E1F5EE',iconBg:'#5DCAA5',iconColor:'#085041',icon:'🛒'},
+  '11': {color:'#1D9E75',bg:'#E1F5EE',iconBg:'#5DCAA5',iconColor:'#085041',icon:'🥤'},
+  '13': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🍿'},
+  '14': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🍫'},
+  '15': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🧸'},
+  _default: {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '09': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '16': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '17': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '18': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '19': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '20': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '21': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '22': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '30': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+};
+function deptStyle(code) { return DEPT_STYLE[code] || DEPT_STYLE._default; }
+
 // ═══ PDF.JS — Östenssons Butiksportal ═══
 // Auto-genererad modul. Redigera ej manuellt.
 
@@ -345,10 +374,11 @@ function buildMailHTML(storeId, pdfMode) {
     const kpiCells=dKpis.map(k=>{
       const disp=k.val!=null?(k.fmt==='delta'?fmtDelta(k.val):fmtPct(k.val)):'—';
       const col=colorFor(k.val,k.mål,k.lb);
-      return `<td style="padding:8px;text-align:center;background:#faf9f6;width:25%">
-        <div style="font-size:9px;color:${GR};text-transform:uppercase;margin-bottom:3px">${k.label}</div>
-        <div style="font-size:16px;font-weight:700;color:${col};font-family:monospace">${disp}</div>
-        <div style="font-size:9px;color:${GR}">Mål: ${k.mål}%</div>
+      return `<td style="padding:7px 8px;text-align:left;background:#faf9f6;width:20%;border-right:0.5px solid #e0ddd7">
+        <div style="font-size:8px;font-weight:700;color:${GR};text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${k.label}</div>
+        <div style="font-size:15px;font-weight:700;color:${col};font-family:monospace;line-height:1">${disp}</div>
+        <div style="font-size:8px;color:${GR};margin-top:2px">Mål: ${k.mål}%</div>
+        <div style="height:2px;background:#e8e5de;border-radius:1px;margin-top:4px"><div style="height:100%;width:${Math.min(k.val!=null&&k.mål?Math.abs(k.val/(k.mål/100))*100:0,100)}%;background:${col};border-radius:1px"></div></div>
       </td>`;
     }).join('');
 
@@ -387,10 +417,18 @@ function buildMailHTML(storeId, pdfMode) {
       ${tbRows.length?miniTable('Top 5 TB kr',tbRows,'oms','TB kr','#2e7d32','TB %',r=>r.bvPct!=null?(r.bvPct>=0.28?'#2e7d32':r.bvPct>=0.20?'#b45309':'#c62828'):GR):''}
     </div>`:'';
 
-    return `<div style="margin-bottom:16px;border:1px solid ${BEIGE};border-radius:6px;overflow:hidden">
-      <div style="background:${BLUE};color:#fff;padding:7px 12px;font-weight:700;font-size:12px">${d.name} — avd.${d.code}</div>
-      <table width="100%" cellspacing="0" style="border-collapse:collapse"><tr>${kpiCells}</tr></table>
-      <div style="padding:10px 12px">${actsHTML}${listsHTML}</div>
+    const _ds=deptStyle(d.code);
+    return `<div style="margin-bottom:14px;border:1px solid ${_ds.color}44;border-radius:8px;overflow:hidden;border-left:4px solid ${_ds.color}">
+      <div style="background:${_ds.bg};padding:8px 12px;display:flex;align-items:center;gap:8px">
+        <div style="width:28px;height:28px;border-radius:6px;background:${_ds.iconBg};color:${_ds.iconColor};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${_ds.icon}</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:12px;color:#1a1a1a">${d.name}</div>
+          <div style="font-size:9px;color:#666">avd.${d.code}</div>
+        </div>
+        ${curD?.forsaljning?`<div style="text-align:right"><div style="font-size:11px;font-weight:700;color:#1a1a1a">${Math.round(curD.forsaljning).toLocaleString('sv-SE')} kr</div><div style="font-size:8px;color:#888">förs. kr</div></div>`:''}
+      </div>
+      <table width="100%" cellspacing="0" style="border-collapse:collapse;border-top:1px solid ${_ds.color}33"><tr>${kpiCells}</tr></table>
+      <div style="padding:8px 12px">${actsHTML}${listsHTML}</div>
     </div>`;
   }
 

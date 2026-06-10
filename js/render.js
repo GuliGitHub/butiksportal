@@ -1,3 +1,32 @@
+// ── Avdelningsfärger och ikoner ─────────────────────────────────
+const DEPT_STYLE = {
+  '03': {color:'#639922',bg:'#EAF3DE',iconBg:'#C0DD97',iconColor:'#27500A',icon:'🥦'},
+  '04': {color:'#378ADD',bg:'#E6F1FB',iconBg:'#85B7EB',iconColor:'#0C447C',icon:'🥛'},
+  '05': {color:'#378ADD',bg:'#E6F1FB',iconBg:'#85B7EB',iconColor:'#0C447C',icon:'🧀'},
+  '01': {color:'#BA7517',bg:'#FAEEDA',iconBg:'#FAC775',iconColor:'#633806',icon:'🍞'},
+  '02': {color:'#BA7517',bg:'#FAEEDA',iconBg:'#FAC775',iconColor:'#633806',icon:'🍲'},
+  '06': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🥩'},
+  '07': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🥩'},
+  '08': {color:'#D85A30',bg:'#FAECE7',iconBg:'#F0997B',iconColor:'#712B13',icon:'🐟'},
+  '12': {color:'#7F77DD',bg:'#EEEDFE',iconBg:'#AFA9EC',iconColor:'#3C3489',icon:'❄️'},
+  '10': {color:'#1D9E75',bg:'#E1F5EE',iconBg:'#5DCAA5',iconColor:'#085041',icon:'🛒'},
+  '11': {color:'#1D9E75',bg:'#E1F5EE',iconBg:'#5DCAA5',iconColor:'#085041',icon:'🥤'},
+  '13': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🍿'},
+  '14': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🍫'},
+  '15': {color:'#D4537E',bg:'#FBEAF0',iconBg:'#F4C0D1',iconColor:'#72243E',icon:'🧸'},
+  _default: {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '09': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '16': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '17': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '18': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '19': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '20': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '21': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '22': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+  '30': {color:'#5F5E5A',bg:'#F1EFE8',iconBg:'#D3D1C7',iconColor:'#444441',icon:'📦'},
+};
+function deptStyle(code) { return DEPT_STYLE[code] || DEPT_STYLE._default; }
+
 // ═══ RENDER.JS — Östenssons Butiksportal ═══
 // Auto-genererad modul. Redigera ej manuellt.
 
@@ -774,12 +803,12 @@ function renderDeptTable(sd,wData,aData,mode){
     const dispMål=hasMål?mål+'%':'—';
     const dispAcc=accUtfall!=null?(unit==='delta'?fmtDelta(accUtfall):fmtPct(accUtfall)):null;
     const barW=hasVal&&hasMål&&mål!==0?Math.min(Math.abs(utfall/(mål/100))*100,100):0;
-    return `<div style="flex:1;padding:.625rem .875rem;border-left:1px solid var(--ö-border)">
-      <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px">${label}</div>
-      <div style="font-size:20px;font-weight:700;color:${col};font-family:'SF Mono',monospace;line-height:1">${dispUtfall}</div>
-      <div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Mål: ${dispMål}</div>
+    return `<div style="padding:.625rem .875rem;background:var(--ö-card);border-right:0.5px solid var(--ö-border)">
+      <div style="font-size:9px;font-weight:700;color:var(--ö-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">${label}</div>
+      <div style="font-size:18px;font-weight:700;color:${col};line-height:1">${dispUtfall}</div>
+      <div style="font-size:10px;color:var(--ö-muted);margin-top:2px">Mål: ${dispMål}</div>
       ${showAcc&&dispAcc?`<div style="font-size:10px;color:var(--ö-muted)">Ack: ${dispAcc}</div>`:''}
-      <div style="height:2.5px;background:var(--ö-border);border-radius:2px;margin-top:5px"><div style="height:100%;width:${barW}%;background:${col};border-radius:2px"></div></div>
+      <div style="height:3px;background:var(--ö-border);border-radius:2px;margin-top:5px"><div style="height:100%;width:${barW}%;background:${col};border-radius:2px"></div></div>
     </div>`;
   }
 
@@ -837,26 +866,25 @@ function renderDeptTable(sd,wData,aData,mode){
       const hasTB=tbRows.length>0 && !tbRows[0]?._noData;
       const tbNoData=tbRows.length>0 && tbRows[0]?._noData;
 
-      return`<div style="background:var(--ö-card);border-bottom:2px solid var(--ö-border)">
+      const _ds=deptStyle(d.code);
+      return`<div style="background:var(--ö-card);border-radius:10px;border:1px solid ${_ds.color}33;overflow:hidden;margin-bottom:12px">
 
-        <!-- Avdelningsrad: namn + 4 KPI-boxar -->
-        <div style="display:flex;align-items:stretch">
-
-          <!-- Avdelningsnamn -->
-          <div style="min-width:160px;max-width:180px;padding:.875rem 1rem;display:flex;align-items:center;gap:8px;border-right:1px solid var(--ö-border);flex-shrink:0">
-            <div style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;margin-top:2px"></div>
-            <div>
-              <div style="font-size:14px;font-weight:600;color:var(--ö-text)">${d.name}</div>
-              <div style="font-size:11px;color:var(--ö-muted)">avd.${d.code}</div>
-            </div>
+        <!-- Header: färgkodad vänsterkant + ikon + namn + förs kr -->
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-left:4px solid ${_ds.color};background:${_ds.bg}">
+          <div style="width:34px;height:34px;border-radius:8px;background:${_ds.iconBg};color:${_ds.iconColor};display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">${_ds.icon}</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600;color:var(--ö-text)">${d.name}</div>
+            <div style="font-size:11px;color:var(--ö-muted)">avd.${d.code}</div>
           </div>
+          ${rw?.forsaljning?`<div style="text-align:right"><div style="font-size:13px;font-weight:600;color:var(--ö-text)">${fmtKr(rw.forsaljning)}</div><div style="font-size:10px;color:var(--ö-muted)">förs. kr</div></div>`:''}
+        </div>
 
-          <!-- 4 KPI-boxar -->
-          <div style="display:flex;flex:1;min-width:0">
-            ${kpiBox('Omsättning',   omsUtfall,   dg.oms,      'delta', false, omsAcc)}
-            ${kpiBox('Antal sålda',  antalUtfall, dg.antal??null, 'delta', false, antalAcc)}
-            ${kpiBox('Marginal BV%', bvUtfall,    dg.marginal, 'pct',   false, bvAcc)}
-            ${kpiBox('Känt svinn',   svinnUtfall, dg.svinn,    'pct',   true,  null)}
+        <!-- KPI-rad -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--ö-border)">
+          ${kpiBox('Omsättning',   omsUtfall,   dg.oms,         'delta', false, omsAcc)}
+          ${kpiBox('Antal sålda',  antalUtfall, dg.antal??null, 'delta', false, antalAcc)}
+          ${kpiBox('Marginal BV%', bvUtfall,    dg.marginal,    'pct',   false, bvAcc)}
+          ${kpiBox('Känt svinn',   svinnUtfall, dg.svinn,       'pct',   true,  null)}
             ${(()=>{const delta=calcBvKrDelta(rw);const deltaAcc=calcBvKrDelta(ra);if(delta==null)return'';
               const accHtml=deltaAcc!=null?'<div style="font-size:10px;color:var(--ö-muted);margin-top:3px">Ack: '+(deltaAcc>=0?'+':'')+Math.round(deltaAcc).toLocaleString('sv-SE')+' kr</div>':'';
               return '<div style="flex:1;padding:.625rem .875rem;border-left:1px solid var(--ö-border)">'
@@ -881,8 +909,8 @@ function renderDeptTable(sd,wData,aData,mode){
 
         <!-- Autoorder (AO) nyckeltal -->
         ${(()=>{const ao=getAODeptData(sid,d.code);if(!ao)return'';return`
-          <div style="background:var(--ö-light);border-top:1px solid var(--ö-border);padding:.5rem 1rem;display:flex;gap:1.5rem;flex-wrap:wrap">
-            <div style="font-size:10px;font-weight:700;color:var(--ö-blue);text-transform:uppercase;letter-spacing:.07em;min-width:100px;line-height:2">🔄 Autoorder</div>
+          <div style="background:var(--ö-bkg);border-top:1px solid var(--ö-border);padding:.35rem .875rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <div style="font-size:10px;font-weight:700;color:var(--ö-blue);text-transform:uppercase;letter-spacing:.07em;padding-right:.75rem;border-right:0.5px solid var(--ö-border);white-space:nowrap">⚙ AutoOrder</div>
             <div style="font-size:11px">
               <span style="color:var(--ö-muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em;display:block">Andel riktade</span>
               <span style="font-weight:700;color:${ao.aoAndelRiktade>=0.9?'#1e6b2e':ao.aoAndelRiktade>=0.7?'#b45309':'#c62828'}">${fmtAOPct(ao.aoAndelRiktade)}</span>
