@@ -1704,20 +1704,15 @@ async function _appendWeatherPage(doc, storeId) {
 
 
 
-
-// ── AUTO-SEND SUPABASE PATCH ──────────────────────────────────────────────
-// Wraps toggleAutoSend to persist auto_send_enabled in store_settings
+// AUTO-SEND SUPABASE PATCH
 (function() {
-  const _orig = window.toggleAutoSend;
-  window.toggleAutoSend = async function(storeId) {
+  var _orig = window.toggleAutoSend;
+  window.toggleAutoSend = function(storeId) {
     if (_orig) _orig.call(this, storeId);
-    const sd = getSD(storeId);
-    const enabled = !!sd.autoSend;
-    try {
-      await sbUpsert('store_settings', { store_id: storeId, auto_send_enabled: enabled });
-      console.log('[auto-send] Sparat:', enabled, 'butik:', storeId);
-    } catch(e) {
-      console.error('[auto-send] Fel:', e.message);
-    }
+    var sd = getSD(storeId);
+    var enabled = !!sd.autoSend;
+    sbUpsert("store_settings", { store_id: storeId, auto_send_enabled: enabled })
+      .then(function() { console.log("[auto-send] Sparat:", enabled, "butik:", storeId); })
+      .catch(function(e) { console.error("[auto-send] Fel:", e); });
   };
 })();
