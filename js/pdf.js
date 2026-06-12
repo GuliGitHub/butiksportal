@@ -1703,16 +1703,3 @@ async function _appendWeatherPage(doc, storeId) {
 }
 
 
-
-// AUTO-SEND SUPABASE PATCH
-(function() {
-  var _orig = window.toggleAutoSend;
-  window.toggleAutoSend = function(storeId) {
-    if (_orig) _orig.call(this, storeId);
-    var sd = getSD(storeId);
-    var enabled = !!sd.autoSend;
-    sbUpsert("store_settings", { store_id: storeId, auto_send_enabled: enabled })
-      .then(function() { console.log("[auto-send] Sparat:", enabled, "butik:", storeId); })
-      .catch(function(e) { console.error("[auto-send] Fel:", e); });
-  };
-})();
