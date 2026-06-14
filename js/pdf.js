@@ -273,17 +273,28 @@ async function generatePodcast(storeId) {
     + 'Skriv ett manus på 60-90 sekunder i avslappnad stil. Lyft vad som går bra, vad som kan förbättras kopplat till actions, och avsluta med en positiv uppmaning. Inga rubriker, bara löpande tal.';
 
   try {
-    // Steg 1: Generera manus via Claude API
-    const mResp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
-    });
-    const mData = await mResp.json();
-    const manus = mData.content?.[0]?.text || '';
-    if (!manus) throw new Error('Inget manus genererades');
+    // Generera manus lokalt baserat på data
+    const omsPct = wd.forsaljningDelta ? (wd.forsaljningDelta*100).toFixed(1) : '?';
+    const bvPct = wd.bvPct ? (wd.bvPct*100).toFixed(1) : '?';
+    const bvMal = sd.storeGoals?.marginal || 25.8;
+    const svinnPct = wd.svinnPct ? (wd.svinnPct*100).toFixed(1) : '?';
+    const svinnMal = sd.storeGoals?.svinn_k || 0.7;
+    const snitt = wd.snittKop ? Math.round(wd.snittKop) : '?';
+    const snittMal = sd.storeGoals?.snittKop || 180;
+    const omsTxt = wd.forsaljningDelta >= 0 ? 'plus ' + omsPct + ' procent' : 'minus ' + Math.abs(omsPct) + ' procent';
+    const bvTxt = parseFloat(bvPct) >= bvMal ? bvPct + ' procent – över målet på ' + bvMal + '! Bra jobbat!' : bvPct + ' procent – vi är under målet på ' + bvMal + ', fokus på marginalerna.';
+    const svinnTxt = parseFloat(svinnPct) <= svinnMal ? svinnPct + ' procent svinn, under målet. Bra kontroll!' : svinnPct + ' procent svinn – målet är ' + svinnMal + ', vi behöver dra ner.';
+    const actionTxt = actionLines.length ? ' ' + actionLines.slice(0,2).join('. ') + '.' : '';
+    const manus = 'Hej g\u00e4nget p\u00e5 ' + storeName + '! ' + latestPk + ' \u00e4r i hamn. '
+      + 'Omsättningen landade p\u00e5 ' + omsTxt + ' mot f\u00f6rra \u00e5ret. '
+      + 'Bruttovinsten p\u00e5 ' + bvTxt + ' '
+      + svinnTxt + ' '
+      + 'Snittk\u00f6pet \u00e4r ' + snitt + ' kronor mot m\u00e5let p\u00e5 ' + snittMal + '.'
+      + actionTxt
+      + ' K\u00f6r h\u00e5rt den h\u00e4r veckan – vi ses fredag!';
 
     statusEl.textContent = 'Genererar ljud med ElevenLabs...';
+
 
     // Steg 2: Text-till-tal via Edge Function
     const aResp = await fetch(ELABS_EDGE, {
