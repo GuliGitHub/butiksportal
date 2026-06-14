@@ -240,7 +240,7 @@ async function addStoreEmail(storeId) {
 // ── PODCAST / ELEVENLABS ────────────────────────────────────────────────────
 const ELABS_EDGE = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/elevenlabs-tts';
 const ELABS_VOICE = 'CpPiT1LUZxBP5fFkxF9r';
-const ELABS_KEY = 'sk_9aa96d040f443ee17a6be4e46ff547f2f76c82ba79e16962';
+const ELABS_KEY = ''; // Läses från Supabase Secrets via Edge Function
 const podAudio = {};
 
 function podFmt(s){ s=Math.max(0,Math.floor(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
@@ -300,7 +300,7 @@ async function generatePodcast(storeId) {
     const aResp = await fetch(ELABS_EDGE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: manus, voice_id: ELABS_VOICE, api_key: ELABS_KEY })
+      body: JSON.stringify({ text: manus })
     });
     if (!aResp.ok) throw new Error('ElevenLabs: ' + aResp.status);
 
