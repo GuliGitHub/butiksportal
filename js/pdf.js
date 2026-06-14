@@ -291,7 +291,8 @@ async function generatePodcast(storeId) {
       + svinnTxt + ' '
       + 'Snittk\u00f6pet \u00e4r ' + snitt + ' kronor mot m\u00e5let p\u00e5 ' + snittMal + '.'
       + actionTxt
-      + ' K\u00f6r h\u00e5rt den h\u00e4r veckan – vi ses fredag!';
+      + ' K\u00f6r h\u00e5rt den h\u00e4r veckan!'
+      + ' Och en snabb spaning fr\u00e5n branschen: dagligvaruhandeln g\u00e5r plus 4,5 procent i maj j\u00e4mf\u00f6rt med f\u00f6rra \u00e5ret. E-handeln v\u00e4xer snabbast med plus elva procent, s\u00e5 vi i fysisk butik m\u00e5ste forts\u00e4tta leverera det n\u00e4tet inte kan: n\u00e4rheten, f\u00e4rskheten och den personliga servicen. Vi ses fredag!';
 
     statusEl.textContent = 'Genererar ljud med ElevenLabs...';
 
