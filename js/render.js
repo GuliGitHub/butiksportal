@@ -915,7 +915,7 @@ function renderDeptTable(sd,wData,aData,mode){
           </div>`:''}
 
           ${hasSvinn||hasTB||tbNoData?`
-          <div style="display:grid;grid-template-columns:${hasSvinn&&(hasTB||tbNoData)?'1fr 1fr':'1fr'};gap:20px">
+          <div style="display:grid;grid-template-columns:${hasSvinn&&(hasTB||tbNoData)?'repeat(auto-fit,minmax(300px,1fr))':'1fr'};gap:20px">
 
             ${hasSvinn?`
             <div>
