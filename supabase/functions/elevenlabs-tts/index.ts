@@ -8,7 +8,19 @@ const CORS = {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
-  const { text, voice_id, api_key } = await req.json();
+  const body = await req.json();
+  const text = body.text;
+
+  // Läs från Supabase Secrets (env-variabler) – fallback till body för bakåtkompatibilitet
+  const api_key = Deno.env.get("ELEVENLABS_API_KEY") || body.api_key;
+  const voice_id = Deno.env.get("ELEVENLABS_VOICE_ID") || body.voice_id;
+
+  if (!api_key || !voice_id || !text) {
+    return new Response(JSON.stringify({ error: "Missing required fields" }), {
+      status: 400,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  }
 
   const resp = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`,
