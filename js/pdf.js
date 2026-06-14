@@ -206,6 +206,7 @@ async function toggleAutoSend(storeId) {
   const sd = getSD(storeId);
   sd.autoSend = !sd.autoSend;
   await saveStoreSettings(storeId);
+  await sbUpsert('store_settings', {store_id: storeId, auto_send_enabled: sd.autoSend});
   const btn = document.getElementById('auto-send-btn-'+storeId);
   if(btn) {
     btn.textContent = sd.autoSend ? 'PÅ' : 'AV';
