@@ -89,6 +89,40 @@ function renderPdfPanel(){
       </div>
     </div>
 
+    <div class="card" style="margin-top:.875rem">
+      <div class="card-head">
+        <div>
+          <div class="ct">🎙️ Veckopodden</div>
+          <div class="cs">Generera AI-manus och ljud med ElevenLabs</div>
+        </div>
+      </div>
+      <div style="padding:1rem">
+        <div id="pod-status-${sid}" style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">
+          Generera ett poddavsnitt för ${storeName} baserat på veckans data och butikens actions.
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+          <button class="btn-g" onclick="generatePodcast('${sid}')" id="pod-gen-btn-${sid}">
+            🎙️ Generera podd
+          </button>
+          <button class="btn-g" onclick="playPodcast('${sid}')" id="pod-play-btn-${sid}" style="display:none">
+            ▶ Spela upp
+          </button>
+          <a id="pod-dl-${sid}" style="display:none" download="${sid}-podcast.mp3">
+            <button class="btn-g">⬇ Ladda ner mp3</button>
+          </a>
+        </div>
+        <div id="pod-progress-${sid}" style="display:none">
+          <div style="height:3px;background:var(--ö-bg-2);border-radius:2px;overflow:hidden;margin-bottom:4px">
+            <div id="pod-bar-${sid}" style="height:100%;width:0%;background:#0F6E56;transition:width .3s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span id="pod-time-${sid}" style="font-size:11px;color:var(--ö-muted)">0:00</span>
+            <span id="pod-dur-${sid}" style="font-size:11px;color:var(--ö-muted)">0:00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     ${role==='admin'?`
     <div class="card" style="margin-top:.875rem">
       <div class="card-head"><div><div class="ct">Skicka till alla butiker</div><div class="cs">Skickar rapport till samtliga butiker med registrerade mailadresser</div></div></div>
@@ -201,6 +235,107 @@ async function addStoreEmail(storeId) {
   ).join('');
   toast('✓ '+email+' tillagd');
 }
+
+
+// ── PODCAST / ELEVENLABS ────────────────────────────────────────────────────
+const ELABS_EDGE = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/elevenlabs-tts';
+const ELABS_VOICE = 'CpPiT1LUZxBP5fFkxF9r';
+const ELABS_KEY = 'sk_9aa96d040f443ee17a6be4e46ff547f2f76c82ba79e16962';
+const podAudio = {};
+
+function podFmt(s){ s=Math.max(0,Math.floor(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+async function generatePodcast(storeId) {
+  const sd = getSD(storeId);
+  const storeName = STORES[storeId] || storeId;
+  const btn = document.getElementById('pod-gen-btn-'+storeId);
+  const statusEl = document.getElementById('pod-status-'+storeId);
+  btn.disabled = true;
+  statusEl.textContent = 'Genererar manus med Claude...';
+
+  // Hämta senaste veckodata
+  const latestPk = Object.keys(REPORT_DB).sort().pop();
+  const wd = REPORT_DB[latestPk]?.[storeId] || {};
+  const actions = sd.actions || {};
+  const actionLines = [];
+  Object.entries(actions).forEach(([dept, acts]) => {
+    if (acts && acts.length) acts.slice(0,2).forEach(a => actionLines.push(dept + ': ' + a.text));
+  });
+
+  const prompt = 'Du är en avslappnad butikscoach som spelar in en kort veckopodcast på svenska för personal på ' + storeName + '. '
+    + 'Vecka: ' + latestPk + '. '
+    + 'Omsättning: ' + (wd.forsaljning ? Math.round(wd.forsaljning).toLocaleString('sv-SE') + ' kr' : 'saknas') + ' ('
+    + (wd.forsaljningDelta ? (wd.forsaljningDelta > 0 ? '+' : '') + (wd.forsaljningDelta*100).toFixed(1) + '% vs förra året' : '') + '). '
+    + 'Bruttovinst: ' + (wd.bvPct ? (wd.bvPct*100).toFixed(1) + '%' : 'saknas') + ' (mål ' + (sd.storeGoals?.marginal || 25.8) + '%). '
+    + 'Känt svinn: ' + (wd.svinnPct ? (wd.svinnPct*100).toFixed(1) + '%' : 'saknas') + '. '
+    + 'Snittköp: ' + (wd.snittKop ? Math.round(wd.snittKop) + ' kr' : 'saknas') + '. '
+    + (actionLines.length ? 'Butikens actions: ' + actionLines.join('; ') + '. ' : '')
+    + 'Skriv ett manus på 60-90 sekunder i avslappnad stil. Lyft vad som går bra, vad som kan förbättras kopplat till actions, och avsluta med en positiv uppmaning. Inga rubriker, bara löpande tal.';
+
+  try {
+    // Steg 1: Generera manus via Claude API
+    const mResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+    });
+    const mData = await mResp.json();
+    const manus = mData.content?.[0]?.text || '';
+    if (!manus) throw new Error('Inget manus genererades');
+
+    statusEl.textContent = 'Genererar ljud med ElevenLabs...';
+
+    // Steg 2: Text-till-tal via Edge Function
+    const aResp = await fetch(ELABS_EDGE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: manus, voice_id: ELABS_VOICE, api_key: ELABS_KEY })
+    });
+    if (!aResp.ok) throw new Error('ElevenLabs: ' + aResp.status);
+
+    const blob = await aResp.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    podAudio[storeId] = { audio, url, blob };
+
+    audio.addEventListener('timeupdate', () => {
+      if (!audio.duration) return;
+      document.getElementById('pod-bar-'+storeId).style.width = (audio.currentTime/audio.duration*100)+'%';
+      document.getElementById('pod-time-'+storeId).textContent = podFmt(audio.currentTime);
+    });
+    audio.addEventListener('loadedmetadata', () => {
+      document.getElementById('pod-dur-'+storeId).textContent = podFmt(audio.duration);
+    });
+    audio.addEventListener('ended', () => {
+      const pb = document.getElementById('pod-play-btn-'+storeId);
+      if (pb) pb.textContent = '▶ Spela upp';
+    });
+
+    document.getElementById('pod-play-btn-'+storeId).style.display = '';
+    document.getElementById('pod-progress-'+storeId).style.display = '';
+    const dlBtn = document.getElementById('pod-dl-'+storeId);
+    dlBtn.href = url;
+    dlBtn.style.display = '';
+    statusEl.textContent = '✓ Klar! ' + Math.round(blob.size/1024) + ' KB · ' + storeName + ' ' + latestPk;
+  } catch(e) {
+    statusEl.textContent = 'Fel: ' + e.message;
+  }
+  btn.disabled = false;
+}
+
+function playPodcast(storeId) {
+  const pod = podAudio[storeId];
+  if (!pod) return;
+  const btn = document.getElementById('pod-play-btn-'+storeId);
+  if (pod.audio.paused) {
+    pod.audio.play();
+    btn.textContent = '⏸ Pausa';
+  } else {
+    pod.audio.pause();
+    btn.textContent = '▶ Spela upp';
+  }
+}
+
 
 async function toggleAutoSend(storeId) {
   const sd = getSD(storeId);
