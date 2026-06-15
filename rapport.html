@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Veckorapport – Östenssons Butiksportal</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --navy:    #1a2e4a;
+      --navy2:   #243d60;
+      --red:     #cc0000;
+      --beige:   #f0ede8;
+      --white:   #ffffff;
+      --card:    #ffffff;
+      --border:  #ddd9d2;
+      --text:    #1a1a1a;
+      --muted:   #666;
+      --green:   #1a7a3c;
+      --orange:  #c85a00;
+      --radius:  8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--beige);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* HEADER */
+    header {
+      background: var(--navy);
+      color: white;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      height: 56px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .logo-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-box {
+      background: var(--red);
+      color: white;
+      font-weight: 900;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      padding: 4px 8px;
+      line-height: 1.3;
+      border-radius: 3px;
+      text-transform: uppercase;
+    }
+    .logo-box span { display: block; font-size: 9px; font-weight: 400; letter-spacing: 1px; opacity: 0.9; }
+    header h1 { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.9); }
+    .header-meta { margin-left: auto; font-size: 13px; color: rgba(255,255,255,0.6); }
+
+    /* PRINT BUTTON */
+    .print-bar {
+      background: var(--navy2);
+      color: white;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .print-bar .info { color: rgba(255,255,255,0.7); }
+    .btn-print {
+      background: white;
+      color: var(--navy);
+      border: none;
+      padding: 7px 18px;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-print:hover { background: #eee; }
+
+    /* MAIN */
+    main { max-width: 960px; margin: 0 auto; padding: 28px 20px 60px; }
+
+    /* LOADING / ERROR */
+    .state-msg {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+    }
+    .state-msg .icon { font-size: 48px; margin-bottom: 16px; }
+    .state-msg h2 { font-size: 20px; margin-bottom: 8px; color: var(--text); }
+    .state-msg p { font-size: 14px; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #ddd;
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* REPORT HEADER */
+    .report-header {
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .report-header h2 { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+    .report-header .week-badge {
+      background: var(--navy);
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+    .report-header .subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+    /* KPI GRID */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 600px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+    .kpi-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .kpi-card .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+    .kpi-card .value { font-size: 26px; font-weight: 700; line-height: 1; }
+    .kpi-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .kpi-card.positive .value { color: var(--green); }
+    .kpi-card.negative .value { color: var(--red); }
+    .kpi-card.neutral  .value { color: var(--navy); }
+
+    /* DELTA BADGE */
+    .delta {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .delta.up   { background: #d4edda; color: #155724; }
+    .delta.down { background: #f8d7da; color: #721c24; }
+
+    /* DEPARTMENTS */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--muted);
+      margin: 24px 0 12px;
+    }
+    .dept-table {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .dept-table thead tr { background: var(--navy); color: white; }
+    .dept-table thead th {
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-align: right;
+    }
+    .dept-table thead th:first-child { text-align: left; }
+    .dept-table tbody tr { border-bottom: 1px solid var(--border); }
+    .dept-table tbody tr:last-child { border-bottom: none; }
+    .dept-table tbody tr:hover { background: #f8f6f2; }
+    .dept-table td {
+      padding: 9px 14px;
+      font-size: 13px;
+      text-align: right;
+      color: var(--text);
+    }
+    .dept-table td:first-child { text-align: left; font-weight: 500; }
+    .dept-table td.pos { color: var(--green); font-weight: 600; }
+    .dept-table td.neg { color: var(--red); font-weight: 600; }
+    .dept-table tfoot tr { background: #f0ede8; font-weight: 700; border-top: 2px solid var(--border); }
+    .dept-table tfoot td { padding: 10px 14px; font-size: 13px; text-align: right; }
+    .dept-table tfoot td:first-child { text-align: left; }
+
+    /* FOOTER */
+    .report-footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    /* PRINT */
+    @media print {
+      header, .print-bar { display: none; }
+      body { background: white; }
+      main { padding: 0; max-width: 100%; }
+      .kpi-card, .dept-table, .report-header { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-wrap">
+    <div class="logo-box">Hemköp<span>Östenssons</span></div>
+    <h1>Butiksportal — Veckorapport</h1>
+  </div>
+  <div class="header-meta" id="header-meta">Läser in...</div>
+</header>
+
+<div class="print-bar" id="print-bar" style="display:none">
+  <span class="info" id="print-info"></span>
+  <button class="btn-print" onclick="window.print()">🖨️ Skriv ut / Spara PDF</button>
+</div>
+
+<main id="main">
+  <div class="state-msg" id="loading">
+    <div class="spinner"></div>
+    <h2>Hämtar rapport...</h2>
+    <p>Laddar data från Butiksportalen</p>
+  </div>
+</main>
+
+<script>
+// ─── CONFIG ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL  = 'https://cnifrizdioiwlvgbxsqs.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNuaWZyaXpkaW9pd2x2Z2J4c3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4MTg3MDcsImV4cCI6MjAyNTM5NDcwN30.Eerq42ACQ9UhCsnTdBji8VNv4OggbOdUHxityXNIk9g';
+
+// ─── PARAMS ──────────────────────────────────────────────────────────────────
+const params   = new URLSearchParams(location.search);
+const storeId  = params.get('store');
+const weekKey  = params.get('week');
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+const fmt  = n => n == null ? '—' : Number(n).toLocaleString('sv-SE');
+const fmtP = n => n == null ? '—' : Number(n).toFixed(1) + '%';
+const fmtK = n => n == null ? '—' : Number(n).toLocaleString('sv-SE') + ' kr';
+const cls  = n => n == null ? 'neutral' : n >= 0 ? 'positive' : 'negative';
+const sign = n => n == null ? '' : n >= 0 ? '+' : '';
+
+function deltaTag(n, unit = '%') {
+  if (n == null) return '';
+  const dir = n >= 0 ? 'up' : 'down';
+  const s = sign(n) + (unit === '%' ? fmtP(n) : fmt(n) + ' kr');
+  return `<span class="delta ${dir}">${s}</span>`;
+}
+
+function showError(title, msg) {
+  document.getElementById('main').innerHTML = `
+    <div class="state-msg">
+      <div class="icon">⚠️</div>
+      <h2>${title}</h2>
+      <p>${msg}</p>
+    </div>`;
+}
+
+// ─── MAIN ────────────────────────────────────────────────────────────────────
+(async () => {
+  if (!storeId || !weekKey) {
+    showError('Felaktig länk', 'Parametrarna store och week måste anges i URL:en.');
+    return;
+  }
+
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // Hämta parallellt: veckans report_data + store_settings + kpi_config
+  const [rdRes, ssRes, kpiRes] = await Promise.all([
+    sb.from('report_data').select('data').eq('period_key', weekKey).maybeSingle(),
+    sb.from('store_settings').select('store_name, store_id').eq('store_id', storeId).maybeSingle(),
+    sb.from('kpi_config').select('config').eq('store_id', storeId).maybeSingle(),
+  ]);
+
+  if (rdRes.error || !rdRes.data) {
+    showError('Data saknas', `Ingen rapport hittades för vecka ${weekKey}.`);
+    return;
+  }
+
+  const weekData  = rdRes.data.data;
+  const storeData = weekData?.[storeId];
+
+  if (!storeData) {
+    showError('Butik saknas i rapport', `Butik ${storeId} har ingen data för ${weekKey}.`);
+    return;
+  }
+
+  const storeName = ssRes.data?.store_name || `Butik ${storeId}`;
+  const kpiConfig = kpiRes.data?.config || {};
+
+  // Uppdatera header
+  document.title = `${storeName} – ${weekKey} – Butiksportal`;
+  document.getElementById('header-meta').textContent = `${storeName} · ${weekKey}`;
+  document.getElementById('print-bar').style.display = 'flex';
+  document.getElementById('print-info').textContent =
+    `${storeName} · ${weekKey} · Östenssons Butiksportal`;
+
+  // Extrahera nyckeltal
+  const fsg       = storeData.forsaljning          ?? null;
+  const fsgBudget = storeData.forsaljningBudget    ?? null;
+  const fsgDelta  = storeData.forsaljningDelta      ?? null;  // vs fg år
+  const bvPct     = storeData.bvPct                ?? null;
+  const bvBudget  = storeData.bvPctBudget          ?? null;
+  const kvitton   = storeData.kvitton              ?? null;
+  const snitt     = storeData.snittKop             ?? null;
+  const depts     = storeData.departments          ?? {};
+
+  // Bygg KPI-grid
+  const omsDiff = fsgBudget && fsg ? ((fsg - fsgBudget) / fsgBudget * 100) : null;
+  const bvDiff  = bvBudget  && bvPct ? (bvPct - bvBudget) : null;
+
+  const kpiHtml = `
+    <div class="kpi-grid">
+      <div class="kpi-card ${cls(omsDiff)}">
+        <div class="label">Försäljning</div>
+        <div class="value">${fmtK(fsg)}</div>
+        <div class="sub">Budget: ${fmtK(fsgBudget)} ${deltaTag(omsDiff)}</div>
+      </div>
+      <div class="kpi-card ${cls(bvDiff)}">
+        <div class="label">BV%</div>
+        <div class="value">${fmtP(bvPct)}</div>
+        <div class="sub">Budget: ${fmtP(bvBudget)} ${deltaTag(bvDiff)}</div>
+      </div>
+      <div class="kpi-card neutral">
+        <div class="label">Kvitton</div>
+        <div class="value">${fmt(kvitton)}</div>
+        <div class="sub">st</div>
+      </div>
+      <div class="kpi-card neutral">
+        <div class="label">Snittköp</div>
+        <div class="value">${fmtK(snitt)}</div>
+        <div class="sub">per kund</div>
+      </div>
+    </div>`;
+
+  // Bygg avdelningstabell
+  const deptEntries = Object.entries(depts)
+    .filter(([, d]) => d && d.forsaljning != null)
+    .sort((a, b) => (b[1].forsaljning || 0) - (a[1].forsaljning || 0));
+
+  let deptRows = '';
+  let totalFsg = 0, totalFsgFg = 0;
+
+  for (const [deptId, d] of deptEntries) {
+    const f   = d.forsaljning    ?? 0;
+    const fg  = d.forsaljningFg  ?? null;
+    const bv  = d.bvPct          ?? null;
+    const diff = fg != null ? ((f - fg) / Math.abs(fg) * 100) : null;
+    totalFsg   += f;
+    if (fg != null) totalFsgFg += fg;
+    deptRows += `
+      <tr>
+        <td>${d.name || deptId}</td>
+        <td>${fmtK(f)}</td>
+        <td class="${fg != null && diff < 0 ? 'neg' : (diff > 0 ? 'pos' : '')}">${deltaTag(diff)}</td>
+        <td>${fmtP(bv)}</td>
+      </tr>`;
+  }
+
+  const totalDiff = totalFsgFg > 0 ? ((totalFsg - totalFsgFg) / totalFsgFg * 100) : null;
+
+  const deptHtml = deptEntries.length ? `
+    <div class="section-title">Avdelningar</div>
+    <table class="dept-table">
+      <thead>
+        <tr>
+          <th>Avdelning</th>
+          <th>Försäljning</th>
+          <th>vs fg år</th>
+          <th>BV%</th>
+        </tr>
+      </thead>
+      <tbody>${deptRows}</tbody>
+      <tfoot>
+        <tr>
+          <td>Totalt</td>
+          <td>${fmtK(totalFsg)}</td>
+          <td>${deltaTag(totalDiff)}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>` : '';
+
+  // Rendera allt
+  document.getElementById('main').innerHTML = `
+    <div class="report-header">
+      <div>
+        <h2>${storeName}</h2>
+        <div class="subtitle">Veckorapport · Östenssons Hemköp</div>
+      </div>
+      <span class="week-badge">${weekKey}</span>
+    </div>
+    ${kpiHtml}
+    ${deptHtml}
+    <div class="report-footer">
+      Genererad av Östenssons Butiksportal · ${new Date().toLocaleDateString('sv-SE')}
+    </div>`;
+})();
+</script>
+</body>
+</html>
