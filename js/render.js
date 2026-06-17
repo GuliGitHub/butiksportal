@@ -511,6 +511,7 @@ function renderOverview(){
       </div>`;
     if(ov) ov.appendChild(avd24Div);
   }
+  setTimeout(()=>renderPodcastWidget(sid),150);
 }
 
 function getKPIVal(key, storeId, weeks) {
@@ -1467,5 +1468,42 @@ async function loadAllArticles(storeId, deptCode, btnEl) {
     btnEl.textContent = '⚠ Fel';
     btnEl.disabled = false;
     console.error('loadAllArticles:', e);
+  }
+}
+
+
+// ── Podcast Widget ─────────────────────────────────────────────────────
+async function renderPodcastWidget(storeId) {
+  const sb = window._sb || supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const weekKey = Object.keys(REPORT_DB || {}).sort().pop() || '';
+  const { data: pod } = await sb.from('podcasts').select('*').eq('store_id', 'all').eq('period_key', weekKey).maybeSingle();
+  const ov = document.getElementById('panel-overview');
+  if (!ov) return;
+  const div = document.createElement('div');
+  div.id = 'podcast-widget';
+  div.style.cssText = 'margin-top:1rem;background:var(--ö-card);border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem';
+  if (pod && pod.audio_url) {
+    div.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:.75rem">🎙️ Veckopodcast — ' + pod.period_key + '</div><audio controls style="width:100%;border-radius:6px" src="' + pod.audio_url + '"></audio><details style="margin-top:.75rem"><summary style="font-size:11px;color:var(--ö-muted);cursor:pointer">Visa manus</summary><div style="font-size:12px;line-height:1.6;background:var(--ö-bg);border-radius:6px;padding:.75rem;white-space:pre-wrap;margin-top:.25rem">' + (pod.script || '') + '</div></details>';
+  } else {
+    div.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:700">🎙️ Veckopodcast</div><div style="font-size:11px;color:var(--ö-muted)">Ingen podcast för ' + (weekKey || 'denna vecka') + ' ännu</div></div><button id="btn-gen-podcast" onclick="generatePodcast()" style="background:var(--ö-blue);color:#fff;border:none;border-radius:6px;padding:.4rem .9rem;font-size:12px;font-weight:600;cursor:pointer">Generera podcast ✨</button></div>';
+  }
+  ov.appendChild(div);
+}
+async function generatePodcast() {
+  const btn = document.getElementById('btn-gen-podcast');
+  if (btn) { btn.disabled = true; btn.textContent = 'Genererar… ⏳'; }
+  try {
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/generate-podcast', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+      body: JSON.stringify({ periodKey: Object.keys(REPORT_DB || {}).sort().pop() }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Okant fel');
+    const old = document.getElementById('podcast-widget');
+    if (old) old.remove();
+    await renderPodcastWidget();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Generera podcast ✨'; }
+    alert('Fel: ' + e.message);
   }
 }
