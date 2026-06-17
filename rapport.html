@@ -365,9 +365,10 @@ function showError(title, msg) {
       </div>
     </div>`;
 
-  // Bygg avdelningstabell
+  // Bygg avdelningstabell — avd 24/28 m.fl. exkluderas (matchar BIB16-definitionen)
+  const EXCL_FROM_DISPLAY = new Set(['24','28','91','31','32','33']);
   const deptEntries = Object.entries(depts)
-    .filter(([, d]) => d && d.forsaljning != null)
+    .filter(([id, d]) => d && d.forsaljning != null && !EXCL_FROM_DISPLAY.has(String(id)))
     .sort((a, b) => (b[1].forsaljning || 0) - (a[1].forsaljning || 0));
 
   let deptRows = '';
