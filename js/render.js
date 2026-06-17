@@ -9,7 +9,7 @@ function renderTotalOv(el) {
   const wks = viewMode==='period'&&selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
   const data = getTotalDataForStores(wks, selTotalStores);
   const acts = Object.values(sd.actions).flat();
-  const done = acts.filter(a=>a.done).length;
+  const done = acts.filter(a=>a.done).length;h
   const pending = acts.filter(a=>!a.done).slice(0,4);
 
   el.innerHTML = `
@@ -1474,7 +1474,7 @@ async function loadAllArticles(storeId, deptCode, btnEl) {
 
 // ── Podcast Widget ─────────────────────────────────────────────────────
 async function renderPodcastWidget(storeId) {
-  const sb = window._sb || supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const sb = window._sb || supabase.createClient(SB_URL, SB_KEY);
   const weekKey = Object.keys(REPORT_DB || {}).sort().pop() || '';
   const { data: pod } = await sb.from('podcasts').select('*').eq('store_id', 'all').eq('period_key', weekKey).maybeSingle();
   const ov = document.getElementById('panel-overview');
@@ -1493,8 +1493,8 @@ async function generatePodcast() {
   const btn = document.getElementById('btn-gen-podcast');
   if (btn) { btn.disabled = true; btn.textContent = 'Genererar… ⏳'; }
   try {
-    const resp = await fetch(SUPABASE_URL + '/functions/v1/generate-podcast', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+    const resp = await fetch(SB_URL + '/functions/v1/generate-podcast', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SB_KEY },
       body: JSON.stringify({ periodKey: Object.keys(REPORT_DB || {}).sort().pop() }),
     });
     const data = await resp.json();
