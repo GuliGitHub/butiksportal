@@ -191,7 +191,7 @@ function showTab(tab,el){
 }
 function renderPanel(tab){
   ({overview:renderOverview,storemål:renderStoreMål,deptmål:renderDeptMål,actions:renderActions,
-    pdf:renderPdfPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,
+    pdf:renderPdfPanel,podcast:renderPodcastPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,
     perioder:renderPerioder,'kpi-admin':renderKPIAdmin,rat:renderRAT,admin:renderAdmin})[tab]?.();
 }
 
