@@ -180,7 +180,7 @@ function buildNav(){
       <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
       <div class="ni" onclick="showTab('rekommendationer',this)">💡 Rekommendationer</div>
       <div class="ni" onclick="showTab('actions',this)">Actions</div>
-      <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>`;
+      <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>`;
 }
 function showTab(tab,el){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -1126,7 +1126,7 @@ function adminViewStore(storeId){
     <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
     <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
     <div class="ni" onclick="showTab('actions',this)">Actions</div>
-    <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>`;
+    <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>`;
   showTab('overview',document.querySelectorAll('.ni')[1]);
 }
 function backAdmin(){sid=null;document.getElementById('store-lbl').textContent='Admin / Central';buildNav();showTab('overview',document.querySelector('.ni'));}
@@ -1496,7 +1496,7 @@ async function generatePodcast() {
   try {
     const resp = await fetch(SB_URL + '/functions/v1/generate-podcast', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SB_KEY },
-      body: JSON.stringify({ periodKey: Object.keys(REPORT_DB || {}).sort().pop() }),
+      body: JSON.stringify({ periodKey: Object.keys(REPORT_DB || {}).sort().pop(), storeId: sid }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Okant fel');
