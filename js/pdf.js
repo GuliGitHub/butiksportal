@@ -51,6 +51,25 @@ function renderPdfPanel(){
       </div>
     </div>
 
+<!-- Mål & Actions rapport -->
+    <div class="card" style="margin-top:.875rem">
+      <div class="card-head">
+        <div>
+          <div class="ct">📋 Skriv ut mål</div>
+          <div class="cs">Sammanställning av mål utan aktuellt utfall</div>
+        </div>
+      </div>
+      <div style="padding:1rem">
+        <label style="display:flex;align-items:center;gap:.625rem;cursor:pointer;margin-bottom:.875rem;font-size:13px">
+          <input type="checkbox" id="goals-pdf-actions-${sid}" checked style="width:15px;height:15px;accent-color:var(--ö-blue)">
+          Inkludera actions
+        </label>
+        <button class="btn-g" onclick="generateGoalsPDF('${sid}')" style="width:100%;padding:10px;font-size:14px">
+          Ladda ner mål-PDF
+        </button>
+      </div>
+    </div>
+
     <!-- Mailadresser direkt i PDF/Admin-vyn -->
     <div class="card" style="margin-top:.875rem">
       <div class="card-head">
@@ -807,6 +826,166 @@ function pdfFmtPct(val) {
 function pdfFmtPctAbs(val) {
   if(val==null) return '—';
   return (val*100).toFixed(1) + '%';
+}
+
+// ── MÅL- OCH ACTIONSRAPPORT ──────────────────────────────────────────
+function _buildGoalsPDF(storeId, includeActions) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const sd = getSD(storeId);
+  const storeName = STORES[storeId] || storeId;
+  const W = 210, M = 14;
+  const BLUE = [0,47,109], RED = [226,0,0], DK = [26,26,24], GR = [107,104,96];
+  const BEIGE = [233,229,224], WHITE = [255,255,255], LTGRAY = [245,243,239];
+  const GREEN = [42,110,20], AMBER = [180,90,0], REDD = [180,30,30];
+
+  let y = 0;
+
+  // ── HEADER ──────────────────────────────────────────────────────────
+  doc.setFillColor(...BLUE); doc.rect(0, 0, W, 18, 'F');
+  doc.setFillColor(...RED);  doc.rect(0, 16, W, 2, 'F');
+  doc.setTextColor(...WHITE); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+  doc.text(storeName, W - M, 8, { align: 'right' });
+  doc.text('Genererad ' + new Date().toLocaleDateString('sv-SE'), W - M, 13.5, { align: 'right' });
+  y = 26;
+
+  // ── BUTIKSTITEL ──────────────────────────────────────────────────────
+  doc.setTextColor(...BLUE); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text(storeName, M, y); y += 5;
+  doc.setTextColor(...GR); doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.text('Mål' + (includeActions ? ' & Actions' : ''), M, y); y += 8;
+
+  // ── BUTIKSMÅL (KPI-tiles, bara mål) ─────────────────────────────────
+  doc.setFillColor(...BLUE); doc.rect(M, y, W - 2*M, 8, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...WHITE);
+  doc.text('Butiksmål', M + 4, y + 5.5);
+  y += 10;
+
+  const kpis = KPI_LIBRARY.filter(k => KPI_CONFIG[k.key]?.visible);
+  const cols = 3, tW = (W - 2*M - (cols - 1) * 3) / cols, tH = 16;
+  kpis.forEach((k, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const tx = M + col * (tW + 3), ty = y + row * (tH + 3);
+    const goal = sd.storeGoals[k.key];
+    const goalStr = goal != null
+      ? goal + (k.fmt === 'kr' ? ' kr' : k.fmt === 'num' ? ' st' : '%')
+      : '—';
+    doc.setFillColor(...BEIGE); doc.roundedRect(tx, ty, tW, tH, 2, 2, 'F');
+    doc.setTextColor(...GR); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.text(k.label.toUpperCase(), tx + 3, ty + 5);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
+    doc.text(goalStr, tx + 3, ty + 12);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
+    doc.text('Mål', tx + 3, ty + 15.5);
+  });
+  y += Math.ceil(kpis.length / cols) * (tH + 3) + 6;
+
+  // ── AVDELNINGSÖVERSIKT ───────────────────────────────────────────────
+  if (y > 240) { doc.addPage(); y = 20; }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DK);
+  doc.text('Avdelningsmål' + (includeActions ? ' & Actions' : ''), M, y); y += 5;
+
+  const active = DEPTS.filter(d => sd.deptGoals[d.code]?.active);
+
+  active.forEach(d => {
+    const dg = sd.deptGoals[d.code];
+    const acts = (sd.actions[d.code] || []);
+    const hasActs = includeActions && acts.length > 0;
+
+    // Estimera höjd
+    let estH = 7 + 16 + 4; // rubrik + KPI-rad + luft
+    if (hasActs) estH += 5.5 + acts.length * 6.5;
+    if (y + estH > 278) { doc.addPage(); y = 20; }
+
+    // Avdelningsrubrik
+    doc.setFillColor(...BLUE); doc.rect(M, y, W - 2*M, 7, 'F');
+    doc.setTextColor(...WHITE); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+    doc.text(d.name + '  (avd.' + d.code + ')', M + 3, y + 4.8);
+    y += 7;
+
+    // KPI-mål-boxar (4 st: Oms, Antal, Marginal BV%, Känt svinn)
+    const dKpis = [
+      { label: 'Omsättning',    goal: dg.oms,      unit: '%' },
+      { label: 'Antal sålda',   goal: dg.antal,    unit: '%' },
+      { label: 'Marginal BV%',  goal: dg.marginal, unit: '%' },
+      { label: 'Känt svinn',    goal: dg.svinn,    unit: '%' },
+    ];
+    const bW = (W - 2*M) / dKpis.length, bH = 16;
+    dKpis.forEach((k, i) => {
+      const tx = M + i * bW;
+      doc.setFillColor(...LTGRAY); doc.rect(tx, y, bW, bH, 'F');
+      if (i > 0) {
+        doc.setDrawColor(...BEIGE); doc.setLineWidth(0.3);
+        doc.line(tx, y, tx, y + bH);
+      }
+      doc.setTextColor(...GR); doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+      doc.text(k.label.toUpperCase(), tx + 3, y + 4.5);
+      const goalStr = k.goal != null ? k.goal + k.unit : '—';
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...BLUE);
+      doc.text(goalStr, tx + 3, y + 11);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR);
+      doc.text('Mål', tx + 3, y + 15);
+    });
+    y += bH;
+
+    // Actions (om valda)
+    if (hasActs) {
+      doc.setFillColor(...BEIGE); doc.rect(M, y, W - 2*M, 5.5, 'F');
+      doc.setTextColor(...BLUE); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      doc.text('ACTIONS', M + 3, y + 3.8);
+      y += 5.5;
+      acts.forEach(a => {
+        const txt = a.text + (a.cond ? '  |  ' + a.cond : '');
+        const lines = doc.splitTextToSize(txt, W - 2*M - 14);
+        const rowH = Math.max(6, lines.length * 4.5 + 3);
+        if (y + rowH > 278) { doc.addPage(); y = 20; }
+
+        doc.setFillColor(a.done ? 245 : 250, a.done ? 250 : 249, a.done ? 245 : 246);
+        doc.rect(M, y, W - 2*M, rowH, 'F');
+        doc.setDrawColor(...BEIGE); doc.setLineWidth(0.2);
+        doc.rect(M, y, W - 2*M, rowH);
+
+        // Checkbox
+        const bx = M + 3, by = y + 1.8, bs = 3.2;
+        doc.setDrawColor(a.done ? GREEN[0] : 100, a.done ? GREEN[1] : 100, a.done ? GREEN[2] : 100);
+        doc.setLineWidth(0.4); doc.rect(bx, by, bs, bs);
+        if (a.done) {
+          doc.setDrawColor(...GREEN); doc.setLineWidth(0.5);
+          doc.line(bx + 0.5, by + 1.6, bx + 1.3, by + 2.6);
+          doc.line(bx + 1.3, by + 2.6, bx + 2.7, by + 0.5);
+        }
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+        doc.setTextColor(...DK); doc.text(lines, M + 9, y + 4.2);
+        y += rowH;
+      });
+    }
+    y += 4;
+  });
+
+  // ── FOOTER ───────────────────────────────────────────────────────────
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(...BEIGE); doc.rect(0, 287, W, 10, 'F');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GR);
+    doc.text('Konfidentiell  ·  ' + storeName, M, 293);
+    doc.text('Sida ' + i + ' av ' + pages, W - M, 293, { align: 'right' });
+  }
+
+  return doc;
+}
+
+function generateGoalsPDF(storeId) {
+  const includeActions = document.getElementById('goals-pdf-actions-' + storeId)?.checked ?? true;
+  const storeName = STORES[storeId] || storeId;
+  const doc = _buildGoalsPDF(storeId, includeActions);
+  if (!doc) return;
+  const date = new Date().toLocaleDateString('sv-SE').replace(/\//g, '-');
+  const suffix = includeActions ? '_Mal_Actions' : '_Mal';
+  doc.save('Rapport_' + storeName.replace(/\s+/g, '_') + suffix + '_' + date + '.pdf');
+  toast('PDF nedladdad ✓');
 }
 
 function _buildPDFDoc(storeId,pdfMode){
