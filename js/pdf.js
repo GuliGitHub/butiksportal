@@ -107,79 +107,8 @@ function renderPdfPanel(){
           :'Aktivera för att skicka rapport automatiskt vid dataimport.';})()}
       </div>
     </div>
-
-    <div class="card" style="margin-top:.875rem">
-      <div class="card-head">
-        <div>
-          <div class="ct">🎙️ Veckopodden</div>
-          <div class="cs">Generera AI-manus och ljud med ElevenLabs</div>
-        </div>
-      </div>
-      <div style="padding:1rem">
-        <div id="pod-status-${sid}" style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">
-          Generera ett poddavsnitt för ${storeName} baserat på veckans data och butikens actions.
-        </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
-          <button class="btn-g" onclick="generatePodcast('${sid}')" id="pod-gen-btn-${sid}">
-            🎙️ Generera podd
-          </button>
-          <button class="btn-g" onclick="playPodcast('${sid}')" id="pod-play-btn-${sid}" style="display:none">
-            ▶ Spela upp
-          </button>
-          <a id="pod-dl-${sid}" style="display:none" download="${sid}-podcast.mp3">
-            <button class="btn-g">⬇ Ladda ner mp3</button>
-          </a>
-        </div>
-        <div id="pod-progress-${sid}" style="display:none">
-          <div style="height:3px;background:var(--ö-bg-2);border-radius:2px;overflow:hidden;margin-bottom:4px">
-            <div id="pod-bar-${sid}" style="height:100%;width:0%;background:#0F6E56;transition:width .3s"></div>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span id="pod-time-${sid}" style="font-size:11px;color:var(--ö-muted)">0:00</span>
-            <span id="pod-dur-${sid}" style="font-size:11px;color:var(--ö-muted)">0:00</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-${role==='admin'?`
-    <div class="card" style="margin-top:.875rem" id="podcast-settings-card">
-      <div class="card-head">
-        <div>
-          <div class="ct">⚙️ Podcast-inställningar</div>
-          <div class="cs">Styr hur AI-manus ska vara uppbyggt</div>
-        </div>
-      </div>
-      <div style="padding:1rem">
-        <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.5rem">
-          Beskriv hur podcasten ska vara uppbyggd — ton, struktur, vad som ska lyftas fram. Claude använder detta som instruktion.
-        </div>
-        <textarea id="podcast-prompt-inp"
-          placeholder="Ex: Börja med en sammanfattning av veckans omsättning vs mål. Lyft sedan fram avdelningar som avviker positivt eller negativt. Avsluta med en uppmuntrande kommentar till teamet. Håll tonen positiv och professionell..."
-          style="width:100%;min-height:120px;font-size:12px;padding:.625rem;border:1px solid var(--ö-border);border-radius:6px;background:var(--ö-bg);color:var(--ö-text);resize:vertical;box-sizing:border-box"
-          onchange="window._podPromptDirty=true"
-        ></textarea>
-        <div style="display:flex;align-items:center;gap:.75rem;margin-top:.625rem">
-          <button class="btn-g" onclick="savePodcastPrompt()" id="podcast-prompt-save-btn">Spara mall</button>
-          <span id="podcast-prompt-status" style="font-size:11px;color:var(--ö-muted)"></span>
-        </div>
-      </div>
-    </div>
-    <div class="card" style="margin-top:.875rem">
-      <div class="card-head"><div><div class="ct">Skicka till alla butiker</div>
-      
-      <div style="padding:1rem">
-        <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">
-          Skickar en anpassad rapport per butik. Butiker utan mailadresser hoppas över.
-        </div>
-        <button class="btn-g" onclick="sendAllStoreReports(document.querySelector('input[name=pmode]:checked')?.value||'week')" style="padding:10px 24px;font-size:14px">Skicka till alla butiker</button>
-        <div id="mail-all-status" style="display:none;margin-top:.625rem;font-size:12px;padding:.5rem .75rem;border-radius:6px"></div>
-      </div>
-    </div>`:''}`;
+`;
 }
-async function loadPodcastPrompt(){const{data}=await sb.from('podcast_settings').select('prompt_template').eq('id',1).maybeSingle();const ta=document.getElementById('podcast-prompt-inp');if(ta&&data)ta.value=data.prompt_template||'';}
-  async function savePodcastPrompt(){const btn=document.getElementById('podcast-prompt-save-btn'),st=document.getElementById('podcast-prompt-status'),ta=document.getElementById('podcast-prompt-inp');if(!ta)return;if(btn){btn.disabled=true;btn.textContent='Sparar…';}try{const{error}=await sb.from('podcast_settings').upsert({id:1,prompt_template:ta.value,updated_at:new Date().toISOString()},{onConflict:'id'});if(error)throw new Error(error.message);if(st){st.textContent='✓ Sparad';st.style.color='var(--ö-green)';}setTimeout(()=>{if(st)st.textContent='';},3000);}catch(e){if(st){st.textContent='✗ '+e.message;st.style.color='red';}}finally{if(btn){btn.disabled=false;btn.textContent='Spara mall';}}}
-if(role==='admin')setTimeout(loadPodcastPrompt,200);
 function updPdfSel(){const m=document.querySelector('input[name=pmode]:checked')?.value;document.getElementById('pdf-psel').style.display=(m==='period'||m==='both')?'block':'none';}
 
 
