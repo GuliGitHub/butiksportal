@@ -142,9 +142,32 @@ function renderPdfPanel(){
       </div>
     </div>
 
-    ${role==='admin'?`
+${role==='admin'?`
+    <div class="card" style="margin-top:.875rem" id="podcast-settings-card">
+      <div class="card-head">
+        <div>
+          <div class="ct">⚙️ Podcast-inställningar</div>
+          <div class="cs">Styr hur AI-manus ska vara uppbyggt</div>
+        </div>
+      </div>
+      <div style="padding:1rem">
+        <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.5rem">
+          Beskriv hur podcasten ska vara uppbyggd — ton, struktur, vad som ska lyftas fram. Claude använder detta som instruktion.
+        </div>
+        <textarea id="podcast-prompt-inp"
+          placeholder="Ex: Börja med en sammanfattning av veckans omsättning vs mål. Lyft sedan fram avdelningar som avviker positivt eller negativt. Avsluta med en uppmuntrande kommentar till teamet. Håll tonen positiv och professionell..."
+          style="width:100%;min-height:120px;font-size:12px;padding:.625rem;border:1px solid var(--ö-border);border-radius:6px;background:var(--ö-bg);color:var(--ö-text);resize:vertical;box-sizing:border-box"
+          onchange="window._podPromptDirty=true"
+        ></textarea>
+        <div style="display:flex;align-items:center;gap:.75rem;margin-top:.625rem">
+          <button class="btn-g" onclick="savePodcastPrompt()" id="podcast-prompt-save-btn">Spara mall</button>
+          <span id="podcast-prompt-status" style="font-size:11px;color:var(--ö-muted)"></span>
+        </div>
+      </div>
+    </div>
     <div class="card" style="margin-top:.875rem">
-      <div class="card-head"><div><div class="ct">Skicka till alla butiker</div><div class="cs">Skickar rapport till samtliga butiker med registrerade mailadresser</div></div></div>
+      <div class="card-head"><div><div class="ct">Skicka till alla butiker</div>
+      
       <div style="padding:1rem">
         <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">
           Skickar en anpassad rapport per butik. Butiker utan mailadresser hoppas över.
