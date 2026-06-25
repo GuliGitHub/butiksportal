@@ -174,13 +174,14 @@ function buildNav(){
       <div class="ni" onclick="showTab('perioder',this)">📅 Perioder</div>
       <div class="ni" onclick="showTab('kpi-admin',this)">KPI-inställningar</div>
       <div class="ni" onclick="showTab('rat',this)">&#128200; Analys/trender</div>
-      <div class="ni" onclick="showTab('admin',this)">Butiksinställningar</div>`
+      <div class="ni" onclick="showTab('admin',this)">Butiksinställningar</div>
+      <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>`
     :`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
       <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
       <div class="ni" onclick="showTab('rekommendationer',this)">💡 Rekommendationer</div>
       <div class="ni" onclick="showTab('actions',this)">Actions</div>
-      <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>`;
+      <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>       <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>`;
 }
 function showTab(tab,el){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -191,7 +192,7 @@ function showTab(tab,el){
 }
 function renderPanel(tab){
   ({overview:renderOverview,storemål:renderStoreMål,deptmål:renderDeptMål,actions:renderActions,
-    pdf:renderPdfPanel,podcast:renderPodcastPanel,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,
+    pdf:renderPdfPanel,podcast:renderPodcastPanel,'podcast-settings':renderPodcastSettings,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,
     perioder:renderPerioder,'kpi-admin':renderKPIAdmin,rat:renderRAT,admin:renderAdmin})[tab]?.();
 }
 
@@ -1126,7 +1127,7 @@ function adminViewStore(storeId){
     <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
     <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
     <div class="ni" onclick="showTab('actions',this)">Actions</div>
-    <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>`;
+    <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>       <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>`;
   showTab('overview',document.querySelectorAll('.ni')[1]);
 }
 function backAdmin(){sid=null;document.getElementById('store-lbl').textContent='Admin / Central';buildNav();showTab('overview',document.querySelector('.ni'));}
@@ -1472,6 +1473,29 @@ async function loadAllArticles(storeId, deptCode, btnEl) {
 }
 
 async function renderPodcastPanel(){const panel=document.getElementById('panel-podcast');if(!panel)return;panel.innerHTML='<div style="padding:2rem;text-align:center">Laddar…</div>';const sN=sid===TOTAL_ID?TOTAL_NAME:(STORES[sid]||sid);const{data:pods}=await sb.from('podcasts').select('*').eq('store_id',sid).order('period_key',{ascending:false}).limit(20);if(!pods||!pods.length){panel.innerHTML=`<div class="ph"><div class="pt">🎙️ Podcast</div><div class="ps">${sN}</div></div><div class="card" style="padding:1.5rem;text-align:center;color:var(--ö-muted)"><div style="font-size:2rem">🎙️</div><div style="font-size:13px;font-weight:600;margin:.5rem 0">Inga podcasts än</div><div style="font-size:12px">Generera veckans podcast nedan</div></div><div style="margin-top:1rem" id="pod-gen-wrap"><button onclick="genPod()" style="background:var(--ö-blue);color:#fff;border:none;border-radius:8px;padding:.6rem 1.25rem;font-size:13px;font-weight:600;cursor:pointer">🎙️ Generera podcast</button><div id="pod-gen-status" style="font-size:12px;color:var(--ö-muted);margin-top:.5rem"></div></div></div></div>`;return;}const lat=pods[0],hist=pods.slice(1);panel.innerHTML=`<div class="ph"><div class="pt">🎙️ Podcast</div><div class="ps">${sN}</div></div><div class="card" style="margin-bottom:.875rem"><div class="card-head"><div><div class="ct">Senaste — ${lat.period_key}</div><div class="cs">${new Date(lat.created_at).toLocaleDateString('sv-SE')}</div></div>${lat.audio_url?`<a href="${lat.audio_url}" download><button class="btn-sm">⬇</button></a>`:''}</div><div style="padding:1rem">${lat.audio_url?`<audio controls style="width:100%;border-radius:6px" src="${lat.audio_url}"></audio>`:''}</div></div>${hist.length?`<div class="card"><div class="card-head"><div><div class="ct">Historik</div><div class="cs">${hist.length} avsnitt</div></div></div><div style="padding:.5rem 1rem">${hist.map(p=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--ö-border)"><div style="font-size:13px;font-weight:600">${p.period_key}</div>${p.audio_url?`<audio style="height:30px" controls src="${p.audio_url}"></audio>`:''}</div>`).join('')}</div></div>`:''}`;
+}
+async function renderPodcastSettings(){
+  const panel=document.getElementById('panel-podcast-settings');
+  if(!panel)return;
+  panel.innerHTML=`<div class="ph"><div><div class="pt">⚙️ Podcast-inställningar</div><div class="ps">Promptmanus för AI-genererat manus</div></div></div><div class="card" style="margin-top:.875rem"><div class="card-head"><div><div class="ct">Promptmanus</div><div class="cs">Claude använder detta som instruktion när manuset skapas</div></div></div><div style="padding:1rem"><div style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">Beskriv hur podcasten ska vara uppbyggd — ton, struktur, vad som ska lyftas fram.</div><textarea id="podcast-prompt-inp" style="width:100%;min-height:280px;font-size:13px;padding:.75rem;border:1px solid var(--ö-border);border-radius:6px;background:var(--ö-bg);color:var(--ö-text);resize:vertical;box-sizing:border-box;line-height:1.5" placeholder="Ex: Börja med omsättning vs mål. Lyft avdelningar som sticker ut..."></textarea><div style="display:flex;align-items:center;gap:.75rem;margin-top:.75rem"><button class="btn-g" onclick="savePodcastPrompt()" id="podcast-prompt-save-btn">💾 Spara promptmanus</button><span id="podcast-prompt-status" style="font-size:12px;color:var(--ö-muted)"></span></div></div></div>`;
+  const{data}=await sb.from('podcast_settings').select('prompt_template').eq('id',1).maybeSingle();
+  const ta=document.getElementById('podcast-prompt-inp');
+  if(ta&&data)ta.value=data.prompt_template||'';
+}
+async function savePodcastPrompt(){
+  const btn=document.getElementById('podcast-prompt-save-btn'),st=document.getElementById('podcast-prompt-status'),ta=document.getElementById('podcast-prompt-inp');
+  if(!ta)return;
+  if(btn){btn.disabled=true;btn.textContent='Sparar…';}
+  try{
+    const{error}=await sb.from('podcast_settings').upsert({id:1,prompt_template:ta.value,updated_at:new Date().toISOString()},{onConflict:'id'});
+    if(error)throw new Error(error.message);
+    if(st){st.textContent='✓ Sparat';st.style.color='var(--ö-green)';}
+    setTimeout(()=>{if(st)st.textContent='';},3000);
+  }catch(e){
+    if(st){st.textContent='✗ '+e.message;st.style.color='red';}
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='💾 Spara promptmanus';}
+  }
 }
 async function genPod(){const panel=document.getElementById('panel-podcast');const btn=panel?.querySelector('button[onclick="genPod()"]');const status=document.getElementById('pod-gen-status');const periodKey=Object.keys(REPORT_DB||{}).sort().pop();if(btn){btn.disabled=true;btn.textContent='Genererar… ⏳';}if(status)status.textContent='Skriver manus med Claude AI (~30-60 sek)…';try{const resp=await fetch(SB_URL+'/functions/v1/generate-podcast',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},body:JSON.stringify({periodKey,storeId:sid})});const data=await resp.json();if(!resp.ok)throw new Error(data.error||'Okänt fel');if(status)status.textContent='✓ Klart!';renderPodcastPanel();}catch(e){if(btn){btn.disabled=false;btn.textContent='🎙️ Försök igen';}if(status){status.textContent='✗ '+e.message;status.style.color='red';}}}
 async function renderPodcastWidget(storeId) {
