@@ -534,20 +534,68 @@ if(ov) ov.appendChild(avd24Div);
 }
 
 // ── EKONOMI — Resultat per butik (per-butiksvy) ────────
+// ── EKONOMI — månadsväljare ─────────────────────────────
+let selEkonomiMonths = new Set(); // tomt = visa senaste månaden
+
+function toggleEkonomiMonth(pk){
+  if(selEkonomiMonths.has(pk)) selEkonomiMonths.delete(pk);
+  else selEkonomiMonths.add(pk);
+  renderPanel('overview');
+}
+function clearEkonomiMonths(){ selEkonomiMonths.clear(); renderPanel('overview'); }
+function selectAllEkonomiMonths(storeId){
+  Object.keys(MANADSEKONOMI_DB).filter(pk=>MANADSEKONOMI_DB[pk]?.[storeId]?.resultat).forEach(pk=>selEkonomiMonths.add(pk));
+  renderPanel('overview');
+}
+
+// Summerar kr-fält över flera månader; räknar om %-fält som summa(kr)/summa(omsättning)
+function sumEkonomiPeriods(storeId, periodKeys){
+  const rows = periodKeys.map(pk=>MANADSEKONOMI_DB[pk]?.[storeId]?.resultat).filter(Boolean);
+  if(!rows.length) return null;
+  const sum={};
+  RESULTAT_ROW_MAP.forEach(([,key])=>{
+    if(key.endsWith('Pct')) return;
+    sum[key]=rows.reduce((s,r)=>s+(r[key]||0),0);
+  });
+  RESULTAT_ROW_MAP.forEach(([,key])=>{
+    if(!key.endsWith('Pct')) return;
+    const base=key.slice(0,-3);
+    sum[key]= sum.omsattning ? (sum[base]||0)/sum.omsattning : null;
+  });
+  return sum;
+}
+
 function renderEkonomiPanel(storeId){
-  const periods=Object.keys(MANADSEKONOMI_DB).filter(pk=>MANADSEKONOMI_DB[pk]?.[storeId]?.resultat).sort();
-  if(!periods.length) return '';
-  const latest=periods[periods.length-1];
-  const r=MANADSEKONOMI_DB[latest][storeId].resultat;
+  const allPeriods=Object.keys(MANADSEKONOMI_DB).filter(pk=>MANADSEKONOMI_DB[pk]?.[storeId]?.resultat).sort();
+  if(!allPeriods.length) return '';
+  const selected = selEkonomiMonths.size>0 ? allPeriods.filter(pk=>selEkonomiMonths.has(pk)) : [allPeriods[allPeriods.length-1]];
+  if(!selected.length) return '';
+  const r = selected.length===1 ? MANADSEKONOMI_DB[selected[0]][storeId].resultat : sumEkonomiPeriods(storeId, selected);
+  if(!r) return '';
+  const label = selected.length===1 ? selected[0] : `${selected.length} månader (${selected.slice().sort()[0]}–${selected.slice().sort().pop()})`;
   const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
   const resColor=(r.resultatForeFinPoster||0)>=0?'var(--ö-green)':'#c62828';
+
+  const monthPills = allPeriods.map(pk=>{
+    const sel=selEkonomiMonths.has(pk);
+    return `<button onclick="toggleEkonomiMonth('${pk}')" style="
+      padding:5px 12px;border-radius:20px;border:1.5px solid ${sel?'var(--ö-blue)':'var(--ö-border)'};
+      background:${sel?'var(--ö-blue)':'var(--ö-card)'};color:${sel?'#fff':'var(--ö-muted)'};
+      font-family:var(--ö-sans);font-size:12px;font-weight:${sel?'600':'400'};cursor:pointer;transition:all .15s">${pk}</button>`;
+  }).join('');
+
   return `<div style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem;margin-top:1rem">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
       <div>
         <div style="font-size:13px;font-weight:700;color:var(--ö-blue)">💰 Resultat per butik</div>
-        <div style="font-size:11px;color:var(--ö-muted)">${latest} · hela resultaträkningen</div>
+        <div style="font-size:11px;color:var(--ö-muted)">${label} · hela resultaträkningen</div>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn-sm" onclick="clearEkonomiMonths()" style="font-size:11px;padding:3px 9px">Senaste</button>
+        <button class="btn-sm green" onclick="selectAllEkonomiMonths('${storeId}')" style="font-size:11px;padding:3px 9px">Alla</button>
       </div>
     </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:1rem">${monthPills}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem">
       <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
         <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">OMSÄTTNING</div>
