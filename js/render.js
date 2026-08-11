@@ -510,9 +510,115 @@ function renderOverview(){
           <div style="font-size:18px;font-weight:700;color:var(--ö-blue)">${avd24.bvPct ? (avd24.bvPct*100).toFixed(1)+'%' : '—'}</div>
         </div>
       </div>`;
-    if(ov) ov.appendChild(avd24Div);
+    
+if(ov) ov.appendChild(avd24Div);
   }
+
+  const ekonomiHtml = renderEkonomiPanel(sid);
+  if(ekonomiHtml){
+    const ov2 = document.getElementById('panel-overview');
+    const wrap = document.createElement('div');
+    wrap.innerHTML = ekonomiHtml;
+    if(ov2) ov2.appendChild(wrap.firstElementChild);
+    setTimeout(()=>drawEkonomiTrendChart(sid), 60);
+  }
+
   setTimeout(()=>renderPodcastWidget(sid),150);
+}
+
+// ── EKONOMI — Resultat per butik (per-butiksvy) ────────
+function renderEkonomiPanel(storeId){
+  const periods=Object.keys(MANADSEKONOMI_DB).filter(pk=>MANADSEKONOMI_DB[pk]?.[storeId]?.resultat).sort();
+  if(!periods.length) return '';
+  const latest=periods[periods.length-1];
+  const r=MANADSEKONOMI_DB[latest][storeId].resultat;
+  const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+  const resColor=(r.resultatForeFinPoster||0)>=0?'var(--ö-green)':'#c62828';
+  return `<div style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:10px;padding:1.25rem;margin-top:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--ö-blue)">💰 Resultat per butik</div>
+        <div style="font-size:11px;color:var(--ö-muted)">${latest} · hela resultaträkningen</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem">
+      <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+        <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">OMSÄTTNING</div>
+        <div style="font-size:18px;font-weight:700;color:var(--ö-text)">${fmtKr(r.omsattning)}</div>
+      </div>
+      <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+        <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">TB3</div>
+        <div style="font-size:18px;font-weight:700;color:var(--ö-text)">${fmtKr(r.tb3InklOmbud)}</div>
+      </div>
+      <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+        <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">PERSONALKOSTNADER</div>
+        <div style="font-size:18px;font-weight:700;color:var(--ö-text)">${fmtKr(r.personalkostnader)}</div>
+        <div style="font-size:11px;color:var(--ö-muted)">${pct(r.personalkostnaderPct)} av oms.</div>
+      </div>
+      <div style="background:var(--ö-bg);border-radius:8px;padding:.875rem">
+        <div style="font-size:10px;font-weight:700;color:var(--ö-muted);margin-bottom:.25rem">RESULTAT F. FIN. POSTER</div>
+        <div style="font-size:18px;font-weight:700;color:${resColor}">${fmtKr(r.resultatForeFinPoster)}</div>
+        <div style="font-size:11px;color:var(--ö-muted)">${pct(r.resultatForeFinPosterPct)}</div>
+      </div>
+    </div>
+    <div style="position:relative;height:200px"><canvas id="ekonomi-trend-${storeId}"></canvas></div>
+  </div>`;
+}
+
+let ekonomiCharts={};
+function drawEkonomiTrendChart(storeId){
+  const periods=Object.keys(MANADSEKONOMI_DB).filter(pk=>MANADSEKONOMI_DB[pk]?.[storeId]?.resultat).sort();
+  if(!periods.length) return;
+  const canvas=document.getElementById(`ekonomi-trend-${storeId}`);
+  if(!canvas || typeof Chart==='undefined') return;
+  if(ekonomiCharts[storeId]){ekonomiCharts[storeId].destroy();delete ekonomiCharts[storeId];}
+
+  const omsData=periods.map(pk=>Math.round((MANADSEKONOMI_DB[pk][storeId].resultat.omsattning||0)/1000));
+  const persPctData=periods.map(pk=>{const v=MANADSEKONOMI_DB[pk][storeId].resultat.personalkostnaderPct;return v!=null?Math.round(v*1000)/10:null;});
+  const resPctData=periods.map(pk=>{const v=MANADSEKONOMI_DB[pk][storeId].resultat.resultatForeFinPosterPct;return v!=null?Math.round(v*1000)/10:null;});
+
+  ekonomiCharts[storeId]=new Chart(canvas,{
+    data:{
+      labels:periods,
+      datasets:[
+        {type:'bar',label:'Omsättning (Tkr)',data:omsData,backgroundColor:'rgba(30,110,190,.25)',yAxisID:'y',order:2},
+        {type:'line',label:'Personalkost %',data:persPctData,borderColor:'#c62828',backgroundColor:'transparent',yAxisID:'y1',tension:.3,pointRadius:3,order:1},
+        {type:'line',label:'Resultat f. fin. poster %',data:resPctData,borderColor:'#1a7d3a',backgroundColor:'transparent',yAxisID:'y1',tension:.3,pointRadius:3,order:0},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}},
+      scales:{
+        y:{position:'left',ticks:{font:{size:10}},grid:{color:'rgba(0,0,0,.04)'}},
+        y1:{position:'right',ticks:{font:{size:10},callback:v=>v+'%'},grid:{display:false}}
+      }
+    }
+  });
+}
+
+// ── EKONOMI — Butiksjämförelse (admin-vy) ──────────────
+let ekonomiCmpChart=null;
+function drawEkonomiComparisonChart(pk){
+  const canvas=document.getElementById('ekonomi-cmp-chart');
+  if(!canvas || typeof Chart==='undefined') return;
+  if(ekonomiCmpChart){ekonomiCmpChart.destroy();ekonomiCmpChart=null;}
+  const ids=Object.keys(STORES);
+  const labels=ids.map(id=>STORES[id].replace('Hemköp ',''));
+  const data=ids.map(id=>{
+    const v=MANADSEKONOMI_DB[pk]?.[id]?.resultat?.resultatForeFinPosterPct;
+    return v!=null?Math.round(v*1000)/10:null;
+  });
+  ekonomiCmpChart=new Chart(canvas,{
+    type:'bar',
+    data:{labels,datasets:[{label:'Resultat f. fin. poster %',data,backgroundColor:data.map(v=>v==null?'#ccc':v>=0?'rgba(26,125,58,.55)':'rgba(198,40,40,.55)')}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>(ctx.parsed.y??'—')+'%'}}},
+      scales:{y:{ticks:{font:{size:10},callback:v=>v+'%'},grid:{color:'rgba(0,0,0,.04)'}},x:{ticks:{font:{size:10}}}}
+    }
+  });
 }
 
 function getKPIVal(key, storeId, weeks) {
@@ -1404,9 +1510,26 @@ function renderUploadFörsäljning(){
 
 function renderUploadEkonomi(){
   const perioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
+  const latest=perioder[0];
+  const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+
+  const comparisonHtml = latest ? `
+    <div class="card">
+      <div class="card-head"><div><div class="ct">Butiksjämförelse</div><div class="cs">${latest} · Resultat före finansiella poster</div></div></div>
+      <div style="position:relative;height:220px;padding:1rem"><canvas id="ekonomi-cmp-chart"></canvas></div>
+      <div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Butik</th><th class="num">Omsättning</th><th class="num">Personalkost %</th><th class="num">Resultat f. fin. poster</th><th class="num">Resultat %</th></tr></thead><tbody>
+        ${Object.entries(STORES).map(([id,name])=>{
+          const r=MANADSEKONOMI_DB[latest]?.[id]?.resultat;
+          if(!r) return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num" colspan="4" style="color:var(--ö-muted)">Ingen data</td></tr>`;
+          return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
+        }).join('')}
+      </tbody></table></div>
+    </div>` : '';
 
   document.getElementById('panel-ekonomi').innerHTML=`
     <div class="ph"><div><div class="pt">Ekonomiska månadsrapporter</div><div class="ps">Resultat per butik — hela resultaträkningen, en fil per månad</div></div></div>
+
+    ${comparisonHtml}
 
     <div class="card">
       <div class="card-head"><div><div class="ct">Resultat per butik</div><div class="cs">Flikarna "MÅN" (aktuell månad) och "YTD" läses in automatiskt</div></div></div>
@@ -1434,8 +1557,9 @@ function renderUploadEkonomi(){
         }).join('')}
       </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga månadsrapporter uppladdade ännu</div>'}
     </div>`;
-}
 
+  if(latest) setTimeout(()=>drawEkonomiComparisonChart(latest), 50);
+}
 
 // ── Lazy load full artikellista per avdelning ─────────────────────────
 async function loadAllArticles(storeId, deptCode, btnEl) {
