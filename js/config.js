@@ -170,6 +170,11 @@ await tryLoad('manadsekonomi', async () => {
     const rows = await sbGet('manadsekonomi_data');
     rows.forEach(row => { MANADSEKONOMI_DB[row.period_key] = row.data; });
   });
+
+  await tryLoad('ekonomi_analys', async () => {
+    const rows = await sbGet('ekonomi_analys');
+    EKONOMI_ANALYS_DB = rows.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  });
   
   await tryLoad('pins', async () => {
     const rows = await sbGet('pins');
@@ -273,4 +278,3 @@ function hideLoadingOverlay() {
 async function savePIN(id, pin) {
   await sbUpsert('pins', {store_id: id, pin, updated_at: new Date().toISOString()});
 }
-
