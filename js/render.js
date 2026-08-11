@@ -1582,6 +1582,66 @@ function selectAllEkonomiCmpMonths(){
   renderPanel('ekonomi');
 }
 
+let ekonomiAnalysCache = {}; // { label: analystext }
+
+async function genEkonomiAnalys(){
+  const allPerioder=Object.keys(MANADSEKONOMI_DB).sort();
+  const selected = selEkonomiCmpMonths.size>0 ? [...selEkonomiCmpMonths].sort() : (allPerioder.length?[allPerioder[allPerioder.length-1]]:[]);
+  if(!selected.length){ toast('⚠ Ingen data att analysera'); return; }
+
+  const label = selected.length===1 ? selected[0] : `${selected[0]}–${selected[selected.length-1]}`;
+  const getData = storeId => selected.length===1 ? MANADSEKONOMI_DB[selected[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, selected);
+  const idx = allPerioder.indexOf(selected[0]);
+  const prevKey = idx>0 ? allPerioder[idx-1] : null;
+
+  const current={}, previous={};
+  [...Object.keys(STORES), TOTAL_ID].forEach(id=>{
+    const r=getData(id); if(r) current[id]=r;
+    if(prevKey){ const pr=MANADSEKONOMI_DB[prevKey]?.[id]?.resultat; if(pr) previous[id]=pr; }
+  });
+
+  const btn=document.getElementById('ekonomi-analys-btn');
+  const out=document.getElementById('ekonomi-analys-out');
+  if(btn){btn.disabled=true;btn.textContent='Analyserar… ⏳';}
+  if(out) out.innerHTML='<div style="padding-top:.75rem;color:var(--ö-muted);font-size:13px">🤖 Skriver analys med Claude AI (~20-40 sek)…</div>';
+
+let kpiSummary=null;
+  try{
+    const ratData = await loadRatData();
+    if(ratData && Object.keys(ratData).length){
+      const allPeriodsRat = Object.keys(ratData).sort();
+      const idxRat = allPeriodsRat.length-1;
+      const storeIdsRat = Object.keys(RAT_STORES);
+      kpiSummary = {
+        periodLabel: allPeriodsRat[idxRat],
+        omsattningArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'oms'),
+        bvPct: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'bvpct'),
+        tbKrArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'bvkr'),
+        antalSaldaArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'antal'),
+        antalKvittonArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'kvitton'),
+      };
+    }
+  }catch(e){ console.error('kpiSummary-fel', e); }
+
+  try{
+    const resp=await fetch(SB_URL+'/functions/v1/analyze-ekonomi',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
+      body:JSON.stringify({periodKey:label,prevPeriodKey:prevKey,current,previous,storeNames:STORES,kpiSummary})
+    });
+    const data=await resp.json();
+    if(!resp.ok) throw new Error(data.error||'Okänt fel');
+    ekonomiAnalysCache[label]=data.analys;
+    if(out) out.innerHTML=`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${data.analys}</div>`;
+    if(btn){btn.disabled=false;btn.textContent='🔄 Uppdatera analys';}
+  }catch(e){
+    if(out) out.innerHTML='<div style="padding-top:.75rem;color:#c62828;font-size:13px">⚠ '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent='🤖 Försök igen';}
+  }
+}
+
+function renderUploadEkonomi(){
+
 function renderUploadEkonomi(){
   const allPerioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
   const latest=allPerioder[0];
@@ -1617,7 +1677,11 @@ ${Object.entries(STORES).map(([id,name])=>{
           return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
         }).join('')}
         ${(()=>{const rt=getData(TOTAL_ID); if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
-      </tbody></table></div>
+</tbody></table></div>
+      <div style="padding:0 1rem 1.25rem">
+        <button id="ekonomi-analys-btn" class="btn-sm blue" onclick="genEkonomiAnalys()" style="font-size:12px;padding:6px 14px">${ekonomiAnalysCache[label]?'🔄 Uppdatera analys':'🤖 Generera AI-analys'}</button>
+        <div id="ekonomi-analys-out">${ekonomiAnalysCache[label]?`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${ekonomiAnalysCache[label]}</div>`:''}</div>
+      </div>
     </div>` : '';
 
   document.getElementById('panel-ekonomi').innerHTML=`
