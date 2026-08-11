@@ -1568,22 +1568,35 @@ function renderUploadFörsäljning(){
     </div>`;
 }
 
+let selEkonomiCmpMonth = null; // null = senaste månaden
+
+function setEkonomiCmpMonth(pk){
+  selEkonomiCmpMonth = pk || null;
+  renderPanel('ekonomi');
+}
+
 function renderUploadEkonomi(){
   const perioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
-  const latest=perioder[0];
+  const latest = perioder[0];
+  const shown = (selEkonomiCmpMonth && MANADSEKONOMI_DB[selEkonomiCmpMonth]) ? selEkonomiCmpMonth : latest;
   const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
 
-  const comparisonHtml = latest ? `
+  const comparisonHtml = shown ? `
     <div class="card">
-      <div class="card-head"><div><div class="ct">Butiksjämförelse</div><div class="cs">${latest} · Resultat före finansiella poster</div></div></div>
+      <div class="card-head">
+        <div><div class="ct">Butiksjämförelse</div><div class="cs">Resultat före finansiella poster</div></div>
+        <select onchange="setEkonomiCmpMonth(this.value)" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:4px 8px;font-family:var(--ö-sans);font-size:12px;outline:none;color:var(--ö-text)">
+          ${perioder.map(pk=>`<option value="${pk}" ${pk===shown?'selected':''}>${pk}</option>`).join('')}
+        </select>
+      </div>
       <div style="position:relative;height:220px;padding:1rem"><canvas id="ekonomi-cmp-chart"></canvas></div>
       <div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Butik</th><th class="num">Omsättning</th><th class="num">Personalkost %</th><th class="num">Resultat f. fin. poster</th><th class="num">Resultat %</th></tr></thead><tbody>
 ${Object.entries(STORES).map(([id,name])=>{
-          const r=MANADSEKONOMI_DB[latest]?.[id]?.resultat;
+          const r=MANADSEKONOMI_DB[shown]?.[id]?.resultat;
           if(!r) return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num" colspan="4" style="color:var(--ö-muted)">Ingen data</td></tr>`;
           return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
         }).join('')}
-        ${(()=>{const rt=MANADSEKONOMI_DB[latest]?.[TOTAL_ID]?.resultat; if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
+        ${(()=>{const rt=MANADSEKONOMI_DB[shown]?.[TOTAL_ID]?.resultat; if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
       </tbody></table></div>
     </div>` : '';
 
@@ -1619,7 +1632,7 @@ ${Object.entries(STORES).map(([id,name])=>{
       </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga månadsrapporter uppladdade ännu</div>'}
     </div>`;
 
-  if(latest) setTimeout(()=>drawEkonomiComparisonChart(latest), 50);
+  if(shown) setTimeout(()=>drawEkonomiComparisonChart(shown), 50);
 }
 
 // ── Lazy load full artikellista per avdelning ─────────────────────────
