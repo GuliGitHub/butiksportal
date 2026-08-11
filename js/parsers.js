@@ -940,8 +940,8 @@ function procRes(file){
       if(!wb.SheetNames.includes('MÅN')||!wb.SheetNames.includes('YTD')){
         pmsg.textContent='Hittade inte flikarna "MÅN" och "YTD" — fel fil?';return;
       }
-      const manRows=XLSX.utils.sheet_to_json(wb.Sheets['MÅN'],{header:1,defval:null});
-      const ytdRows=XLSX.utils.sheet_to_json(wb.Sheets['YTD'],{header:1,defval:null});
+      const manRows=sheetRowsFromA(wb.Sheets['MÅN']);
+      const ytdRows=sheetRowsFromA(wb.Sheets['YTD']);
       const m=String(manRows[2]?.[3]||'').match(/(\d{4})\s*$/);
       if(!m){pmsg.textContent='Kunde inte läsa av månad från filen (cell D3).';return;}
       const pk=pkFromYYMM(m[1]);
