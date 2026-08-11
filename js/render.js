@@ -1641,8 +1641,6 @@ let kpiSummary=null;
 }
 
 function renderUploadEkonomi(){
-
-function renderUploadEkonomi(){
   const allPerioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
   const latest=allPerioder[0];
   const selected = selEkonomiCmpMonths.size>0 ? allPerioder.filter(pk=>selEkonomiCmpMonths.has(pk)).sort() : (latest?[latest]:[]);
