@@ -1590,22 +1590,71 @@ async function genEkonomiAnalys(){
   if(!selected.length){ toast('⚠ Ingen data att analysera'); return; }
 
   const label = selected.length===1 ? selected[0] : `${selected[0]}–${selected[selected.length-1]}`;
-  const getData = storeId => selected.length===1 ? MANADSEKONOMI_DB[selected[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, selected);
-  const idx = allPerioder.indexOf(selected[0]);
+  const targetKey = selected[selected.length-1]; // senaste av de valda = analysmånaden
+  const idx = allPerioder.indexOf(targetKey);
   const prevKey = idx>0 ? allPerioder[idx-1] : null;
 
-  const current={}, previous={};
-  [...Object.keys(STORES), TOTAL_ID].forEach(id=>{
-    const r=getData(id); if(r) current[id]=r;
-    if(prevKey){ const pr=MANADSEKONOMI_DB[prevKey]?.[id]?.resultat; if(pr) previous[id]=pr; }
+  const storeIds = [...Object.keys(STORES), TOTAL_ID];
+  const getData = storeId => selected.length===1 ? MANADSEKONOMI_DB[selected[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, selected);
+
+  // Nuvarande (ev. summerad) data för hela urvalet
+  const current={};
+  storeIds.forEach(id=>{ const r=getData(id); if(r) current[id]=r; });
+
+  // 1) Historik — senaste upp till 12 månaderna fram t.o.m. analysmånaden, per butik
+  const histKeys = allPerioder.slice(Math.max(0, idx-11), idx+1);
+  const history={};
+  Object.keys(STORES).forEach(id=>{
+    history[id]=histKeys.map(pk=>{
+      const r=MANADSEKONOMI_DB[pk]?.[id]?.resultat;
+      return r?{period:pk,omsattning:r.omsattning,personalkostnaderPct:r.personalkostnaderPct,resultatForeFinPoster:r.resultatForeFinPoster,resultatForeFinPosterPct:r.resultatForeFinPosterPct}:null;
+    }).filter(Boolean);
   });
+
+  // 2) Störst förändring mot föregående månad, sorterat på störst resultatpåverkan
+  const momChanges=[];
+  if(prevKey){
+    Object.keys(STORES).forEach(id=>{
+      const c=MANADSEKONOMI_DB[targetKey]?.[id]?.resultat;
+      const p=MANADSEKONOMI_DB[prevKey]?.[id]?.resultat;
+      if(!c||!p) return;
+      momChanges.push({
+        store: STORES[id].replace('Hemköp ',''),
+        omsDiff: c.omsattning-p.omsattning,
+        omsDiffPct: p.omsattning ? ((c.omsattning-p.omsattning)/Math.abs(p.omsattning))*100 : null,
+        resDiff: c.resultatForeFinPoster-p.resultatForeFinPoster,
+      });
+    });
+    momChanges.sort((a,b)=>Math.abs(b.resDiff)-Math.abs(a.resDiff));
+  }
+
+  // 3) Störst avvikelse mot kedjesnittet (omsättningsviktat) för analysmånaden
+  let sumOms=0, sumPersonal=0, sumResultat=0;
+  Object.keys(STORES).forEach(id=>{
+    const r=MANADSEKONOMI_DB[targetKey]?.[id]?.resultat;
+    if(!r) return;
+    sumOms+=r.omsattning||0; sumPersonal+=r.personalkostnader||0; sumResultat+=r.resultatForeFinPoster||0;
+  });
+  const avgPersonalPct = sumOms ? sumPersonal/sumOms : null;
+  const avgResultatPct = sumOms ? sumResultat/sumOms : null;
+  const storeVsAvg=[];
+  Object.keys(STORES).forEach(id=>{
+    const r=MANADSEKONOMI_DB[targetKey]?.[id]?.resultat;
+    if(!r) return;
+    storeVsAvg.push({
+      store: STORES[id].replace('Hemköp ',''),
+      personalPctDiff: (r.personalkostnaderPct!=null && avgPersonalPct!=null) ? (r.personalkostnaderPct-avgPersonalPct)*100 : null,
+      resultatPctDiff: (r.resultatForeFinPosterPct!=null && avgResultatPct!=null) ? (r.resultatForeFinPosterPct-avgResultatPct)*100 : null,
+    });
+  });
+  storeVsAvg.sort((a,b)=>Math.abs(b.resultatPctDiff||0)-Math.abs(a.resultatPctDiff||0));
 
   const btn=document.getElementById('ekonomi-analys-btn');
   const out=document.getElementById('ekonomi-analys-out');
   if(btn){btn.disabled=true;btn.textContent='Analyserar… ⏳';}
   if(out) out.innerHTML='<div style="padding-top:.75rem;color:var(--ö-muted);font-size:13px">🤖 Skriver analys med Claude AI (~20-40 sek)…</div>';
 
-let kpiSummary=null;
+  let kpiSummary=null;
   try{
     const ratData = await loadRatData();
     if(ratData && Object.keys(ratData).length){
@@ -1627,7 +1676,7 @@ let kpiSummary=null;
     const resp=await fetch(SB_URL+'/functions/v1/analyze-ekonomi',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
-      body:JSON.stringify({periodKey:label,prevPeriodKey:prevKey,current,previous,storeNames:STORES,kpiSummary})
+      body:JSON.stringify({periodKey:label,targetKey,prevPeriodKey:prevKey,current,history,momChanges,storeVsAvg,storeNames:STORES,kpiSummary})
     });
     const data=await resp.json();
     if(!resp.ok) throw new Error(data.error||'Okänt fel');
