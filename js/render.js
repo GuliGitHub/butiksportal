@@ -1297,8 +1297,7 @@ function adminViewStore(storeId){
     <div class="ni" onclick="showTab('pdf',this)">PDF / Admin</div>       <div class="ni" onclick="showTab('podcast',this)">🎙️ Podcast</div>       <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>`;
   showTab('overview',document.querySelectorAll('.ni')[1]);
 }
-function backAdmin(){sid=null;document.getElementById('store-lbl').textContent='Admin / Central';buildNav();showTab('overview',document.querySelector('.ni'));}
-
+function backAdmin(){sid=null;adminDrilldown=false;document.getElementById('store-lbl').textContent='Admin / Central';buildNav();showTab('overview',document.querySelector('.ni'));}
 // ── BUTIKSMÅL ─────────────────────────────────────────
 function renderStoreMål(){
   const sd=getSD(sid);
