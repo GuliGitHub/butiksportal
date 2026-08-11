@@ -175,6 +175,11 @@ await tryLoad('manadsekonomi', async () => {
     const rows = await sbGet('ekonomi_analys');
     EKONOMI_ANALYS_DB = rows.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   });
+
+  await tryLoad('ekonomi_kunskap', async () => {
+    const rows = await sbGet('ekonomi_kunskap');
+    EKONOMI_KUNSKAP_DB = rows.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  });
   
   await tryLoad('pins', async () => {
     const rows = await sbGet('pins');
