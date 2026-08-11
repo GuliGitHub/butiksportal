@@ -864,3 +864,87 @@ function hFD(e) {
   document.querySelector('.uzone')?.classList.remove('udrag');
   if(e.dataTransfer.files[0]) procF(e.dataTransfer.files[0]);
 }
+// ── PARSER: MÅNADSEKONOMI — Resultat per butik ─────────
+
+const num = v => v!=null && v!=='' ? parseFloat(v) : null;
+
+function pkFromYYMM(yymm){ // 2606 -> '2026-06'
+  const s=String(yymm).padStart(4,'0');
+  return `20${s.slice(0,2)}-${s.slice(2,4)}`;
+}
+
+async function saveManadsekonomiField(pk, storeId, field, obj){
+  if(!MANADSEKONOMI_DB[pk]) MANADSEKONOMI_DB[pk]={};
+  if(!MANADSEKONOMI_DB[pk][storeId]) MANADSEKONOMI_DB[pk][storeId]={};
+  MANADSEKONOMI_DB[pk][storeId][field]=obj;
+}
+async function persistManadsekonomiPeriod(pk){
+  await sbUpsert('manadsekonomi_data',{period_key:pk,data:MANADSEKONOMI_DB[pk],uploaded_at:new Date().toISOString()});
+}
+
+const RESULTAT_STORE_COLS={3:'4737',4:'4735',5:'4757',6:'4732',7:'4736',8:'4730',9:'4734',10:'4738',11:'4756'};
+// [radnummer(1-indexerad), nyckel]
+const RESULTAT_ROW_MAP=[
+  [4,'omsattning'],[5,'externaInkop'],[6,'internaInkop'],[7,'summaVaruinkop'],
+  [8,'tb1Kr'],[9,'lagerforandring'],[10,'tb1InklLagerforandring'],[11,'tb1InklLagerforandringPct'],
+  [12,'lamnadeRabatter'],[13,'tb1InklRabatter'],[14,'tb1InklRabatterPct'],
+  [15,'inkopsbonusOvr'],[16,'inkopsbonusHemkop'],[17,'tb2InklBidrag'],[18,'tb2InklBidragPct'],
+  [19,'ombudsforsaljning'],[20,'ombudsforsaljningPct'],[21,'tb3InklOmbud'],
+  [22,'ovrigaIntakter'],[23,'resultatInklOvrigaIntakter'],
+  [24,'lonerSocialaAvgifter'],[25,'inhyrdPersonal'],[26,'ovrigaPersonalkostnader'],
+  [27,'personalkostnader'],[28,'personalkostnaderPct'],[29,'tb4'],[30,'tb4Pct'],
+  [31,'lokalhyra'],[32,'elUppvarmning'],[33,'stadInneUte'],[34,'vattenRenh'],
+  [35,'sophantering'],[36,'ovrigaLokalkostnader'],[37,'summaLokalkostnader'],[38,'summaLokalkostnaderPct'],
+  [39,'forbrukningsmaterial'],[40,'returemballage'],[41,'serverTelefoni'],[42,'repUnderhMaskiner'],
+  [43,'resekostnader'],[44,'transportkostnader'],[45,'reklamPr'],[46,'kreditforsaljningskostnader'],
+  [47,'bevakningskost'],[48,'ovrAdmKostnader'],[49,'itTjansterKonsulter'],[50,'ovrigaExternaTjanster'],
+  [51,'tillsynsavgifter'],[52,'ovrigaExternaKostnader'],[53,'summaOmkostnader'],[54,'summaOmkostnaderPct'],
+  [55,'centralaKostnader'],[56,'kundklubbskostnader'],[57,'konceptavgift'],
+  [58,'resultatForeAvskrivningar'],[59,'resultatForeAvskrivningarPct'],
+  [60,'avskrivningar'],[61,'avskrivningarPct'],[62,'leasingHyraInventarier'],[63,'leasingHyraOvrigtPct'],
+  [64,'hyraAxfoodIt'],[65,'resultatEfterAvskrivningar'],[66,'ovrigaRorelsekostnader'],
+  [67,'resultatForeFinPoster'],[68,'resultatForeFinPosterPct'],
+];
+
+function parseResultatSheetRows(rows){
+  const perStore={};
+  Object.values(RESULTAT_STORE_COLS).forEach(id=>perStore[id]={});
+  RESULTAT_ROW_MAP.forEach(([rowNum,key])=>{
+    const row=rows[rowNum-1]; if(!row)return;
+    Object.entries(RESULTAT_STORE_COLS).forEach(([col,storeId])=>{
+      perStore[storeId][key]=num(row[+col]);
+    });
+  });
+  return perStore;
+}
+
+function hResD(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procRes(e.dataTransfer.files[0]);}
+function hResF(e){if(e.target.files[0])procRes(e.target.files[0]);}
+
+function procRes(file){
+  const prog=document.getElementById('resp'),pmsg=document.getElementById('respm');
+  if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
+  const reader=new FileReader();
+  reader.onload=async function(ev){
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      if(!wb.SheetNames.includes('MÅN')||!wb.SheetNames.includes('YTD')){
+        pmsg.textContent='Hittade inte flikarna "MÅN" och "YTD" — fel fil?';return;
+      }
+      const manRows=XLSX.utils.sheet_to_json(wb.Sheets['MÅN'],{header:1,defval:null});
+      const ytdRows=XLSX.utils.sheet_to_json(wb.Sheets['YTD'],{header:1,defval:null});
+      const m=String(manRows[2]?.[3]||'').match(/(\d{4})\s*$/);
+      if(!m){pmsg.textContent='Kunde inte läsa av månad från filen (cell D3).';return;}
+      const pk=pkFromYYMM(m[1]);
+      const manData=parseResultatSheetRows(manRows);
+      const ytdData=parseResultatSheetRows(ytdRows);
+      for(const [id,d] of Object.entries(manData)) await saveManadsekonomiField(pk,id,'resultat',d);
+      for(const [id,d] of Object.entries(ytdData)) await saveManadsekonomiField(pk,id,'resultatAck',d);
+      await persistManadsekonomiPeriod(pk);
+      pmsg.textContent=`✓ Resultatrapport sparad för ${pk}`;
+      toast(`Resultatrapport ${pk} inläst ✓`);
+      renderUploadEkonomi();
+    }catch(err){pmsg.textContent='Fel: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
