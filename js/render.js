@@ -658,14 +658,15 @@ function drawEkonomiTrendChart(storeId){
 
 // ── EKONOMI — Butiksjämförelse (admin-vy) ──────────────
 let ekonomiCmpChart=null;
-function drawEkonomiComparisonChart(pk){
+function drawEkonomiComparisonChart(periodKeys){
   const canvas=document.getElementById('ekonomi-cmp-chart');
   if(!canvas || typeof Chart==='undefined') return;
   if(ekonomiCmpChart){ekonomiCmpChart.destroy();ekonomiCmpChart=null;}
   const ids=[...Object.keys(STORES), TOTAL_ID];
   const labels=ids.map(id=>id===TOTAL_ID?'Totalt':STORES[id].replace('Hemköp ',''));
   const data=ids.map(id=>{
-    const v=MANADSEKONOMI_DB[pk]?.[id]?.resultat?.resultatForeFinPosterPct;
+    const r = periodKeys.length===1 ? MANADSEKONOMI_DB[periodKeys[0]]?.[id]?.resultat : sumEkonomiPeriods(id, periodKeys);
+    const v = r?.resultatForeFinPosterPct;
     return v!=null?Math.round(v*1000)/10:null;
   });
   const colors=ids.map((id,i)=>id===TOTAL_ID?'var(--ö-blue)':(data[i]==null?'#ccc':data[i]>=0?'rgba(26,125,58,.55)':'rgba(198,40,40,.55)'));
@@ -1568,35 +1569,54 @@ function renderUploadFörsäljning(){
     </div>`;
 }
 
-let selEkonomiCmpMonth = null; // null = senaste månaden
+let selEkonomiCmpMonths = new Set(); // tomt = visa senaste månaden
 
-function setEkonomiCmpMonth(pk){
-  selEkonomiCmpMonth = pk || null;
+function toggleEkonomiCmpMonth(pk){
+  if(selEkonomiCmpMonths.has(pk)) selEkonomiCmpMonths.delete(pk);
+  else selEkonomiCmpMonths.add(pk);
+  renderPanel('ekonomi');
+}
+function clearEkonomiCmpMonths(){ selEkonomiCmpMonths.clear(); renderPanel('ekonomi'); }
+function selectAllEkonomiCmpMonths(){
+  Object.keys(MANADSEKONOMI_DB).forEach(pk=>selEkonomiCmpMonths.add(pk));
   renderPanel('ekonomi');
 }
 
 function renderUploadEkonomi(){
-  const perioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
-  const latest = perioder[0];
-  const shown = (selEkonomiCmpMonth && MANADSEKONOMI_DB[selEkonomiCmpMonth]) ? selEkonomiCmpMonth : latest;
+  const allPerioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
+  const latest=allPerioder[0];
+  const selected = selEkonomiCmpMonths.size>0 ? allPerioder.filter(pk=>selEkonomiCmpMonths.has(pk)).sort() : (latest?[latest]:[]);
   const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+  const label = selected.length===1 ? selected[0] : (selected.length ? `${selected.length} månader (${selected[0]}–${selected[selected.length-1]}) · summerat` : '');
 
-  const comparisonHtml = shown ? `
+  const getData = storeId => selected.length===1 ? MANADSEKONOMI_DB[selected[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, selected);
+
+  const monthPills = allPerioder.map(pk=>{
+    const sel=selEkonomiCmpMonths.has(pk);
+    return `<button onclick="toggleEkonomiCmpMonth('${pk}')" style="
+      padding:5px 12px;border-radius:20px;border:1.5px solid ${sel?'var(--ö-blue)':'var(--ö-border)'};
+      background:${sel?'var(--ö-blue)':'var(--ö-card)'};color:${sel?'#fff':'var(--ö-muted)'};
+      font-family:var(--ö-sans);font-size:12px;font-weight:${sel?'600':'400'};cursor:pointer;transition:all .15s">${pk}</button>`;
+  }).join('');
+
+  const comparisonHtml = selected.length ? `
     <div class="card">
       <div class="card-head">
-        <div><div class="ct">Butiksjämförelse</div><div class="cs">Resultat före finansiella poster</div></div>
-        <select onchange="setEkonomiCmpMonth(this.value)" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:4px 8px;font-family:var(--ö-sans);font-size:12px;outline:none;color:var(--ö-text)">
-          ${perioder.map(pk=>`<option value="${pk}" ${pk===shown?'selected':''}>${pk}</option>`).join('')}
-        </select>
+        <div><div class="ct">Butiksjämförelse</div><div class="cs">${label}</div></div>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn-sm" onclick="clearEkonomiCmpMonths()" style="font-size:11px;padding:3px 9px">Senaste</button>
+          <button class="btn-sm green" onclick="selectAllEkonomiCmpMonths()" style="font-size:11px;padding:3px 9px">Alla</button>
+        </div>
       </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 1rem;margin-top:.75rem">${monthPills}</div>
       <div style="position:relative;height:220px;padding:1rem"><canvas id="ekonomi-cmp-chart"></canvas></div>
       <div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Butik</th><th class="num">Omsättning</th><th class="num">Personalkost %</th><th class="num">Resultat f. fin. poster</th><th class="num">Resultat %</th></tr></thead><tbody>
 ${Object.entries(STORES).map(([id,name])=>{
-          const r=MANADSEKONOMI_DB[shown]?.[id]?.resultat;
+          const r=getData(id);
           if(!r) return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num" colspan="4" style="color:var(--ö-muted)">Ingen data</td></tr>`;
           return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
         }).join('')}
-        ${(()=>{const rt=MANADSEKONOMI_DB[shown]?.[TOTAL_ID]?.resultat; if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
+        ${(()=>{const rt=getData(TOTAL_ID); if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
       </tbody></table></div>
     </div>` : '';
 
@@ -1621,9 +1641,9 @@ ${Object.entries(STORES).map(([id,name])=>{
     </div>
 
     <div class="card">
-      <div class="card-head"><div><div class="ct">Inlästa perioder</div><div class="cs">${perioder.length} månader</div></div></div>
-      ${perioder.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Månad</th><th class="num">Butiker</th><th></th></tr></thead><tbody>
-        ${perioder.map(pk=>{
+      <div class="card-head"><div><div class="ct">Inlästa perioder</div><div class="cs">${allPerioder.length} månader</div></div></div>
+      ${allPerioder.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Månad</th><th class="num">Butiker</th><th></th></tr></thead><tbody>
+        ${allPerioder.map(pk=>{
           const pd=MANADSEKONOMI_DB[pk]||{};
           const sc=Object.keys(pd).length;
           return `<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td>
@@ -1632,7 +1652,7 @@ ${Object.entries(STORES).map(([id,name])=>{
       </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga månadsrapporter uppladdade ännu</div>'}
     </div>`;
 
-  if(shown) setTimeout(()=>drawEkonomiComparisonChart(shown), 50);
+  if(selected.length) setTimeout(()=>drawEkonomiComparisonChart(selected), 50);
 }
 
 // ── Lazy load full artikellista per avdelning ─────────────────────────
