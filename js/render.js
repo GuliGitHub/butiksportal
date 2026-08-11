@@ -1582,6 +1582,37 @@ function selectAllEkonomiCmpMonths(){
   renderPanel('ekonomi');
 }
 
+// Rullande 8-veckors omsättning (årstakt) för en butik, jämfört med samma
+// kalendervecka föregående 1-2 år — avslöjar normal säsongsvariation.
+function buildSeasonalLines(ratData){
+  if(!ratData || !Object.keys(ratData).length) return [];
+  const allPeriods = Object.keys(ratData).sort();
+  const latestIdx = allPeriods.length-1;
+  const latestInfo = ratData[allPeriods[latestIdx]];
+  const lines=[];
+  Object.entries(RAT_STORES).forEach(([id,name])=>{
+    const nowVal = getRolling8(allPeriods, ratData, latestIdx, [id], 'oms');
+    if(nowVal==null) return;
+    const parts=[`nu ${Math.round(nowVal/1000000*10)/10} Mkr/år`];
+    [1,2].forEach(back=>{
+      const targetYear = latestInfo.year - back;
+      let bestIdx=-1, bestDiff=Infinity;
+      allPeriods.forEach((pk,i)=>{
+        const info=ratData[pk];
+        if(info.year!==targetYear) return;
+        const diff=Math.abs(info.week-latestInfo.week);
+        if(diff<bestDiff){ bestDiff=diff; bestIdx=i; }
+      });
+      if(bestIdx>=0 && bestDiff<=2){
+        const val=getRolling8(allPeriods, ratData, bestIdx, [id], 'oms');
+        if(val!=null) parts.push(`samma period ${targetYear}: ${Math.round(val/1000000*10)/10} Mkr/år`);
+      }
+    });
+    if(parts.length>1) lines.push(`${name}: ${parts.join(', ')}`);
+  });
+  return lines;
+}
+
 function renderEkonomiKunskapCard(){
   const allPerioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
   return `<div class="card">
@@ -1715,6 +1746,7 @@ async function genEkonomiAnalys(){
   if(out) out.innerHTML='<div style="padding-top:.75rem;color:var(--ö-muted);font-size:13px">🤖 Skriver analys med Claude AI (~20-40 sek)…</div>';
 
   let kpiSummary=null;
+  let seasonalLines=[];
   try{
     const ratData = await loadRatData();
     if(ratData && Object.keys(ratData).length){
@@ -1729,6 +1761,7 @@ async function genEkonomiAnalys(){
         antalSaldaArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'antal'),
         antalKvittonArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'kvitton'),
       };
+      seasonalLines = buildSeasonalLines(ratData);
     }
   }catch(e){ console.error('kpiSummary-fel', e); }
 
@@ -1740,7 +1773,7 @@ async function genEkonomiAnalys(){
     const resp=await fetch(SB_URL+'/functions/v1/analyze-ekonomi',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
-      body:JSON.stringify({periodKey:label,targetKey,prevPeriodKey:prevKey,current,history,momChanges,storeVsAvg,storeNames:STORES,kpiSummary,kunskap:relevantKunskap})
+      body:JSON.stringify({periodKey:label,targetKey,prevPeriodKey:prevKey,current,history,momChanges,storeVsAvg,storeNames:STORES,kpiSummary,kunskap:relevantKunskap,seasonalLines})
     });
     const data=await resp.json();
     if(!resp.ok) throw new Error(data.error||'Okänt fel');
