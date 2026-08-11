@@ -166,6 +166,11 @@ async function loadAllFromSupabase() {
     }
   });
 
+await tryLoad('manadsekonomi', async () => {
+    const rows = await sbGet('manadsekonomi_data');
+    rows.forEach(row => { MANADSEKONOMI_DB[row.period_key] = row.data; });
+  });
+  
   await tryLoad('pins', async () => {
     const rows = await sbGet('pins');
     rows.forEach(row => { PINS[row.store_id] = row.pin; });
