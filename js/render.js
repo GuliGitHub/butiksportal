@@ -1681,12 +1681,32 @@ async function genEkonomiAnalys(){
     const data=await resp.json();
     if(!resp.ok) throw new Error(data.error||'Okänt fel');
     ekonomiAnalysCache[label]=data.analys;
-    if(out) out.innerHTML=`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${data.analys}</div>`;
-    if(btn){btn.disabled=false;btn.textContent='🔄 Uppdatera analys';}
+    EKONOMI_ANALYS_DB.unshift({period_key:label, analys:data.analys, created_at:new Date().toISOString()});
+    renderUploadEkonomi();
   }catch(e){
     if(out) out.innerHTML='<div style="padding-top:.75rem;color:#c62828;font-size:13px">⚠ '+e.message+'</div>';
     if(btn){btn.disabled=false;btn.textContent='🤖 Försök igen';}
   }
+}
+
+function renderEkonomiAnalysHistory(){
+  if(!EKONOMI_ANALYS_DB.length) return '';
+  return `<div class="card">
+    <div class="card-head"><div><div class="ct">Analyshistorik</div><div class="cs">${EKONOMI_ANALYS_DB.length} sparade analyser</div></div></div>
+    <div style="padding:0 1rem 1rem">
+      ${EKONOMI_ANALYS_DB.map((row,i)=>{
+        const d=new Date(row.created_at);
+        const dateStr=d.toLocaleString('sv-SE',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        return `<div style="border-top:1px solid var(--ö-border);padding:.75rem 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="const el=document.getElementById('analys-hist-${i}');el.style.display=el.style.display==='none'?'block':'none';">
+            <div style="font-size:13px;font-weight:600;color:var(--ö-blue)">${row.period_key}</div>
+            <div style="font-size:11px;color:var(--ö-muted)">${dateStr} ▾</div>
+          </div>
+          <div id="analys-hist-${i}" style="display:none;white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);margin-top:.5rem">${row.analys}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
 }
 
 function renderUploadEkonomi(){
@@ -1724,7 +1744,7 @@ ${Object.entries(STORES).map(([id,name])=>{
           return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
         }).join('')}
         ${(()=>{const rt=getData(TOTAL_ID); if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
-</tbody></table></div>
+      </tbody></table></div>
       <div style="padding:0 1rem 1.25rem">
         <button id="ekonomi-analys-btn" class="btn-sm blue" onclick="genEkonomiAnalys()" style="font-size:12px;padding:6px 14px">${ekonomiAnalysCache[label]?'🔄 Uppdatera analys':'🤖 Generera AI-analys'}</button>
         <div id="ekonomi-analys-out">${ekonomiAnalysCache[label]?`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${ekonomiAnalysCache[label]}</div>`:''}</div>
@@ -1761,7 +1781,9 @@ ${Object.entries(STORES).map(([id,name])=>{
             <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="if(confirm('Ta bort ${pk}?')){sbDelete('manadsekonomi_data',{period_key:'${pk}'});delete MANADSEKONOMI_DB['${pk}'];renderUploadEkonomi();}">Ta bort</button></td></tr>`;
         }).join('')}
       </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga månadsrapporter uppladdade ännu</div>'}
-    </div>`;
+    </div>
+
+    ${renderEkonomiAnalysHistory()}`;
 
   if(selected.length) setTimeout(()=>drawEkonomiComparisonChart(selected), 50);
 }
