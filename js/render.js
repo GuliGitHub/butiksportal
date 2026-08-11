@@ -1582,6 +1582,66 @@ function selectAllEkonomiCmpMonths(){
   renderPanel('ekonomi');
 }
 
+function renderEkonomiKunskapCard(){
+  const allPerioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
+  return `<div class="card">
+    <div class="card-head"><div><div class="ct">🧠 Kunskap & kontext</div><div class="cs">Bakgrundsfakta AI-analysen tar hänsyn till, t.ex. vattenskador, personalbyten, renoveringar</div></div></div>
+    <div style="padding:1rem;border-bottom:1px solid var(--ö-border)">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+        <select id="kunskap-store" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:6px 8px;font-family:var(--ö-sans);font-size:12px;color:var(--ö-text)">
+          <option value="">Alla butiker</option>
+          ${Object.entries(STORES).map(([id,name])=>`<option value="${id}">${name.replace('Hemköp ','')}</option>`).join('')}
+        </select>
+        <select id="kunskap-period" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:6px 8px;font-family:var(--ö-sans);font-size:12px;color:var(--ö-text)">
+          <option value="">Alltid relevant</option>
+          ${allPerioder.map(pk=>`<option value="${pk}">${pk}</option>`).join('')}
+        </select>
+      </div>
+      <textarea id="kunskap-text" placeholder="T.ex. 'Björkalund hade vattenskada i juni 2026, butiken delvis stängd 2 veckor'" style="width:100%;min-height:60px;background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:8px;font-family:var(--ö-sans);font-size:13px;color:var(--ö-text);resize:vertical;box-sizing:border-box"></textarea>
+      <button class="btn-sm blue" onclick="saveEkonomiKunskap()" style="margin-top:.5rem;font-size:12px;padding:6px 14px">Spara anteckning</button>
+    </div>
+    <div style="padding:0 1rem 1rem">
+      ${EKONOMI_KUNSKAP_DB.length?EKONOMI_KUNSKAP_DB.map(n=>{
+        const storeName = n.store_id ? (STORES[n.store_id]||n.store_id).replace('Hemköp ','') : 'Alla butiker';
+        const periodStr = n.period_key ? n.period_key : 'Alltid relevant';
+        return `<div style="border-top:1px solid var(--ö-border);padding:.6rem 0;display:flex;justify-content:space-between;gap:.5rem;align-items:flex-start">
+          <div>
+            <div style="font-size:11px;color:var(--ö-muted);margin-bottom:2px">${storeName} · ${periodStr}</div>
+            <div style="font-size:13px;color:var(--ö-text)">${n.anteckning}</div>
+          </div>
+          <button class="btn-sm red" onclick="deleteEkonomiKunskap('${n.id}')" style="font-size:11px;padding:3px 8px;flex-shrink:0">Ta bort</button>
+        </div>`;
+      }).join(''):'<div style="padding:.75rem 0;font-size:13px;color:var(--ö-muted)">Inga anteckningar ännu</div>'}
+    </div>
+  </div>`;
+}
+
+async function saveEkonomiKunskap(){
+  const storeSel=document.getElementById('kunskap-store').value;
+  const periodSel=document.getElementById('kunskap-period').value;
+  const text=document.getElementById('kunskap-text').value.trim();
+  if(!text){ toast('⚠ Skriv en anteckning först'); return; }
+  const row={
+    store_id: storeSel || null,
+    period_key: periodSel || null,
+    anteckning: text,
+    created_at: new Date().toISOString(),
+  };
+  const {data,error} = await sb.from('ekonomi_kunskap').insert(row).select();
+  if(error){ toast('⚠ Kunde inte spara: '+error.message); return; }
+  if(data && data[0]) EKONOMI_KUNSKAP_DB.unshift(data[0]);
+  toast('✓ Anteckning sparad');
+  renderUploadEkonomi();
+}
+
+async function deleteEkonomiKunskap(id){
+  if(!confirm('Ta bort anteckningen?')) return;
+  const {error} = await sb.from('ekonomi_kunskap').delete().eq('id', id);
+  if(error){ toast('⚠ Kunde inte ta bort: '+error.message); return; }
+  EKONOMI_KUNSKAP_DB = EKONOMI_KUNSKAP_DB.filter(n=>n.id!==id);
+  renderUploadEkonomi();
+}
+
 let ekonomiAnalysCache = {}; // { label: analystext }
 
 async function genEkonomiAnalys(){
@@ -1672,11 +1732,15 @@ async function genEkonomiAnalys(){
     }
   }catch(e){ console.error('kpiSummary-fel', e); }
 
+  const relevantKunskap = EKONOMI_KUNSKAP_DB
+    .filter(n => !n.period_key || n.period_key===targetKey)
+    .map(n => ({store: n.store_id ? (STORES[n.store_id]||n.store_id).replace('Hemköp ','') : 'Alla butiker', text: n.anteckning}));
+
   try{
     const resp=await fetch(SB_URL+'/functions/v1/analyze-ekonomi',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
-      body:JSON.stringify({periodKey:label,targetKey,prevPeriodKey:prevKey,current,history,momChanges,storeVsAvg,storeNames:STORES,kpiSummary})
+      body:JSON.stringify({periodKey:label,targetKey,prevPeriodKey:prevKey,current,history,momChanges,storeVsAvg,storeNames:STORES,kpiSummary,kunskap:relevantKunskap})
     });
     const data=await resp.json();
     if(!resp.ok) throw new Error(data.error||'Okänt fel');
@@ -1753,6 +1817,8 @@ ${Object.entries(STORES).map(([id,name])=>{
 
   document.getElementById('panel-ekonomi').innerHTML=`
     <div class="ph"><div><div class="pt">Ekonomiska månadsrapporter</div><div class="ps">Resultat per butik — hela resultaträkningen, en fil per månad</div></div></div>
+
+    ${renderEkonomiKunskapCard()}
 
     ${comparisonHtml}
 
