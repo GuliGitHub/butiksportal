@@ -906,6 +906,15 @@ const RESULTAT_ROW_MAP=[
   [67,'resultatForeFinPoster'],[68,'resultatForeFinPosterPct'],
 ];
 
+// Tvingar SheetJS att indexera arrayen från kolumn A (index 0), oavsett var
+// flikens "använda område" råkar börja — annars kan kolumnerna hamna fel.
+function sheetRowsFromA(ws){
+  if(!ws['!ref']) return [];
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  range.s.r=0; range.s.c=0;
+  return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:XLSX.utils.encode_range(range)});
+}
+
 function parseResultatSheetRows(rows){
   const perStore={};
   Object.values(RESULTAT_STORE_COLS).forEach(id=>perStore[id]={});
