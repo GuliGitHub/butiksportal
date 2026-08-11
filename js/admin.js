@@ -309,6 +309,7 @@ function getRolling8(allPeriods, data, periodIdx, storeIds, metric) {
       if(metric === 'oms')     { wOms += sd.oms; wVal += sd.oms; }
       if(metric === 'antal')   { wOms += sd.oms; wVal += sd.antal; }
       if(metric === 'bvpct')   { wOms += sd.oms; wVal += sd.bvKr; } // viktat mot oms
+      if(metric === 'bvkr')    { wOms += sd.oms; wVal += sd.bvKr; }
       if(metric === 'kvitton') { wOms += sd.oms; wVal += sd.kvitton || 0; }
     });
     if(hasData) { sumOms += wOms; sumVal += wVal; count++; }
@@ -440,10 +441,11 @@ async function renderRAT() {
 function buildRatChartContainers() {
   const wrap = document.getElementById('rat-charts-wrap');
   if(!wrap) return;
-  const charts = [
+const charts = [
     {id:'rat-oms',     title:'Omsättning',    unit:'Mkr', sub:'Rullande 8-veckors medel × 52'},
     {id:'rat-antal',   title:'Antal sålda',   unit:'st',  sub:'Rullande 8-veckors medel × 52'},
     {id:'rat-bv',      title:'Bruttovinst %', unit:'%',   sub:'Rullande 8-veckors viktat medel'},
+    {id:'rat-bvkr',    title:'TB (bruttovinst kr)', unit:'Mkr', sub:'Rullande 8-veckors medel × 52'},
     {id:'rat-kvitton', title:'Antal kvitton', unit:'st',  sub:'Rullande 8-veckors medel × 52'},
   ];
   wrap.innerHTML = charts.map(c => `
@@ -474,7 +476,7 @@ function makeRatDatasets(metric, allPeriods, data, activeYears, activeStores) {
       const idx = allPeriods.indexOf(key);
       const val = getRolling8(allPeriods, data, idx, storeIds, metric);
       if(val === null) return null;
-      let display = metric === 'oms'   ? Math.round(val/1000000*10)/10
+let display = (metric === 'oms' || metric === 'bvkr') ? Math.round(val/1000000*10)/10
                   : metric === 'bvpct'   ? Math.round(val*10)/10
                   : Math.round(val);
       return {x: data[key].week, y: display};
@@ -561,6 +563,7 @@ function updateRatCharts() {
   drawRatChart('rat-oms',     makeRatDatasets('oms',     allPeriods, data, activeYears, activeStores), 'Mkr',  1);
   drawRatChart('rat-antal',   makeRatDatasets('antal',   allPeriods, data, activeYears, activeStores), 'st',   0);
   drawRatChart('rat-bv',      makeRatDatasets('bvpct',   allPeriods, data, activeYears, activeStores), '%',    1);
+  drawRatChart('rat-bvkr',    makeRatDatasets('bvkr',    allPeriods, data, activeYears, activeStores), 'Mkr',  1);
   drawRatChart('rat-kvitton', makeRatDatasets('kvitton', allPeriods, data, activeYears, activeStores), 'st',   0);
 }
 
