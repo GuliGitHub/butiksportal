@@ -176,7 +176,7 @@ function buildNav(){
       <div class="ni" onclick="showTab('rat',this)">&#128200; Analys/trender</div>
       <div class="ni" onclick="showTab('admin',this)">Butiksinställningar</div>
       <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>
-      <div class="ni" onclick="showTab('ekonomi',this)">💰 Ekonomi</div>
+      <div class="ni" onclick="showTab('ekonomi',this)">💰 Ekonomi</div>`
     :`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
       <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
