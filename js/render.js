@@ -57,10 +57,17 @@ function renderTotalOv(el) {
             <div style="font-size:13px">${a.text}</div>${a.cond?`<div style="font-size:11px;color:var(--ö-muted)">${a.cond}</div>`:''}
           </div><span class="act-type ${a.type==='fixed'?'at-fix':'at-goal'}">${a.type==='fixed'?'Fast':'Mål'}</span>
         </div>`;}).join('')
-      : '<div style="padding:1rem;font-size:13px;color:var(--ö-muted);text-align:center">Inga actions satta för Totalbutiken</div>'}
+: '<div style="padding:1rem;font-size:13px;color:var(--ö-muted);text-align:center">Inga actions satta för Totalbutiken</div>'}
     </div>`;
-}
 
+  const ekonomiHtml = renderEkonomiPanel(TOTAL_ID);
+  if(ekonomiHtml){
+    const wrap = document.createElement('div');
+    wrap.innerHTML = ekonomiHtml;
+    el.appendChild(wrap.firstElementChild);
+    setTimeout(()=>drawEkonomiTrendChart(TOTAL_ID), 60);
+  }
+}
 function toggleTotalStore(id) {
   if(selTotalStores.has(id)) selTotalStores.delete(id);
   else selTotalStores.add(id);
@@ -604,15 +611,16 @@ function drawEkonomiComparisonChart(pk){
   const canvas=document.getElementById('ekonomi-cmp-chart');
   if(!canvas || typeof Chart==='undefined') return;
   if(ekonomiCmpChart){ekonomiCmpChart.destroy();ekonomiCmpChart=null;}
-  const ids=Object.keys(STORES);
-  const labels=ids.map(id=>STORES[id].replace('Hemköp ',''));
+  const ids=[...Object.keys(STORES), TOTAL_ID];
+  const labels=ids.map(id=>id===TOTAL_ID?'Totalt':STORES[id].replace('Hemköp ',''));
   const data=ids.map(id=>{
     const v=MANADSEKONOMI_DB[pk]?.[id]?.resultat?.resultatForeFinPosterPct;
     return v!=null?Math.round(v*1000)/10:null;
   });
+  const colors=ids.map((id,i)=>id===TOTAL_ID?'var(--ö-blue)':(data[i]==null?'#ccc':data[i]>=0?'rgba(26,125,58,.55)':'rgba(198,40,40,.55)'));
   ekonomiCmpChart=new Chart(canvas,{
     type:'bar',
-    data:{labels,datasets:[{label:'Resultat f. fin. poster %',data,backgroundColor:data.map(v=>v==null?'#ccc':v>=0?'rgba(26,125,58,.55)':'rgba(198,40,40,.55)')}]},
+    data:{labels,datasets:[{label:'Resultat f. fin. poster %',data,backgroundColor:colors}]},
     options:{
       responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>(ctx.parsed.y??'—')+'%'}}},
@@ -1518,11 +1526,12 @@ function renderUploadEkonomi(){
       <div class="card-head"><div><div class="ct">Butiksjämförelse</div><div class="cs">${latest} · Resultat före finansiella poster</div></div></div>
       <div style="position:relative;height:220px;padding:1rem"><canvas id="ekonomi-cmp-chart"></canvas></div>
       <div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Butik</th><th class="num">Omsättning</th><th class="num">Personalkost %</th><th class="num">Resultat f. fin. poster</th><th class="num">Resultat %</th></tr></thead><tbody>
-        ${Object.entries(STORES).map(([id,name])=>{
+${Object.entries(STORES).map(([id,name])=>{
           const r=MANADSEKONOMI_DB[latest]?.[id]?.resultat;
           if(!r) return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num" colspan="4" style="color:var(--ö-muted)">Ingen data</td></tr>`;
           return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
         }).join('')}
+        ${(()=>{const rt=MANADSEKONOMI_DB[latest]?.[TOTAL_ID]?.resultat; if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
       </tbody></table></div>
     </div>` : '';
 
