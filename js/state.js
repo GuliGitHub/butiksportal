@@ -144,7 +144,7 @@ function getAvd24Data(storeId, weeks) {
   } : null;
 }
 
-let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, AO_DB={}, MANADSEKONOMI_DB={}, PERIODS=[], PINS={};
+let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, AO_DB={}, MANADSEKONOMI_DB={}, EKONOMI_ANALYS_DB=[], PERIODS=[], PINS={};
 let EAN_BY_STORE={}; // {storeId: {ean: {dept,oms,bvKr,namn}}}
 let role=null, sid=null, viewMode='week', selPeriodId=null;
 
@@ -325,4 +325,3 @@ function pctColor(val,goal,lb,strict){
   if(strict)return val>=goal?'#3d6e10':val>=(goal-0.02)?'#c65000':'#c62828';
   return val>=goal*0.95?'#3d6e10':val>=goal*0.80?'#c65000':'#c62828';
 }
-
