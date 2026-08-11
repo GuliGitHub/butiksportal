@@ -175,7 +175,8 @@ function buildNav(){
       <div class="ni" onclick="showTab('kpi-admin',this)">KPI-inställningar</div>
       <div class="ni" onclick="showTab('rat',this)">&#128200; Analys/trender</div>
       <div class="ni" onclick="showTab('admin',this)">Butiksinställningar</div>
-      <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>`
+      <div class="ni" onclick="showTab('podcast-settings',this)">⚙️ Podcast</div>
+      <div class="ni" onclick="showTab('ekonomi',this)">💰 Ekonomi</div>
     :`<div class="ni active" onclick="showTab('overview',this)">Översikt</div>
       <div class="ni" onclick="showTab('storemål',this)">Butiksmål</div>
       <div class="ni" onclick="showTab('deptmål',this)">Avdelningsmål</div>
@@ -192,8 +193,7 @@ function showTab(tab,el){
 }
 function renderPanel(tab){
   ({overview:renderOverview,storemål:renderStoreMål,deptmål:renderDeptMål,actions:renderActions,
-    pdf:renderPdfPanel,podcast:renderPodcastPanel,'podcast-settings':renderPodcastSettings,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,
-    perioder:renderPerioder,'kpi-admin':renderKPIAdmin,rat:renderRAT,admin:renderAdmin})[tab]?.();
+pdf:renderPdfPanel,podcast:renderPodcastPanel,'podcast-settings':renderPodcastSettings,'upload-försäljning':renderUploadFörsäljning,'upload-svinn':renderUploadSvinn,ekonomi:renderUploadEkonomi,'rekommendationer':renderRekommendationer,'tavlingar':renderTavlingar,    perioder:renderPerioder,'kpi-admin':renderKPIAdmin,rat:renderRAT,admin:renderAdmin})[tab]?.();
 }
 
 // ── VIEW TOGGLE ───────────────────────────────────────
@@ -1402,6 +1402,39 @@ function renderUploadFörsäljning(){
     </div>`;
 }
 
+function renderUploadEkonomi(){
+  const perioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
+
+  document.getElementById('panel-ekonomi').innerHTML=`
+    <div class="ph"><div><div class="pt">Ekonomiska månadsrapporter</div><div class="ps">Resultat per butik — hela resultaträkningen, en fil per månad</div></div></div>
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">Resultat per butik</div><div class="cs">Flikarna "MÅN" (aktuell månad) och "YTD" läses in automatiskt</div></div></div>
+      <div style="padding:1rem">
+        <div class="uzone" onclick="document.getElementById('resf').click()" ondragover="event.preventDefault();this.classList.add('udrag')" ondragleave="this.classList.remove('udrag')" ondrop="hResD(event)">
+          <div style="font-size:22px;margin-bottom:.375rem">📈</div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp filen</div>
+          <div style="font-size:12px;color:var(--ö-muted)">En fil per månad · befintliga månader skrivs över vid ny uppladdning</div>
+        </div>
+        <input type="file" id="resf" style="display:none" accept=".xlsx,.xls" onchange="hResF(event)">
+        <div id="resp" style="display:none;padding:.75rem;background:#f8f7f3;border-radius:8px;font-size:13px;color:#555;margin-top:.5rem">
+          <div id="respm"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div><div class="ct">Inlästa perioder</div><div class="cs">${perioder.length} månader</div></div></div>
+      ${perioder.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Månad</th><th class="num">Butiker</th><th></th></tr></thead><tbody>
+        ${perioder.map(pk=>{
+          const pd=MANADSEKONOMI_DB[pk]||{};
+          const sc=Object.keys(pd).length;
+          return `<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td>
+            <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="if(confirm('Ta bort ${pk}?')){sbDelete('manadsekonomi_data',{period_key:'${pk}'});delete MANADSEKONOMI_DB['${pk}'];renderUploadEkonomi();}">Ta bort</button></td></tr>`;
+        }).join('')}
+      </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga månadsrapporter uppladdade ännu</div>'}
+    </div>`;
+}
 
 
 // ── Lazy load full artikellista per avdelning ─────────────────────────
