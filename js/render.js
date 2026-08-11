@@ -465,9 +465,12 @@ async function loadAndRenderWeather(storeId) {
   </div>`;
 }
 
+
+let adminDrilldown = false; // true när admin klickat in på en enskild butik/Totalt
+
 function renderOverview(){
   const el=document.getElementById('panel-overview');
-  if(role==='admin'){renderAdminOv(el);return;}
+  if(role==='admin' && !adminDrilldown){renderAdminOv(el);return;}
   if(sid===TOTAL_ID){renderTotalOv(el);return;}
   const sd=getSD(sid);
   const wData=getLatestWeekData(sid);
@@ -1233,6 +1236,7 @@ function renderAdminOv(el){
 // ── ÖSTENSSONS TOTAL — ADMIN-VY ──────────────────────────────────────
 function adminViewTotal(){
   sid = TOTAL_ID;
+  adminDrilldown = true;
   document.getElementById('store-lbl').textContent = TOTAL_NAME+' (admin)';
   document.getElementById('nav').innerHTML=`
     <div class="ni" onclick="backAdmin()">← Alla butiker</div>
@@ -1282,6 +1286,7 @@ async function sendTotalReport(pdfMode) {
 
 function adminViewStore(storeId){
   sid=storeId;
+  adminDrilldown = true;
   document.getElementById('store-lbl').textContent=STORES[storeId]+' (admin)';
   document.getElementById('nav').innerHTML=`
     <div class="ni" onclick="backAdmin()">← Alla butiker</div>
