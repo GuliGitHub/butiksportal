@@ -882,7 +882,7 @@ async function persistManadsekonomiPeriod(pk){
   await sbUpsert('manadsekonomi_data',{period_key:pk,data:MANADSEKONOMI_DB[pk],uploaded_at:new Date().toISOString()});
 }
 
-const RESULTAT_STORE_COLS={3:'4737',4:'4735',5:'4757',6:'4732',7:'4736',8:'4730',9:'4734',10:'4738',11:'4756',12:TOTAL_ID};
+const RESULTAT_STORE_COLS={3:'4737',4:'4735',5:'4757',6:'4732',7:'4736',8:'4730',9:'4734',10:'4738',11:'4756',12:TOTAL_ID,18:KOK_ID,19:HK_ID};
 // [radnummer(1-indexerad), nyckel]
 const RESULTAT_ROW_MAP=[
   [4,'omsattning'],[5,'externaInkop'],[6,'internaInkop'],[7,'summaVaruinkop'],
