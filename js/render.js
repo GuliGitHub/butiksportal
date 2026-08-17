@@ -1622,6 +1622,8 @@ function renderEkonomiKunskapCard(){
         <select id="kunskap-store" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:6px 8px;font-family:var(--ö-sans);font-size:12px;color:var(--ö-text)">
           <option value="">Alla butiker</option>
           ${Object.entries(STORES).map(([id,name])=>`<option value="${id}">${name.replace('Hemköp ','')}</option>`).join('')}
+          <option value="${KOK_ID}">Kök</option>
+          <option value="${HK_ID}">HK</option>
         </select>
         <select id="kunskap-period" style="background:#f8f7f3;border:1px solid var(--ö-border);border-radius:6px;padding:6px 8px;font-family:var(--ö-sans);font-size:12px;color:var(--ö-text)">
           <option value="">Alltid relevant</option>
@@ -1633,7 +1635,7 @@ function renderEkonomiKunskapCard(){
     </div>
     <div style="padding:0 1rem 1rem">
       ${EKONOMI_KUNSKAP_DB.length?EKONOMI_KUNSKAP_DB.map(n=>{
-        const storeName = n.store_id ? (STORES[n.store_id]||n.store_id).replace('Hemköp ','') : 'Alla butiker';
+        const storeName = n.store_id ? ekonomiEntityName(n.store_id) : 'Alla butiker';
         const periodStr = n.period_key ? n.period_key : 'Alltid relevant';
         return `<div style="border-top:1px solid var(--ö-border);padding:.6rem 0;display:flex;justify-content:space-between;gap:.5rem;align-items:flex-start">
           <div>
@@ -1674,6 +1676,13 @@ async function deleteEkonomiKunskap(id){
 }
 
 let ekonomiAnalysCache = {}; // { label: analystext }
+
+function ekonomiEntityName(id){
+  if(id===TOTAL_ID) return 'Östenssons Totalt';
+  if(id===KOK_ID) return 'Kök';
+  if(id===HK_ID) return 'HK';
+  return (STORES[id]||id).replace('Hemköp ','');
+}
 
 const EKONOMI_ACCOUNT_FIELDS = [
   ['omsattning','Omsättning',false],
@@ -1801,6 +1810,11 @@ async function genEkonomiAnalys(){
     return s ? `${STORES[id].replace('Hemköp ','')}: ${s}` : `${STORES[id].replace('Hemköp ','')}: inga actions definierade`;
   });
 
+  const kokHkLines = [KOK_ID, HK_ID].map(id=>{
+    const c=getData(id); if(!c) return null;
+    return buildAccountLines(ekonomiEntityName(id), c, getCmpData(id), cmpLabel||'ingen data');
+  }).filter(Boolean);
+
   const btn=document.getElementById('ekonomi-analys-btn');
   const out=document.getElementById('ekonomi-analys-out');
   if(btn){btn.disabled=true;btn.textContent='Analyserar… ⏳';}
@@ -1828,7 +1842,7 @@ async function genEkonomiAnalys(){
 
   const relevantKunskap = EKONOMI_KUNSKAP_DB
     .filter(n => !n.period_key || n.period_key===targetKey)
-    .map(n => ({store: n.store_id ? (STORES[n.store_id]||n.store_id).replace('Hemköp ','') : 'Alla butiker', text: n.anteckning}));
+    .map(n => ({store: n.store_id ? ekonomiEntityName(n.store_id) : 'Alla butiker', text: n.anteckning}));
 
   try{
     const resp=await fetch(SB_URL+'/functions/v1/analyze-ekonomi',{
@@ -1836,7 +1850,7 @@ async function genEkonomiAnalys(){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
       body:JSON.stringify({
         periodKey:label, cmpLabel, usingYoY,
-        accountLines, totalAccountLines, storeVsAvg, actionsLines,
+        accountLines, totalAccountLines, kokHkLines, storeVsAvg, actionsLines,
         storeNames:STORES, kpiSummary, kunskap:relevantKunskap, seasonalLines,
       })
     });
@@ -1906,6 +1920,11 @@ ${Object.entries(STORES).map(([id,name])=>{
           return `<tr><td>${name.replace('Hemköp ','')}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
         }).join('')}
         ${(()=>{const rt=getData(TOTAL_ID); if(!rt)return ''; return `<tr style="font-weight:700;background:var(--ö-bg)"><td>Östenssons Totalt</td><td class="num">${fmtKr(rt.omsattning)}</td><td class="num">${pct(rt.personalkostnaderPct)}</td><td class="num">${fmtKr(rt.resultatForeFinPoster)}</td><td class="num">${pct(rt.resultatForeFinPosterPct)}</td></tr>`;})()}
+        ${[KOK_ID,HK_ID].map(id=>{
+          const r=getData(id);
+          if(!r) return '';
+          return `<tr style="color:var(--ö-muted)"><td>${ekonomiEntityName(id)}</td><td class="num">${fmtKr(r.omsattning)}</td><td class="num">${pct(r.personalkostnaderPct)}</td><td class="num">${fmtKr(r.resultatForeFinPoster)}</td><td class="num">${pct(r.resultatForeFinPosterPct)}</td></tr>`;
+        }).join('')}
       </tbody></table></div>
       <div style="padding:0 1rem 1.25rem">
         <button id="ekonomi-analys-btn" class="btn-sm blue" onclick="genEkonomiAnalys()" style="font-size:12px;padding:6px 14px">${ekonomiAnalysCache[label]?'🔄 Uppdatera analys':'🤖 Generera AI-analys'}</button>
@@ -1940,7 +1959,7 @@ ${Object.entries(STORES).map(([id,name])=>{
       ${allPerioder.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Månad</th><th class="num">Butiker</th><th></th></tr></thead><tbody>
         ${allPerioder.map(pk=>{
           const pd=MANADSEKONOMI_DB[pk]||{};
-          const sc=Object.keys(pd).length;
+          const sc=Object.keys(STORES).filter(id=>pd[id]).length;
           return `<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td>
             <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="if(confirm('Ta bort ${pk}?')){sbDelete('manadsekonomi_data',{period_key:'${pk}'});delete MANADSEKONOMI_DB['${pk}'];renderUploadEkonomi();}">Ta bort</button></td></tr>`;
         }).join('')}
