@@ -144,7 +144,7 @@ function getAvd24Data(storeId, weeks) {
   } : null;
 }
 
-let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, AO_DB={}, MANADSEKONOMI_DB={}, EKONOMI_ANALYS_DB=[], EKONOMI_KUNSKAP_DB=[], PERIODS=[], PINS={};
+let DB={}, REPORT_DB={}, SVINN_DB={}, OS20_DB={}, AO_DB={}, MANADSEKONOMI_DB={}, EKONOMI_ANALYS_DB=[], PERIODS=[], PINS={};
 let EAN_BY_STORE={}; // {storeId: {ean: {dept,oms,bvKr,namn}}}
 let role=null, sid=null, viewMode='week', selPeriodId=null;
 
