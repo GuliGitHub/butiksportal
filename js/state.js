@@ -228,6 +228,8 @@ const DEFAULT_COORDS = {
 };
 const TOTAL_ID = 'total';
 const TOTAL_NAME = 'Östenssons Totalt';
+const KOK_ID = 'kok';
+const HK_ID = 'hk';
 
 // Aggregera data för alla butiker för en given vecka/period
 function getTotalData(weeks) {
