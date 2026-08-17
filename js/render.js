@@ -1730,14 +1730,14 @@ function buildActionsSummary(storeId){
     const deptName = dept?dept.name:code;
     const fixed=acts.filter(a=>a.type==='fixed');
     const goal=acts.filter(a=>a.type==='goal');
-    const fixedDone=fixed.filter(a=>a.done).length;
-    const goalDone=goal.filter(a=>a.done).length;
+    const fixedChecked=fixed.filter(a=>a.done).length;
+    const goalChecked=goal.filter(a=>a.done).length;
     const parts=[];
-    if(fixed.length) parts.push(`${fixed.length} fasta rutiner (${fixedDone} avklarade)`);
-    if(goal.length) parts.push(`${goal.length} målstyrda åtgärder (${goalDone} avklarade)`);
-    if(parts.length) lines.push(`${deptName}: ${parts.join(', ')}`);
+    if(fixed.length) parts.push(`${fixed.length} fasta rutiner, ${fixedChecked}/${fixed.length} följs just nu`);
+    if(goal.length) parts.push(`${goal.length} målstyrda åtgärder, ${goalChecked}/${goal.length} aktiva just nu`);
+    if(parts.length) lines.push(`${deptName}: ${parts.join('; ')}`);
   });
-  return lines.length ? lines.join('; ') : null;
+  return lines.length ? lines.join(' | ') : null;
 }
 
 function formatAnalysText(text){
