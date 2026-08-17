@@ -1675,63 +1675,119 @@ async function deleteEkonomiKunskap(id){
 
 let ekonomiAnalysCache = {}; // { label: analystext }
 
+const EKONOMI_ACCOUNT_FIELDS = [
+  ['omsattning','Omsättning',false],
+  ['tb1Kr','TB1 (bruttovinst)',false],
+  ['tb1InklRabatterPct','Bruttovinst % (efter rabatter)',true],
+  ['inkopsbonusHemkop','Inköpsbonus Hemköp',false],
+  ['tb3InklOmbud','TB3 inkl. ombud',false],
+  ['personalkostnader','Personalkostnader',false],
+  ['personalkostnaderPct','Personalkostnader %',true],
+  ['summaLokalkostnader','Lokalkostnader',false],
+  ['summaLokalkostnaderPct','Lokalkostnader %',true],
+  ['summaOmkostnader','Omkostnader',false],
+  ['summaOmkostnaderPct','Omkostnader %',true],
+  ['centralaKostnader','Centrala kostnader',false],
+  ['konceptavgift','Konceptavgift',false],
+  ['resultatForeAvskrivningar','Resultat f. avskrivningar',false],
+  ['resultatForeAvskrivningarPct','Resultat f. avskrivningar %',true],
+  ['avskrivningar','Avskrivningar',false],
+  ['resultatForeFinPoster','Resultat f. fin. poster',false],
+  ['resultatForeFinPosterPct','Resultat f. fin. poster %',true],
+];
+
+function buildAccountLines(storeName, cur, cmp, cmpLabel){
+  if(!cur) return null;
+  const p=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+  const lines=[`${storeName}:`];
+  EKONOMI_ACCOUNT_FIELDS.forEach(([key,label,isPct])=>{
+    const cVal=cur[key];
+    if(cVal==null) return;
+    const pVal=cmp?cmp[key]:null;
+    let line = `  ${label}: ${isPct?p(cVal):fmtKr(cVal)}`;
+    if(pVal!=null){
+      if(isPct){
+        const diffPe=(cVal-pVal)*100;
+        line += ` (${cmpLabel}: ${p(pVal)}, ${diffPe>=0?'+':''}${diffPe.toFixed(1)} pe)`;
+      }else{
+        const diff=cVal-pVal;
+        const diffPct = pVal ? (diff/Math.abs(pVal))*100 : null;
+        line += ` (${cmpLabel}: ${fmtKr(pVal)}, ${diff>=0?'+':''}${fmtKr(diff)}${diffPct!=null?', '+(diffPct>=0?'+':'')+diffPct.toFixed(1)+'%':''})`;
+      }
+    }
+    lines.push(line);
+  });
+  return lines.join('\n');
+}
+
+function buildActionsSummary(storeId){
+  const sd = DB[storeId];
+  if(!sd || !sd.actions) return null;
+  const lines=[];
+  Object.entries(sd.actions).forEach(([code,acts])=>{
+    if(!acts || !acts.length) return;
+    const dept = DEPTS.find(d=>d.code===code);
+    const deptName = dept?dept.name:code;
+    const fixed=acts.filter(a=>a.type==='fixed');
+    const goal=acts.filter(a=>a.type==='goal');
+    const fixedDone=fixed.filter(a=>a.done).length;
+    const goalDone=goal.filter(a=>a.done).length;
+    const parts=[];
+    if(fixed.length) parts.push(`${fixed.length} fasta rutiner (${fixedDone} avklarade)`);
+    if(goal.length) parts.push(`${goal.length} målstyrda åtgärder (${goalDone} avklarade)`);
+    if(parts.length) lines.push(`${deptName}: ${parts.join(', ')}`);
+  });
+  return lines.length ? lines.join('; ') : null;
+}
+
+function formatAnalysText(text){
+  return (text||'').split('\n').map(line=>{
+    if(/^\d\.\s+[A-ZÅÄÖ]/.test(line.trim())) return `<strong style="display:block;margin-top:1rem;color:var(--ö-blue);font-size:13px">${line}</strong>`;
+    return line;
+  }).join('\n');
+}
+
 async function genEkonomiAnalys(){
   const allPerioder=Object.keys(MANADSEKONOMI_DB).sort();
   const selected = selEkonomiCmpMonths.size>0 ? [...selEkonomiCmpMonths].sort() : (allPerioder.length?[allPerioder[allPerioder.length-1]]:[]);
   if(!selected.length){ toast('⚠ Ingen data att analysera'); return; }
 
   const label = selected.length===1 ? selected[0] : `${selected[0]}–${selected[selected.length-1]}`;
-  const targetKey = selected[selected.length-1]; // senaste av de valda = analysmånaden
+  const targetKey = selected[selected.length-1];
   const idx = allPerioder.indexOf(targetKey);
-  const prevKey = idx>0 ? allPerioder[idx-1] : null;
-
   const storeIds = [...Object.keys(STORES), TOTAL_ID];
   const getData = storeId => selected.length===1 ? MANADSEKONOMI_DB[selected[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, selected);
 
-  // Nuvarande (ev. summerad) data för hela urvalet
+  const yoyKeys = selected.map(pk=>{ const [y,m]=pk.split('-'); return `${parseInt(y)-1}-${m}`; });
+  const yoyAvailable = yoyKeys.every(k=>allPerioder.includes(k));
+  let cmpKeys, cmpLabel, usingYoY;
+  if(yoyAvailable){
+    cmpKeys=yoyKeys; cmpLabel = yoyKeys.length===1?yoyKeys[0]:`${yoyKeys[0]}–${yoyKeys[yoyKeys.length-1]}`; usingYoY=true;
+  }else{
+    const prevKey = idx>0 ? allPerioder[idx-1] : null;
+    cmpKeys = prevKey?[prevKey]:[]; cmpLabel = prevKey; usingYoY=false;
+  }
+  const getCmpData = storeId => cmpKeys.length ? (cmpKeys.length===1 ? MANADSEKONOMI_DB[cmpKeys[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, cmpKeys)) : null;
+
   const current={};
   storeIds.forEach(id=>{ const r=getData(id); if(r) current[id]=r; });
 
-  // 1) Historik — senaste upp till 12 månaderna fram t.o.m. analysmånaden, per butik
-  const histKeys = allPerioder.slice(Math.max(0, idx-11), idx+1);
-  const history={};
-  Object.keys(STORES).forEach(id=>{
-    history[id]=histKeys.map(pk=>{
-      const r=MANADSEKONOMI_DB[pk]?.[id]?.resultat;
-      return r?{period:pk,omsattning:r.omsattning,personalkostnaderPct:r.personalkostnaderPct,resultatForeFinPoster:r.resultatForeFinPoster,resultatForeFinPosterPct:r.resultatForeFinPosterPct}:null;
-    }).filter(Boolean);
-  });
+  const accountLines = Object.keys(STORES).map(id=>{
+    const c=getData(id); if(!c) return null;
+    return buildAccountLines(STORES[id].replace('Hemköp ',''), c, getCmpData(id), cmpLabel||'ingen data');
+  }).filter(Boolean);
+  const totalAccountLines = (()=>{ const c=getData(TOTAL_ID); return c?buildAccountLines('Östenssons Totalt', c, getCmpData(TOTAL_ID), cmpLabel||'ingen data'):null; })();
 
-  // 2) Störst förändring mot föregående månad, sorterat på störst resultatpåverkan
-  const momChanges=[];
-  if(prevKey){
-    Object.keys(STORES).forEach(id=>{
-      const c=MANADSEKONOMI_DB[targetKey]?.[id]?.resultat;
-      const p=MANADSEKONOMI_DB[prevKey]?.[id]?.resultat;
-      if(!c||!p) return;
-      momChanges.push({
-        store: STORES[id].replace('Hemköp ',''),
-        omsDiff: c.omsattning-p.omsattning,
-        omsDiffPct: p.omsattning ? ((c.omsattning-p.omsattning)/Math.abs(p.omsattning))*100 : null,
-        resDiff: c.resultatForeFinPoster-p.resultatForeFinPoster,
-      });
-    });
-    momChanges.sort((a,b)=>Math.abs(b.resDiff)-Math.abs(a.resDiff));
-  }
-
-  // 3) Störst avvikelse mot kedjesnittet (omsättningsviktat) för analysmånaden
   let sumOms=0, sumPersonal=0, sumResultat=0;
   Object.keys(STORES).forEach(id=>{
-    const r=MANADSEKONOMI_DB[targetKey]?.[id]?.resultat;
-    if(!r) return;
+    const r=getData(id); if(!r) return;
     sumOms+=r.omsattning||0; sumPersonal+=r.personalkostnader||0; sumResultat+=r.resultatForeFinPoster||0;
   });
   const avgPersonalPct = sumOms ? sumPersonal/sumOms : null;
   const avgResultatPct = sumOms ? sumResultat/sumOms : null;
   const storeVsAvg=[];
   Object.keys(STORES).forEach(id=>{
-    const r=MANADSEKONOMI_DB[targetKey]?.[id]?.resultat;
-    if(!r) return;
+    const r=getData(id); if(!r) return;
     storeVsAvg.push({
       store: STORES[id].replace('Hemköp ',''),
       personalPctDiff: (r.personalkostnaderPct!=null && avgPersonalPct!=null) ? (r.personalkostnaderPct-avgPersonalPct)*100 : null,
@@ -1740,10 +1796,15 @@ async function genEkonomiAnalys(){
   });
   storeVsAvg.sort((a,b)=>Math.abs(b.resultatPctDiff||0)-Math.abs(a.resultatPctDiff||0));
 
+  const actionsLines = Object.keys(STORES).map(id=>{
+    const s=buildActionsSummary(id);
+    return s ? `${STORES[id].replace('Hemköp ','')}: ${s}` : `${STORES[id].replace('Hemköp ','')}: inga actions definierade`;
+  });
+
   const btn=document.getElementById('ekonomi-analys-btn');
   const out=document.getElementById('ekonomi-analys-out');
   if(btn){btn.disabled=true;btn.textContent='Analyserar… ⏳';}
-  if(out) out.innerHTML='<div style="padding-top:.75rem;color:var(--ö-muted);font-size:13px">🤖 Skriver analys med Claude AI (~20-40 sek)…</div>';
+  if(out) out.innerHTML='<div style="padding-top:.75rem;color:var(--ö-muted);font-size:13px">🤖 Skriver analys med Claude AI (~30-60 sek)…</div>';
 
   let kpiSummary=null;
   let seasonalLines=[];
@@ -1773,7 +1834,11 @@ async function genEkonomiAnalys(){
     const resp=await fetch(SB_URL+'/functions/v1/analyze-ekonomi',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
-      body:JSON.stringify({periodKey:label,targetKey,prevPeriodKey:prevKey,current,history,momChanges,storeVsAvg,storeNames:STORES,kpiSummary,kunskap:relevantKunskap,seasonalLines})
+      body:JSON.stringify({
+        periodKey:label, cmpLabel, usingYoY,
+        accountLines, totalAccountLines, storeVsAvg, actionsLines,
+        storeNames:STORES, kpiSummary, kunskap:relevantKunskap, seasonalLines,
+      })
     });
     const data=await resp.json();
     if(!resp.ok) throw new Error(data.error||'Okänt fel');
@@ -1799,7 +1864,7 @@ function renderEkonomiAnalysHistory(){
             <div style="font-size:13px;font-weight:600;color:var(--ö-blue)">${row.period_key}</div>
             <div style="font-size:11px;color:var(--ö-muted)">${dateStr} ▾</div>
           </div>
-          <div id="analys-hist-${i}" style="display:none;white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);margin-top:.5rem">${row.analys}</div>
+          <div id="analys-hist-${i}" style="display:none;white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);margin-top:.5rem">${formatAnalysText(row.analys)}</div>
         </div>`;
       }).join('')}
     </div>
@@ -1844,7 +1909,7 @@ ${Object.entries(STORES).map(([id,name])=>{
       </tbody></table></div>
       <div style="padding:0 1rem 1.25rem">
         <button id="ekonomi-analys-btn" class="btn-sm blue" onclick="genEkonomiAnalys()" style="font-size:12px;padding:6px 14px">${ekonomiAnalysCache[label]?'🔄 Uppdatera analys':'🤖 Generera AI-analys'}</button>
-        <div id="ekonomi-analys-out">${ekonomiAnalysCache[label]?`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${ekonomiAnalysCache[label]}</div>`:''}</div>
+        <div id="ekonomi-analys-out">${ekonomiAnalysCache[label]?`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${formatAnalysText(ekonomiAnalysCache[label])}</div>`:''}</div>
       </div>
     </div>` : '';
 
