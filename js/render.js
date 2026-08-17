@@ -662,14 +662,18 @@ function drawEkonomiComparisonChart(periodKeys){
   const canvas=document.getElementById('ekonomi-cmp-chart');
   if(!canvas || typeof Chart==='undefined') return;
   if(ekonomiCmpChart){ekonomiCmpChart.destroy();ekonomiCmpChart=null;}
-  const ids=[...Object.keys(STORES), TOTAL_ID];
-  const labels=ids.map(id=>id===TOTAL_ID?'Totalt':STORES[id].replace('Hemköp ',''));
+  const ids=[...Object.keys(STORES), TOTAL_ID, KOK_ID, HK_ID];
+  const labels=ids.map(id=>ekonomiEntityName(id));
   const data=ids.map(id=>{
     const r = periodKeys.length===1 ? MANADSEKONOMI_DB[periodKeys[0]]?.[id]?.resultat : sumEkonomiPeriods(id, periodKeys);
     const v = r?.resultatForeFinPosterPct;
     return v!=null?Math.round(v*1000)/10:null;
   });
-  const colors=ids.map((id,i)=>id===TOTAL_ID?'var(--ö-blue)':(data[i]==null?'#ccc':data[i]>=0?'rgba(26,125,58,.55)':'rgba(198,40,40,.55)'));
+  const colors=ids.map((id,i)=>{
+    if(id===TOTAL_ID) return 'var(--ö-blue)';
+    if(id===KOK_ID||id===HK_ID) return data[i]==null?'#ccc':'#9b8f7a';
+    return data[i]==null?'#ccc':data[i]>=0?'rgba(26,125,58,.55)':'rgba(198,40,40,.55)';
+  });
   ekonomiCmpChart=new Chart(canvas,{
     type:'bar',
     data:{labels,datasets:[{label:'Resultat f. fin. poster %',data,backgroundColor:colors}]},
@@ -1737,14 +1741,11 @@ function buildActionsSummary(storeId){
     if(!acts || !acts.length) return;
     const dept = DEPTS.find(d=>d.code===code);
     const deptName = dept?dept.name:code;
-    const fixed=acts.filter(a=>a.type==='fixed');
-    const goal=acts.filter(a=>a.type==='goal');
-    const fixedChecked=fixed.filter(a=>a.done).length;
-    const goalChecked=goal.filter(a=>a.done).length;
-    const parts=[];
-    if(fixed.length) parts.push(`${fixed.length} fasta rutiner, ${fixedChecked}/${fixed.length} följs just nu`);
-    if(goal.length) parts.push(`${goal.length} målstyrda åtgärder, ${goalChecked}/${goal.length} aktiva just nu`);
-    if(parts.length) lines.push(`${deptName}: ${parts.join('; ')}`);
+    const texts = acts.filter(a=>a.text && a.text.trim()).map(a=>{
+      const condStr = a.type==='goal' && a.cond ? ` [villkor: ${a.cond}]` : '';
+      return `"${a.text.trim()}"${condStr}`;
+    });
+    if(texts.length) lines.push(`${deptName}: ${texts.join('; ')}`);
   });
   return lines.length ? lines.join(' | ') : null;
 }
@@ -1956,11 +1957,12 @@ ${Object.entries(STORES).map(([id,name])=>{
 
     <div class="card">
       <div class="card-head"><div><div class="ct">Inlästa perioder</div><div class="cs">${allPerioder.length} månader</div></div></div>
-      ${allPerioder.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Månad</th><th class="num">Butiker</th><th></th></tr></thead><tbody>
+      ${allPerioder.length?`<div style="overflow-x:auto"><table class="dtbl"><thead><tr><th>Månad</th><th class="num">Butiker</th><th class="num">Kök</th><th class="num">HK</th><th></th></tr></thead><tbody>
         ${allPerioder.map(pk=>{
           const pd=MANADSEKONOMI_DB[pk]||{};
           const sc=Object.keys(STORES).filter(id=>pd[id]).length;
-          return `<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td>
+          const kokOk=!!pd[KOK_ID], hkOk=!!pd[HK_ID];
+          return `<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td><td class="num">${kokOk?'✓':'—'}</td><td class="num">${hkOk?'✓':'—'}</td>
             <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="if(confirm('Ta bort ${pk}?')){sbDelete('manadsekonomi_data',{period_key:'${pk}'});delete MANADSEKONOMI_DB['${pk}'];renderUploadEkonomi();}">Ta bort</button></td></tr>`;
         }).join('')}
       </tbody></table></div>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:var(--ö-muted)">Inga månadsrapporter uppladdade ännu</div>'}
