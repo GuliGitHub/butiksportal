@@ -1617,6 +1617,54 @@ function buildSeasonalLines(ratData){
   return lines;
 }
 
+// Rullande 8-veckors omsättning i årstakt, senaste veckorna som tidsserie —
+// avslöjar momentum/vändpunkter som en enda ögonblicksjämförelse missar.
+function buildTrendLines(ratData, weeksBack=10){
+  if(!ratData || !Object.keys(ratData).length) return [];
+  const allPeriods = Object.keys(ratData).sort();
+  const lines=[];
+  Object.entries(RAT_STORES).forEach(([id,name])=>{
+    const points=[];
+    for(let i=Math.max(0,allPeriods.length-weeksBack); i<allPeriods.length; i++){
+      const v = getRolling8(allPeriods, ratData, i, [id], 'oms');
+      if(v==null) continue;
+      const info = ratData[allPeriods[i]];
+      points.push(`v${info.week}:${Math.round(v/1000000*10)/10}`);
+    }
+    if(points.length>=3) lines.push(`${name}: ${points.join(', ')} (Mkr/år, rullande 8-veckors medel)`);
+  });
+  return lines;
+}
+
+// Senaste veckans operativa nyckeltal från ÖS20 (redan jämförda mot fg år av Axfood)
+function buildOs20Lines(){
+  const weekKeys = Object.keys(OS20_DB).sort();
+  if(!weekKeys.length) return {weekLabel:null, lines:[]};
+  const weekLabel = weekKeys[weekKeys.length-1];
+  const wd = OS20_DB[weekLabel];
+  if(!wd) return {weekLabel:null, lines:[]};
+  const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+  const pe=v=>v!=null?(v>=0?'+':'')+(v*100).toFixed(1)+' pe':'—';
+  const kr=v=>v!=null?Math.round(v).toLocaleString('sv-SE')+' kr':'—';
+  const lines=[];
+  Object.keys(STORES).forEach(id=>{
+    const d=wd[id]; if(!d) return;
+    const parts=[];
+    if(d.antalSt!=null) parts.push(`Antal sålda ${Math.round(d.antalSt).toLocaleString('sv-SE')} (tot ΔFÅ ${pct(d.antalDelta)}, jmf ΔFÅ ${pct(d.antalDeltaJmf)})`);
+    if(d.bvKr!=null) parts.push(`BV kr ${kr(d.bvKr)} (tot ΔFÅ ${kr(d.bvKrDelta)}/${pct(d.bvKrDeltaPct)}, jmf ΔFÅ ${kr(d.bvKrDeltaJmf)}/${pct(d.bvKrDeltaPctJmf)})`);
+    if(d.bvPct!=null) parts.push(`BV% ${pct(d.bvPct)} (ΔFÅ ${pe(d.bvPctDelta)})`);
+    if(d.lokalAP!=null) parts.push(`Lokal AP% ${pct(d.lokalAP)}`);
+    if(d.artikelRabatt!=null) parts.push(`Artikelrabatt% ${pct(d.artikelRabatt)}`);
+    if(d.svinnPct!=null) parts.push(`Känt svinn% ${pct(d.svinnPct)}`);
+    if(d.driftlackagePct!=null) parts.push(`Driftläckage% ${pct(d.driftlackagePct)} (ΔFÅ ${pe(d.driftlackageDelta)})`);
+    if(d.kvitton!=null) parts.push(`Antal kvitton ${Math.round(d.kvitton).toLocaleString('sv-SE')} (tot ΔFÅ ${pct(d.kvittonDelta)}, jmf ΔFÅ ${pct(d.kvittonDeltaJmf)})`);
+    if(d.snittKop!=null) parts.push(`Snittköp ${d.snittKop.toFixed(1)} kr (tot ΔFÅ ${d.snittKopDelta!=null?d.snittKopDelta.toFixed(1)+' kr':'—'}, jmf ΔFÅ ${d.snittKopDeltaJmf!=null?d.snittKopDeltaJmf.toFixed(1)+' kr':'—'})`);
+    if(d.kundkorg!=null) parts.push(`Kundkorgsstorlek ${d.kundkorg.toFixed(2)} (ΔFÅ ${pct(d.kundkorgDelta)})`);
+    if(parts.length) lines.push(`${STORES[id].replace('Hemköp ','')}: ${parts.join('; ')}`);
+  });
+  return {weekLabel, lines};
+}
+
 function renderEkonomiKunskapCard(){
   const allPerioder=Object.keys(MANADSEKONOMI_DB).sort().reverse();
   return `<div class="card">
@@ -1823,6 +1871,8 @@ async function genEkonomiAnalys(){
 
   let kpiSummary=null;
   let seasonalLines=[];
+  let trendLines=[];
+  const os20Result = buildOs20Lines();
   try{
     const ratData = await loadRatData();
     if(ratData && Object.keys(ratData).length){
@@ -1838,6 +1888,7 @@ async function genEkonomiAnalys(){
         antalKvittonArstakt: getRolling8(allPeriodsRat, ratData, idxRat, storeIdsRat, 'kvitton'),
       };
       seasonalLines = buildSeasonalLines(ratData);
+      trendLines = buildTrendLines(ratData);
     }
   }catch(e){ console.error('kpiSummary-fel', e); }
 
@@ -1852,7 +1903,8 @@ async function genEkonomiAnalys(){
       body:JSON.stringify({
         periodKey:label, cmpLabel, usingYoY,
         accountLines, totalAccountLines, kokHkLines, storeVsAvg, actionsLines,
-        storeNames:STORES, kpiSummary, kunskap:relevantKunskap, seasonalLines,
+        storeNames:STORES, kpiSummary, kunskap:relevantKunskap, seasonalLines, trendLines,
+        os20WeekLabel: os20Result.weekLabel, os20Lines: os20Result.lines,
       })
     });
     const data=await resp.json();
