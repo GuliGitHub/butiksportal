@@ -428,12 +428,15 @@ function procOS20(file){
 async function parseOS20Sheet(rows,pk){
   const pd={};
   // Rad 6 (index 5) = rubrikrad, rad 7+ = data
-  // Kolumner (0-indexed): 3=Butik, 4=Förs kr, 6=ΔFÅ%, 10=Antal sålda, 11=Antal ΔFÅ%,
-  // 13=BV kr, 15=BV% ΔFÅ%, 19=Lokal AP%, 20=Artikelrabatt%, 21=Känt svinn%,
-  // 22=Driftläckage%, 23=Driftläckage ΔFÅ, 25=BV%, 26=BV% ΔFÅ,
-  // 27=Central AP%, 28=Antal kvitton, 29=Kvitton ΔFÅ%,
-  // 31=Snittköp, 32=Snittköp ΔFÅ, 34=Kundkorg, 35=Kundkorg ΔFÅ%,
-  // 36=Medlemsandel%, 37=EMV%, 39=EKO%
+  // Kolumner (0-indexed): 3=Butik, 4=Förs kr, 6=Förs tot ΔFÅ%,
+  // 10=Antal sålda, 11=Antal tot ΔFÅ%, 12=Antal jmf ΔFÅ%,
+  // 13=BV kr, 14=BV kr tot ΔFÅ, 15=BV kr tot ΔFÅ%, 16=BV kr jmf ΔFÅ, 17=BV kr jmf ΔFÅ%,
+  // 19=Lokal AP%, 20=Artikelrabatt%, 21=Känt svinn%,
+  // 22=Driftläckage%, 23=Driftläckage ΔFÅ,
+  // 25=BV%, 26=BV% ΔFÅ, 27=Central AP%,
+  // 28=Antal kvitton, 29=Kvitton tot ΔFÅ%, 30=Kvitton jmf ΔFÅ%,
+  // 31=Snittköp, 32=Snittköp tot ΔFÅ, 33=Snittköp jmf ΔFÅ,
+  // 34=Kundkorg, 35=Kundkorg ΔFÅ%, 36=Medlemsandel%, 37=EMV%, 39=EKO%
   for(const row of rows){
     const storeName=row[3];
     const storeId=matchOS20Store(storeName);
@@ -443,8 +446,14 @@ async function parseOS20Sheet(rows,pk){
       forsaljningDelta:    row[6]!=null?parseFloat(row[6]):null,
       antalSt:             row[10]!=null?parseFloat(row[10]):null,
       antalDelta:          row[11]!=null?parseFloat(row[11]):null,
+      antalDeltaJmf:       row[12]!=null?parseFloat(row[12]):null,
       bvKr:                row[13]!=null?parseFloat(row[13]):null,
+      bvKrDelta:           row[14]!=null?parseFloat(row[14]):null,
+      bvKrDeltaPct:        row[15]!=null?parseFloat(row[15]):null,
+      bvKrDeltaJmf:        row[16]!=null?parseFloat(row[16]):null,
+      bvKrDeltaPctJmf:     row[17]!=null?parseFloat(row[17]):null,
       bvPct:               row[25]!=null?parseFloat(row[25]):null,
+      bvPctDelta:          row[26]!=null?parseFloat(row[26]):null,
       lokalAP:             row[19]!=null?parseFloat(row[19]):null,
       artikelRabatt:       row[20]!=null?parseFloat(row[20]):null,
       svinnPct:            row[21]!=null?parseFloat(row[21]):null,
@@ -453,8 +462,10 @@ async function parseOS20Sheet(rows,pk){
       centralAP:           row[27]!=null?parseFloat(row[27]):null,
       kvitton:             row[28]!=null?parseFloat(row[28]):null,
       kvittonDelta:        row[29]!=null?parseFloat(row[29]):null,
+      kvittonDeltaJmf:     row[30]!=null?parseFloat(row[30]):null,
       snittKop:            row[31]!=null?parseFloat(row[31]):null,
       snittKopDelta:       row[32]!=null?parseFloat(row[32]):null,
+      snittKopDeltaJmf:    row[33]!=null?parseFloat(row[33]):null,
       kundkorg:            row[34]!=null?parseFloat(row[34]):null,
       kundkorgDelta:       row[35]!=null?parseFloat(row[35]):null,
       medlemsandel:        row[36]!=null?parseFloat(row[36]):null,
