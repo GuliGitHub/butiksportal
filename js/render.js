@@ -1927,15 +1927,26 @@ function renderEkonomiAnalysHistory(){
         const d=new Date(row.created_at);
         const dateStr=d.toLocaleString('sv-SE',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
         return `<div style="border-top:1px solid var(--ö-border);padding:.75rem 0">
-          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="const el=document.getElementById('analys-hist-${i}');el.style.display=el.style.display==='none'?'block':'none';">
-            <div style="font-size:13px;font-weight:600;color:var(--ö-blue)">${row.period_key}</div>
-            <div style="font-size:11px;color:var(--ö-muted)">${dateStr} ▾</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex:1;cursor:pointer" onclick="const el=document.getElementById('analys-hist-${i}');el.style.display=el.style.display==='none'?'block':'none';">
+              <div style="font-size:13px;font-weight:600;color:var(--ö-blue)">${row.period_key}</div>
+              <div style="font-size:11px;color:var(--ö-muted)">${dateStr} ▾</div>
+            </div>
+            <button class="btn-sm red" onclick="deleteEkonomiAnalys('${row.id}')" style="font-size:11px;padding:3px 8px;flex-shrink:0">Ta bort</button>
           </div>
           <div id="analys-hist-${i}" style="display:none;white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);margin-top:.5rem">${formatAnalysText(row.analys)}</div>
         </div>`;
       }).join('')}
     </div>
   </div>`;
+}
+
+async function deleteEkonomiAnalys(id){
+  if(!confirm('Ta bort den här analysen?')) return;
+  const {error} = await sb.from('ekonomi_analys').delete().eq('id', id);
+  if(error){ toast('⚠ Kunde inte ta bort: '+error.message); return; }
+  EKONOMI_ANALYS_DB = EKONOMI_ANALYS_DB.filter(row=>row.id!==id);
+  renderUploadEkonomi();
 }
 
 function renderUploadEkonomi(){
