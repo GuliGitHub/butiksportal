@@ -1,1987 +1,970 @@
-// ═══ PDF.JS — Östenssons Butiksportal ═══
+// ═══ PARSERS.JS — Östenssons Butiksportal ═══
 // Auto-genererad modul. Redigera ej manuellt.
 
-// ── PDF ───────────────────────────────────────────────
-function renderPdfPanel(){
-  const storeName=(sid===TOTAL_ID?TOTAL_NAME:STORES[sid]||sid),week=getWeekNum(new Date());
-  const emails=getSD(sid).emails||[];
-  document.getElementById('panel-pdf').innerHTML=`
-    <div class="ph"><div><div class="pt">Rapport</div><div class="ps">${storeName}</div></div></div>
+// ── PARSER: BIB_HEM06 (en flik = en vecka) ────────────
+// ── FILVALIDERING ─────────────────────────────────────
+// Känner igen filtyp baserat på fliknamn och innehåll
+function identifyFile(wb) {
+  const sheets = wb.SheetNames;
+  const first = sheets[0] || '';
 
-    <div class="card"><div class="card-head"><div><div class="ct">Välj innehåll</div><div class="cs">Gäller för både PDF och mailutskick</div></div></div>
-      <div style="padding:1rem;display:flex;flex-direction:column;gap:.875rem">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-          ${[['week','Föregående vecka','Utfall senaste uppladdade vecka'],['period','Ackumulerat per period','Summerat utfall för vald period'],['both','Båda','Föregående vecka + ackumulerat']].map(([v,t,s])=>`
-          <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.625rem .875rem;border:0.5px solid var(--ö-border);border-radius:8px;flex:1;min-width:160px">
-            <input type="radio" name="pmode" value="${v}" ${v==='week'?'checked':''} onchange="updPdfSel()">
-            <div><div style="font-size:13px;font-weight:500">${t}</div><div style="font-size:11px;color:var(--ö-muted);margin-top:2px">${s}</div></div>
-          </label>`).join('')}
-        </div>
-        <div id="pdf-psel" style="display:none">
-          <div style="background:var(--ö-light);border-radius:8px;padding:.625rem .875rem;font-size:12px;color:var(--ö-blue)">
-            ${selWeeks.size>0?`${selWeeks.size} ${selWeeks.size===1?'vecka':'veckor'} valda — används för ackumulerat`:'Välj veckor under Översikt innan du skickar/laddar ner'}
-          </div>
-        </div>
-      </div>
-    </div>
+  // 9A ÖS09b — svinnfil (en flik, namn innehåller svinn/ös09)
+  if(first.toLowerCase().includes('ös09') || first.toLowerCase().includes('svinn'))
+    return {type:'svinn', name:'9A ÖS09b Svinnrapport'};
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.875rem;margin-top:.875rem">
-      <!-- PDF -->
-      <div class="card">
-        <div class="card-head"><div><div class="ct">⬇ Ladda ner PDF</div><div class="cs">Sparas lokalt på din dator</div></div></div>
-        <div style="padding:1rem">
-          <button class="btn-g" onclick="generatePDF('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week')" style="width:100%;padding:10px;font-size:14px">Ladda ner PDF-rapport</button>
-        </div>
-      </div>
-
-      <!-- Mail -->
-      <div class="card">
-        <div class="card-head"><div><div class="ct">✉ Skicka via mail</div><div class="cs">${emails.length} prenumerant${emails.length!==1?'er':''} registrerade</div></div></div>
-        <div style="padding:1rem">
-          ${emails.length
-            ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:.75rem">
-                ${emails.map(e=>`<span style="font-size:11px;background:var(--ö-light);color:var(--ö-blue);border-radius:20px;padding:2px 10px">${e}</span>`).join('')}
-               </div>
-               <button class="btn-g" onclick="sendStoreReport('${sid}',document.querySelector('input[name=pmode]:checked')?.value||'week')" style="width:100%;padding:10px;font-size:14px">Skicka rapport</button>`
-            : `<div style="font-size:12px;color:var(--ö-muted);margin-bottom:.75rem">Inga mailadresser inlagda för denna butik.</div>
-               <button class="btn-sm" onclick="showTab('admin',document.querySelector('.ni'))" style="width:100%">Lägg till mailadresser →</button>`
-          }
-          <div id="mail-status" style="display:none;margin-top:.625rem;font-size:12px;padding:.5rem .75rem;border-radius:6px"></div>
-        </div>
-      </div>
-    </div>
-
-<!-- Mål & Actions rapport -->
-    <div class="card" style="margin-top:.875rem">
-      <div class="card-head">
-        <div>
-          <div class="ct">📋 Skriv ut mål</div>
-          <div class="cs">Sammanställning av mål utan aktuellt utfall</div>
-        </div>
-      </div>
-      <div style="padding:1rem">
-        <label style="display:flex;align-items:center;gap:.625rem;cursor:pointer;margin-bottom:.875rem;font-size:13px">
-          <input type="checkbox" id="goals-pdf-actions-${sid}" checked style="width:15px;height:15px;accent-color:var(--ö-blue)">
-          Inkludera actions
-        </label>
-        <button class="btn-g" onclick="generateGoalsPDF('${sid}')" style="width:100%;padding:10px;font-size:14px">
-          Ladda ner mål-PDF
-        </button>
-      </div>
-    </div>
-
-    <!-- Mailadresser direkt i PDF/Admin-vyn -->
-    <div class="card" style="margin-top:.875rem">
-      <div class="card-head">
-        <div><div class="ct">📧 Prenumeranter</div><div class="cs">Mailadresser för automatiska rapporter</div></div>
-      </div>
-      <div style="padding:1rem">
-        <div id="store-etags-${sid}" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:.75rem">
-          ${(()=>{const sd2=getSD(sid);return (sd2.emails||[]).length
-            ?(sd2.emails.map(e=>`<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${sid}','${e}')">×</button></span>`).join(''))
-            :`<span style="font-size:12px;color:var(--ö-muted)">Inga prenumeranter ännu</span>`;})()}
-        </div>
-        <div style="display:flex;gap:.5rem">
-          <input class="email-add-inp" type="email" id="store-email-inp-${sid}" placeholder="Lägg till e-postadress..." onkeydown="if(event.key==='Enter')addStoreEmail('${sid}')">
-          <button class="btn-sm green" onclick="addStoreEmail('${sid}')">+ Lägg till</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Auto-send toggle -->
-    <div class="card" style="margin-top:.875rem">
-      <div class="card-head" style="justify-content:space-between">
-        <div>
-          <div class="ct">🤖 Automatisk rapportutskick</div>
-          <div class="cs">Skicka rapport automatiskt när veckodata laddas upp</div>
-        </div>
-        <button id="auto-send-btn-${sid}"
-          class="toggle-btn ${(()=>{const sd2=getSD(sid);return sd2.autoSend?'on':'off';})()}"
-          onclick="toggleAutoSend('${sid}')">
-          ${(()=>{const sd2=getSD(sid);return sd2.autoSend?'PÅ':'AV';})()}
-        </button>
-      </div>
-      <div style="padding:.75rem 1.25rem;font-size:12px;color:var(--ö-muted)">
-        ${(()=>{const sd2=getSD(sid);return sd2.autoSend
-          ?'✓ Rapport skickas automatiskt när ÖS20-data för veckan laddas upp via mail.'
-          :'Aktivera för att skicka rapport automatiskt vid dataimport.';})()}
-      </div>
-    </div>
-`;
-}
-function updPdfSel(){const m=document.querySelector('input[name=pmode]:checked')?.value;document.getElementById('pdf-psel').style.display=(m==='period'||m==='both')?'block':'none';}
-
-
-// Auto-send: kolla om nya veckans data är komplett och skicka rapporter
-async function checkAndTriggerAutoSend(periodKey) {
-  // Hitta FÖREGÅENDE vecka — rapporten ska visa senast inlästa data, inte pågående vecka
-  const allPks = Object.keys(OS20_DB).sort();
-  const pkIdx = allPks.indexOf(periodKey);
-  // Använd föregående vecka om den finns, annars aktuell
-  const reportPk = pkIdx > 0 ? allPks[pkIdx - 1] : periodKey;
-  const storesWithData = Object.keys(OS20_DB[reportPk] || {});
-  if(storesWithData.length < 1) return;
-
-  console.log('Auto-send check för', reportPk, '(ny data:', periodKey, ') —', storesWithData.length, 'butiker');
-
-  let sent = 0;
-  for(const storeId of Object.keys(STORES)) {
-    const sd = getSD(storeId);
-    if(!sd.autoSend) continue;
-    if(!sd.emails || !sd.emails.length) continue;
-    if(!OS20_DB[reportPk]?.[storeId]) continue;
-
-    console.log('Auto-send: skickar', storeId, 'rapport för', reportPk, 'till', sd.emails);
-    try {
-      await sendStoreReportForWeek(storeId, reportPk);
-      sent++;
-    } catch(e) {
-      console.error('Auto-send misslyckades för', storeId, e);
+  // Filer med veckoflikar (format YYYYWW)
+  const weekSheets = sheets.filter(s=>s.match(/^\d{6}$/));
+  if(weekSheets.length) {
+    // Kolla om det är HGR-flerfliksformat (har 'Östenssons HGR' rubrik eller 'Bruttovinst' i header)
+    const ws0 = wb.Sheets[weekSheets[0]];
+    const rows0 = XLSX.utils.sheet_to_json(ws0,{header:1,defval:null});
+    const topText = rows0.slice(0,10).flat().map(v=>String(v||'').toLowerCase()).join(' ');
+    if(topText.includes('hgr') || topText.includes('bruttovinst') && topText.includes('artikel')) {
+      return {type:'hgr', name:`HGR flerfliksformat — ${weekSheets.length} veckor`};
     }
-  }
-  if(sent > 0) toast(`✓ Auto-send: ${sent} rapport(er) skickade för ${reportPk}`);
-}
-
-// Skicka rapport för en specifik vecka (för auto-send)
-async function sendStoreReportForWeek(storeId, pk) {
-  const storeName = STORES[storeId] || storeId;
-  const vLabel = pk.replace('-V', 'V'); // ex 2026V22
-  const periodLabel = pk.replace('-', ' · ').replace('V', 'V'); // ex 2026 · V22
-  const displayLabel = pk.replace(/^\d{4}-/, ''); // ex V22
-  const fileName = `Veckorapport_${storeName.replace(/\s+/g,'_')}_${vLabel}.pdf`;
-  const subject = `Veckorapport ${storeName} — ${displayLabel}`;
-
-  // Sätt selWeeks temporärt till just denna vecka för PDF-generering
-  const prevWks = new Set(selWeeks);
-  selWeeks.clear(); selWeeks.add(pk);
-
-  let pdfBase64;
-  try {
-    pdfBase64 = await generatePDFBase64(storeId, 'week');
-  } finally {
-    selWeeks.clear(); prevWks.forEach(w => selWeeks.add(w));
+    // Läs rad 6 (index 5) som är headern i OS20-filen
+    const header6 = (rows0[5]||[]).map(v=>String(v||'').toLowerCase()).join(' ');
+    if(header6.includes('driftläckage') || header6.includes('kvitton') || header6.includes('snittköp'))
+      return {type:'os20', name:'9A ÖS20 Försäljning & driftläckage'};
+    return {type:'bib_multi', name:'BIB_HEM06 (flerfliks)'};
   }
 
-  if(!pdfBase64) throw new Error('PDF-generering misslyckades');
+  // En flik — kolla innehåll
+  const ws = wb.Sheets[sheets[0]];
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
 
-  const sd = getSD(storeId);
-  const emails = sd.emails || [];
-  if(!emails.length) throw new Error('Inga e-postadresser konfigurerade');
+  // Kolla rubrikrad (rad 1) och datarad (rad 2-4)
+  const allText = rows.slice(0,5).flat().map(v=>String(v||'').toLowerCase()).join(' ');
 
-  const resp = await fetch(EDGE_FUNCTION_URL, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ storeId, storeName, periodLabel: displayLabel, fileName, pdfBase64, to: emails, subject })
-  });
-  if(!resp.ok) throw new Error('HTTP ' + resp.status);
+  if(allText.includes('svinnkod') || allText.includes('svinn kr') || allText.includes('antal svinn'))
+    return {type:'svinn', name:'9A ÖS09b Svinnrapport'};
+  if(allText.includes('lo huvudgrupp') || allText.includes('bruttovinst') && allText.includes('butik'))
+    return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
+  if(first.toLowerCase().includes('bib') || first.toLowerCase().includes('hem06'))
+    return {type:'bib', name:'BIB_HEM06 Försäljningsrapport'};
+
+  return {type:'unknown', name:first};
 }
 
-// ── MAILUTSKICK ───────────────────────────────────────
-const EDGE_FUNCTION_URL = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/send-store-report';
-
-
-
-async function saveStoreLocation(storeId) {
-  const lat = parseFloat(document.getElementById('loc-lat-'+storeId)?.value);
-  const lon = parseFloat(document.getElementById('loc-lon-'+storeId)?.value);
-  if(!lat || !lon || isNaN(lat) || isNaN(lon)) { toast('Ange giltiga koordinater'); return; }
-  const sd = getSD(storeId);
-  sd.location = {lat: Math.round(lat*10000)/10000, lon: Math.round(lon*10000)/10000};
-  await saveStoreSettings(storeId);
-  toast(`✓ Plats sparad för ${STORES[storeId]||storeId}`);
-}
-
-async function addStoreEmail(storeId) {
-  const inp = document.getElementById('store-email-inp-'+storeId);
-  if(!inp) return;
-  const email = inp.value.trim().toLowerCase();
-  if(!email || !email.includes('@')) { toast('Ange en giltig mailadress'); return; }
-  const sd = getSD(storeId);
-  if(!sd.emails) sd.emails = [];
-  if(sd.emails.includes(email)) { toast('Adressen finns redan'); return; }
-  sd.emails.push(email);
-  await saveStoreSettings(storeId);
-  inp.value = '';
-  // Uppdatera tags
-  const tagsEl = document.getElementById('store-etags-'+storeId);
-  if(tagsEl) tagsEl.innerHTML = sd.emails.map(e=>
-    `<span class="email-tag">${e}<button class="email-tag-del" onclick="rmEmail('${storeId}','${e}')">×</button></span>`
-  ).join('');
-  toast('✓ '+email+' tillagd');
-}
-
-
-// ── PODCAST / ELEVENLABS ────────────────────────────────────────────────────
-const ELABS_EDGE = 'https://cnifrizdioiwlvgbxsqs.supabase.co/functions/v1/elevenlabs-tts';
-const ELABS_VOICE = 'CpPiT1LUZxBP5fFkxF9r';
-const ELABS_KEY = ''; // Läses från Supabase Secrets via Edge Function
-const podAudio = {};
-
-function podFmt(s){ s=Math.max(0,Math.floor(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
-
-async function generatePodcast(storeId) {
-  const sd = getSD(storeId);
-  const storeName = STORES[storeId] || storeId;
-  const btn = document.getElementById('pod-gen-btn-'+storeId);
-  const statusEl = document.getElementById('pod-status-'+storeId);
-  btn.disabled = true;
-  statusEl.textContent = 'Genererar manus med Claude...';
-
-  // Hämta senaste veckodata
-  const latestPk = Object.keys(REPORT_DB).sort().pop();
-  const wd = REPORT_DB[latestPk]?.[storeId] || {};
-  const actions = sd.actions || {};
-  const actionLines = [];
-  Object.entries(actions).forEach(([dept, acts]) => {
-    if (acts && acts.length) acts.slice(0,2).forEach(a => actionLines.push(dept + ': ' + a.text));
-  });
-
-  const prompt = 'Du är en avslappnad butikscoach som spelar in en kort veckopodcast på svenska för personal på ' + storeName + '. '
-    + 'Vecka: ' + latestPk + '. '
-    + 'Omsättning: ' + (wd.forsaljning ? Math.round(wd.forsaljning).toLocaleString('sv-SE') + ' kr' : 'saknas') + ' ('
-    + (wd.forsaljningDelta ? (wd.forsaljningDelta > 0 ? '+' : '') + (wd.forsaljningDelta*100).toFixed(1) + '% vs förra året' : '') + '). '
-    + 'Bruttovinst: ' + (wd.bvPct ? (wd.bvPct*100).toFixed(1) + '%' : 'saknas') + ' (mål ' + (sd.storeGoals?.marginal || 25.8) + '%). '
-    + 'Känt svinn: ' + (wd.svinnPct ? (wd.svinnPct*100).toFixed(1) + '%' : 'saknas') + '. '
-    + 'Snittköp: ' + (wd.snittKop ? Math.round(wd.snittKop) + ' kr' : 'saknas') + '. '
-    + (actionLines.length ? 'Butikens actions: ' + actionLines.join('; ') + '. ' : '')
-    + 'Skriv ett manus på 60-90 sekunder i avslappnad stil. Lyft vad som går bra, vad som kan förbättras kopplat till actions, och avsluta med en positiv uppmaning. Inga rubriker, bara löpande tal.';
-
-  try {
-    // Generera manus lokalt baserat på data
-    const omsPct = wd.forsaljningDelta ? (wd.forsaljningDelta*100).toFixed(1) : '?';
-    const bvPct = wd.bvPct ? (wd.bvPct*100).toFixed(1) : '?';
-    const bvMal = sd.storeGoals?.marginal || 25.8;
-    const svinnPct = wd.svinnPct ? (wd.svinnPct*100).toFixed(1) : '?';
-    const svinnMal = sd.storeGoals?.svinn_k || 0.7;
-    const snitt = wd.snittKop ? Math.round(wd.snittKop) : '?';
-    const snittMal = sd.storeGoals?.snittKop || 180;
-    const omsTxt = wd.forsaljningDelta >= 0 ? 'plus ' + omsPct + ' procent' : 'minus ' + Math.abs(omsPct) + ' procent';
-    const bvTxt = parseFloat(bvPct) >= bvMal ? bvPct + ' procent – över målet på ' + bvMal + '! Bra jobbat!' : bvPct + ' procent – vi är under målet på ' + bvMal + ', fokus på marginalerna.';
-    const svinnTxt = parseFloat(svinnPct) <= svinnMal ? svinnPct + ' procent svinn, under målet. Bra kontroll!' : svinnPct + ' procent svinn – målet är ' + svinnMal + ', vi behöver dra ner.';
-    const actionTxt = actionLines.length ? ' ' + actionLines.slice(0,2).join('. ') + '.' : '';
-    const manus = 'Hej g\u00e4nget p\u00e5 ' + storeName + '! ' + latestPk + ' \u00e4r i hamn. '
-      + 'Omsättningen landade p\u00e5 ' + omsTxt + ' mot f\u00f6rra \u00e5ret. '
-      + 'Bruttovinsten p\u00e5 ' + bvTxt + ' '
-      + svinnTxt + ' '
-      + 'Snittk\u00f6pet \u00e4r ' + snitt + ' kronor mot m\u00e5let p\u00e5 ' + snittMal + '.'
-      + actionTxt
-      + ' K\u00f6r h\u00e5rt den h\u00e4r veckan!'
-      + ' Och en snabb spaning fr\u00e5n branschen: dagligvaruhandeln g\u00e5r plus 4,5 procent i maj j\u00e4mf\u00f6rt med f\u00f6rra \u00e5ret. E-handeln v\u00e4xer snabbast med plus elva procent, s\u00e5 vi i fysisk butik m\u00e5ste forts\u00e4tta leverera det n\u00e4tet inte kan: n\u00e4rheten, f\u00e4rskheten och den personliga servicen. Vi ses fredag!';
-
-    statusEl.textContent = 'Genererar ljud med ElevenLabs...';
-
-
-    // Steg 2: Text-till-tal via Edge Function
-    const aResp = await fetch(ELABS_EDGE, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: manus })
-    });
-    if (!aResp.ok) throw new Error('ElevenLabs: ' + aResp.status);
-
-    const blob = await aResp.blob();
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    podAudio[storeId] = { audio, url, blob };
-
-    audio.addEventListener('timeupdate', () => {
-      if (!audio.duration) return;
-      document.getElementById('pod-bar-'+storeId).style.width = (audio.currentTime/audio.duration*100)+'%';
-      document.getElementById('pod-time-'+storeId).textContent = podFmt(audio.currentTime);
-    });
-    audio.addEventListener('loadedmetadata', () => {
-      document.getElementById('pod-dur-'+storeId).textContent = podFmt(audio.duration);
-    });
-    audio.addEventListener('ended', () => {
-      const pb = document.getElementById('pod-play-btn-'+storeId);
-      if (pb) pb.textContent = '▶ Spela upp';
-    });
-
-    document.getElementById('pod-play-btn-'+storeId).style.display = '';
-    document.getElementById('pod-progress-'+storeId).style.display = '';
-    const dlBtn = document.getElementById('pod-dl-'+storeId);
-    dlBtn.href = url;
-    dlBtn.style.display = '';
-    statusEl.textContent = '✓ Klar! ' + Math.round(blob.size/1024) + ' KB · ' + storeName + ' ' + latestPk;
-  } catch(e) {
-    statusEl.textContent = 'Fel: ' + e.message;
-  }
-  btn.disabled = false;
-}
-
-function playPodcast(storeId) {
-  const pod = podAudio[storeId];
-  if (!pod) return;
-  const btn = document.getElementById('pod-play-btn-'+storeId);
-  if (pod.audio.paused) {
-    pod.audio.play();
-    btn.textContent = '⏸ Pausa';
-  } else {
-    pod.audio.pause();
-    btn.textContent = '▶ Spela upp';
-  }
-}
-
-
-async function toggleAutoSend(storeId) {
-  const sd = getSD(storeId);
-  sd.autoSend = !sd.autoSend;
-  await saveStoreSettings(storeId);
-  await sbUpsert('store_settings', {store_id: storeId, auto_send_enabled: sd.autoSend});
-  const btn = document.getElementById('auto-send-btn-'+storeId);
-  if(btn) {
-    btn.textContent = sd.autoSend ? 'PÅ' : 'AV';
-    btn.className = 'toggle-btn ' + (sd.autoSend ? 'on' : 'off');
-  }
-  // Uppdatera beskrivning
-  renderPDF();
-  toast(sd.autoSend ? '✓ Automatisk utskick aktiverat' : 'Automatisk utskick inaktiverat');
-}
-
-async function sendStoreReport(storeId, pdfMode) {
-  const statusEl = document.getElementById('mail-status');
-  if(statusEl){ statusEl.style.display='block'; statusEl.style.background='#f0f4ff'; statusEl.style.color='var(--ö-blue)'; statusEl.textContent='Genererar PDF...'; }
-
-  try {
-    const sd = getSD(storeId);
-    const emails = sd.emails || [];
-    if(!emails.length) throw new Error('Inga mailadresser registrerade');
-
-    const storeName = storeId===TOTAL_ID ? TOTAL_NAME : (STORES[storeId]||storeId);
-    const wksArr=[...selWeeks].sort();
-    const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')} – ${wksArr[wksArr.length-1].replace('-V','V')}`:'Senaste veckan';
-    const fileName=`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel}.pdf`;
-
-    if(statusEl) statusEl.textContent='Genererar PDF...';
-    const pdfBase64 = await generatePDFBase64(storeId, pdfMode);
-    if(!pdfBase64) throw new Error('Kunde inte generera PDF');
-
-    if(statusEl) statusEl.textContent='Skickar rapport...';
-    const res = await fetch(EDGE_FUNCTION_URL, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
-      body:JSON.stringify({
-        to: emails,
-        storeName, periodLabel, fileName,
-        subject:`Veckorapport ${storeName} — ${periodLabel}`,
-        pdfBase64
-      })
-    });
-    const data = await res.json();
-    if(res.ok){
-      if(statusEl){ statusEl.style.background='#e8f5e9'; statusEl.style.color='#2e7d32';
-        statusEl.textContent=`✓ Skickat till ${emails.length} prenumerant${emails.length>1?'er':''}`;
-      }
-      toast(`✓ Rapport skickad till ${emails.length} mottagare`);
-    } else throw new Error(data.error||'Okänt fel');
-  } catch(e){
-    if(statusEl){ statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; statusEl.textContent=`⚠ ${e.message}`; }
-    toast('⚠ '+e.message);
-  }
-}
-
-
-async function sendSingleFromAdmin(storeId) {
-  const storeName = STORES[storeId];
-  const mode = document.querySelector('input[name=amode]:checked')?.value || 'week';
-  const statusEl = document.getElementById('mail-all-status');
-  if(statusEl){ statusEl.style.display='block'; statusEl.style.background='#f0f4ff'; statusEl.style.color='var(--ö-blue)'; statusEl.textContent=`Genererar PDF för ${storeName}...`; }
-  try {
-    const emails = getSD(storeId).emails||[];
-    if(!emails.length){ toast(`⚠ Inga mailadresser för ${storeName}`); return; }
-    const pdfBase64 = await generatePDFBase64(storeId, mode);
-    if(!pdfBase64) throw new Error('Kunde inte generera PDF');
-    const wksArr=[...selWeeks].sort();
-    const periodLabel=selWeeks.size===1?wksArr[0].replace('-V','V'):selWeeks.size>1?`${wksArr[0].replace('-V','V')}–${wksArr[wksArr.length-1].replace('-V','V')}`:`V${getWeekNum(new Date())}`;
-    const fileName=`Veckorapport_${storeName.replace(/\s+/g,'_')}_${periodLabel}.pdf`;
-    if(statusEl) statusEl.textContent=`Skickar till ${storeName}...`;
-    const res = await fetch(EDGE_FUNCTION_URL, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${SB_KEY}`},
-      body:JSON.stringify({storeId,storeName,periodLabel,fileName,pdfBase64,to:emails,subject:`Veckorapport ${storeName} — ${periodLabel}`})
-    });
-    const data = await res.json();
-    if(res.ok){ toast(`✓ Skickat till ${data.sent} mottagare på ${storeName}`); if(statusEl)statusEl.style.display='none'; }
-    else throw new Error(data.error);
-  } catch(e){ toast(`⚠ Fel: ${e.message}`); if(statusEl){ statusEl.style.background='#fdecea'; statusEl.style.color='#c62828'; statusEl.textContent=`⚠ ${e.message}`; } }
-}
-
-
-// ── BYGG HTML-MAIL ────────────────────────────────────
-function buildMailHTML(storeId, pdfMode) {
-  const sd = getSD(storeId);
-  const storeName = STORES[storeId]||storeId;
-  const wData = getLatestWeekData(storeId);
-  const aData = (pdfMode==='period'||pdfMode==='both') ? getAccDataFromWeeks(storeId,selWeeks) : null;
-  const wksArr = [...selWeeks].sort();
-  const periodLabel = selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')} – ${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
-  const wks = selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
-  const BLUE='#002F6D', RED='#E20000', BEIGE='#E9E5E0', GR='#6b6860';
-
-  function colorFor(val,mål,lb){
-    if(val==null||mål==null)return GR;
-    const r=val/(mål/100);
-    if(lb)return r<=1.0?'#2e7d32':r<=1.3?'#b45309':'#c62828';
-    return r>=0.95?'#2e7d32':r>=0.80?'#b45309':'#c62828';
-  }
-
-  function kpiRow(data, label) {
-    const kpis = KPI_LIBRARY.filter(k=>KPI_CONFIG[k.key]?.visible);
-    const cells = kpis.map(k=>{
-      const val = getKPIVal(k.key,storeId,selWeeks);
-      const goal = sd.storeGoals[k.key];
-      const disp = fmtKPIVal(k,val);
-      const col = colorFor(val,goal,k.lb);
-      return `<td style="background:${BEIGE};padding:12px;text-align:center;border-radius:6px;width:${Math.floor(100/Math.min(kpis.length,4))}%">
-        <div style="font-size:9px;color:${GR};text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">${k.label}</div>
-        <div style="font-size:20px;font-weight:700;color:${col};font-family:monospace">${disp}</div>
-        <div style="font-size:10px;color:${GR};margin-top:2px">Mål: ${goal!=null?goal+(k.fmt==='kr'?' kr':k.fmt==='num'?' st':'%'):'—'}</div>
-      </td>`;
-    });
-    // Split into rows of 4
-    let rows='';
-    for(let i=0;i<cells.length;i+=4) rows+=`<tr>${cells.slice(i,i+4).map(c=>c).join('')}</tr>`;
-    return `<h3 style="color:${BLUE};font-size:13px;margin:20px 0 8px">${label}</h3>
-      <table width="100%" cellspacing="6" cellpadding="0" style="border-collapse:separate">${rows}</table>`;
-  }
-
-  function deptSection(d, rdW, rdA) {
-    const dg = sd.deptGoals[d.code];
-    const curD = pdfMode==='week'?rdW:rdA||rdW;
-    // HGR-svinn: direkt från avdelningsdata
-    let _hS=0,_hN=0;
-    wks.forEach(pk=>{const dept=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);if(dept?.svinnPct!=null){_hS+=dept.svinnPct;_hN++;}});
-    let totS=0,totF=0;
-    if(_hN===0){wks.forEach(pk=>{
-      (SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{const _dc2=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc2===d.code)totS+=r.svinnKr||0;});
-      const rd=REPORT_DB[pk]?.[storeId]?.depts?.find(x=>x.code===d.code);
-      if(rd)totF+=rd.forsaljning||0;
-    });}
-    const svinnPct=_hN>0?_hS/_hN:(totF>0?totS/totF:null);
-    const dKpis=[
-      {label:'Omsättning',val:curD?.forsaljningDelta,mål:dg.oms,fmt:'delta',lb:false},
-      {label:'Antal sålda',val:curD?.antalDelta,mål:dg.antal,fmt:'delta',lb:false},
-      {label:'Marginal BV%',val:curD?.bvPct,mål:dg.marginal,fmt:'pct',lb:false},
-      {label:'Känt svinn',val:svinnPct,mål:dg.svinn,fmt:'pct',lb:true},
-    ];
-    const kpiCells=dKpis.map(k=>{
-      const disp=k.val!=null?(k.fmt==='delta'?fmtDelta(k.val):fmtPct(k.val)):'—';
-      const col=colorFor(k.val,k.mål,k.lb);
-      return `<td style="padding:7px 8px;text-align:left;background:#faf9f6;width:20%;border-right:0.5px solid #e0ddd7">
-        <div style="font-size:8px;font-weight:700;color:${GR};text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${k.label}</div>
-        <div style="font-size:15px;font-weight:700;color:${col};font-family:monospace;line-height:1">${disp}</div>
-        <div style="font-size:8px;color:${GR};margin-top:2px">Mål: ${k.mål}%</div>
-        <div style="height:2px;background:#e8e5de;border-radius:1px;margin-top:4px"><div style="height:100%;width:${Math.min(k.val!=null&&k.mål?Math.abs(k.val/(k.mål/100))*100:0,100)}%;background:${col};border-radius:1px"></div></div>
-      </td>`;
-    }).join('');
-
-    const acts=sd.actions[d.code]||[];
-    const actsHTML=acts.length?`<div style="margin-top:10px">
-      <div style="font-size:10px;font-weight:700;color:${BLUE};text-transform:uppercase;margin-bottom:4px">Actions</div>
-      ${acts.map(a=>`<div style="padding:5px 8px;background:#fff;border-left:3px solid ${a.done?'#2e7d32':BLUE};margin-bottom:3px;font-size:12px">
-        ${a.done?'<b style="color:#2e7d32">✓</b>':'○'} ${a.text}${a.cond?`<em style="color:${GR}"> · ${a.cond}</em>`:''}
-      </div>`).join('')}
-    </div>`:'';
-
-    // Top 5 svinn
-    const svinnMap={};
-    wks.forEach(pk=>{(SVINN_DB[pk]?.[storeId]||[]).forEach(r=>{if((r.deptCode||null)!==d.code)return;const k=r.artNr||r.artName||r.ean;if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};svinnMap[k].svinnKr+=r.svinnKr||0;const bi=EAN_DEPT_MAP[r.artNr||r.ean];if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;});});
-    const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5).map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
-    const _tbEan=EAN_BY_STORE[isTotal?null:storeId];
-      if(!_tbEan||!Object.keys(_tbEan).length){} // Tom = visa ej TB
-      const tbMap={};Object.entries(_tbEan||{}).forEach(([artnr,info])=>{if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};});
-    const tbRows=Object.values(tbMap).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
-
-    function miniTable(title,rows,col3,col4,col4Color,col5,getC5color) {
-      if(!rows.length)return'';
-      return`<div style="flex:1">
-        <div style="font-size:10px;font-weight:700;color:${GR};text-transform:uppercase;margin-bottom:4px">${title}</div>
-        <table width="100%" style="border-collapse:collapse;font-size:11px">
-          <tr style="border-bottom:1px solid ${BEIGE}"><th style="text-align:left;color:${GR};font-size:9px;padding:2px 4px 2px 0">#</th><th style="text-align:left;color:${GR};font-size:9px">Artikel</th><th style="text-align:right;color:${GR};font-size:9px;padding:2px 6px">Oms</th><th style="text-align:right;color:${GR};font-size:9px;padding:2px 6px">${col4}</th><th style="text-align:right;color:${GR};font-size:9px">${col5}</th></tr>
-          ${rows.map((r,i)=>`<tr style="border-bottom:0.5px solid ${BEIGE}"><td style="color:${GR};padding:3px 4px 3px 0">${i+1}</td><td>${r.artName}</td><td style="text-align:right;color:${GR};padding:3px 6px">${r[col3]>0?Math.round(r[col3]).toLocaleString('sv-SE')+' kr':'—'}</td><td style="text-align:right;font-weight:600;color:${col4Color};padding:3px 6px">${Math.round(r[col4Prop(col4)]).toLocaleString('sv-SE')} kr</td><td style="text-align:right;font-weight:600;color:${getC5color(r)}">${fmtCol5(r,col5)}</td></tr>`).join('')}
-        </table>
-      </div>`;
-    }
-    function col4Prop(h){return h==='Svinn kr'?'svinnKr':'bvKr';}
-    function fmtCol5(r,h){return h==='Svinn %'?(r.svinnPct!=null?(r.svinnPct*100).toFixed(1)+'%':'—'):(r.bvPct!=null?(r.bvPct*100).toFixed(1)+'%':'—');}
-
-    const listsHTML=(svinnRows.length||tbRows.length)?`<div style="display:flex;gap:16px;margin-top:10px">
-      ${svinnRows.length?miniTable('Top 5 svinn kr',svinnRows,'artOms','Svinn kr','#c62828','Svinn %',r=>r.svinnPct!=null?(r.svinnPct>0.02?'#c62828':r.svinnPct>0.01?'#b45309':'#2e7d32'):GR):''}
-      ${tbRows.length?miniTable('Top 5 TB kr',tbRows,'oms','TB kr','#2e7d32','TB %',r=>r.bvPct!=null?(r.bvPct>=0.28?'#2e7d32':r.bvPct>=0.20?'#b45309':'#c62828'):GR):''}
-    </div>`:'';
-
-    const _ds=deptStyle(d.code);
-    return `<div style="margin-bottom:14px;border:1px solid ${_ds.color}44;border-radius:8px;overflow:hidden;border-left:4px solid ${_ds.color}">
-      <div style="background:${_ds.bg};padding:8px 12px;display:flex;align-items:center;gap:8px">
-        <div style="width:28px;height:28px;border-radius:6px;background:${_ds.iconBg};color:${_ds.iconColor};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${_ds.icon}</div>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:12px;color:#1a1a1a">${d.name}</div>
-          <div style="font-size:9px;color:#666">avd.${d.code}</div>
+function wrongFileError(pmsg, detected, expected, expectedLabel) {
+  pmsg.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:.75rem;padding:.25rem 0">
+      <div style="font-size:20px;flex-shrink:0">⚠️</div>
+      <div>
+        <div style="font-weight:600;color:#944f00;margin-bottom:4px">Fel fil uppladdad</div>
+        <div style="font-size:12px;color:#555;margin-bottom:8px">
+          Du verkar ha laddat upp <strong>${detected.name}</strong> här.<br>
+          Den här zonen förväntar sig <strong>${expectedLabel}</strong>.
         </div>
-        ${curD?.forsaljning?`<div style="text-align:right"><div style="font-size:11px;font-weight:700;color:#1a1a1a">${Math.round(curD.forsaljning).toLocaleString('sv-SE')} kr</div><div style="font-size:8px;color:#888">förs. kr</div></div>`:''}
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          ${detected.type==='svinn'?`<span style="font-size:11px;background:#EAF3DE;color:#1a5c28;border-radius:5px;padding:2px 8px">Svinnfilen laddas upp under 🗑 Svinn-fliken</span>`:''}
+          ${detected.type==='os20'?`<span style="font-size:11px;background:#EAF3DE;color:#1a5c28;border-radius:5px;padding:2px 8px">ÖS20-filen laddas upp under 9A ÖS20-sektionen nedan</span>`:''}
+          ${detected.type==='bib'||detected.type==='bib_multi'?`<span style="font-size:11px;background:#EAF3DE;color:#1a5c28;border-radius:5px;padding:2px 8px">BIB-filen laddas upp under BIB_HEM06-sektionen ovan</span>`:''}
+        </div>
       </div>
-      <table width="100%" cellspacing="0" style="border-collapse:collapse;border-top:1px solid ${_ds.color}33"><tr>${kpiCells}</tr></table>
-      <div style="padding:8px 12px">${actsHTML}${listsHTML}</div>
     </div>`;
-  }
-
-  const activeDepts=DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
-  const deptsHTML=activeDepts.map(d=>{
-    const rdW=wData?.depts?.find(x=>x.code===d.code);
-    const rdA=aData?.depts?.find(x=>x.code===d.code);
-    return deptSection(d,rdW,rdA);
-  }).join('');
-
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f2ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
-<table width="100%" cellspacing="0" cellpadding="0" style="background:#f5f2ec">
-<tr><td align="center" style="padding:20px 16px">
-<table width="600" cellspacing="0" cellpadding="0" style="max-width:600px;width:100%">
-
-  <!-- Header -->
-  <tr><td style="background:${BLUE};border-radius:8px 8px 0 0;padding:0">
-    <table width="100%" cellspacing="0" cellpadding="0"><tr>
-      <td style="background:#fff;padding:10px 20px;width:40%;border-radius:8px 0 0 0">
-        <div style="font-size:18px;font-weight:800;color:${RED}">Hemköp</div>
-        <div style="font-size:10px;font-weight:700;color:${BLUE};letter-spacing:.1em">ÖSTENSSONS</div>
-      </td>
-      <td style="padding:12px 20px;background:${BLUE}">
-        <div style="color:#fff;font-size:14px;font-weight:600">${storeName}</div>
-        <div style="color:rgba(255,255,255,.7);font-size:11px;margin-top:2px">${periodLabel}</div>
-      </td>
-    </tr></table>
-    <div style="background:${RED};height:3px"></div>
-  </td></tr>
-
-  <!-- Body -->
-  <tr><td style="background:#fff;padding:20px;border-radius:0 0 8px 8px">
-    ${(pdfMode==='week'||pdfMode==='both')?kpiRow(wData,`Nyckeltal — föregående vecka${wData?.pk?' ('+wData.pk+')':''}`):''}
-    ${(pdfMode==='period'||pdfMode==='both')&&aData?kpiRow(aData,`Nyckeltal — ackumulerat (${periodLabel})`):''}
-    <h3 style="color:${BLUE};font-size:13px;margin:20px 0 8px">Avdelningsöversikt</h3>
-    ${deptsHTML}
-  </td></tr>
-
-  <!-- Footer -->
-  <tr><td style="padding:12px 0;text-align:center;font-size:10px;color:${GR}">
-    Östenssons Butiksportal · Konfidentiell · ${new Date().toLocaleDateString('sv-SE')}
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body></html>`;
 }
 
+function hFD(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procF(e.dataTransfer.files[0]);}
+function hFF(e){if(e.target.files[0])procF(e.target.files[0]);}
 
-// Hämta alla period_keys för en period (stöder bokslutsår över två kalenderår)
-function getPeriodKeys(period) {
-  const keys = [];
-  const yFrom = period.yearFrom || period.year;
-  const yTo   = period.yearTo   || period.year;
-  if(yFrom === yTo) {
-    for(let w = period.weekFrom; w <= period.weekTo; w++)
-      keys.push(`${yFrom}-V${String(w).padStart(2,'0')}`);
-  } else {
-    // År 1: från weekFrom till vecka 52/53
-    const maxW1 = Object.keys(REPORT_DB).filter(k=>k.startsWith(yFrom+'-V')).length > 0
-      ? Math.max(...Object.keys(REPORT_DB).filter(k=>k.startsWith(yFrom+'-V')).map(k=>parseInt(k.split('-V')[1])))
-      : 52;
-    for(let w = period.weekFrom; w <= Math.max(maxW1, 52); w++)
-      keys.push(`${yFrom}-V${String(w).padStart(2,'0')}`);
-    // År 2: från vecka 1 till weekTo
-    for(let w = 1; w <= period.weekTo; w++)
-      keys.push(`${yTo}-V${String(w).padStart(2,'0')}`);
-  }
-  return keys.filter(k => REPORT_DB[k]); // bara veckor med data
-}
+function procF(file){
+  const prog=document.getElementById('fp'),pmsg=document.getElementById('fpm'),pbar=document.getElementById('fp-progress'),bar=document.getElementById('fp-bar');
+  if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
+  const reader=new FileReader();
+  reader.onload=async function(ev){
+    try{
+      pmsg.textContent='Identifierar fil...';
+      const wb=XLSX.read(ev.target.result,{type:'array'});
 
-// Hämta ackumulerad data för en period (stöder bokslutsår)
-function getAccForPeriod(storeId, period) {
-  const keys = getPeriodKeys(period);
-  if(!keys.length) return null;
-  let totF=0, totBvKr=0, totAntal=0, forsaljningDeltas=[], antalDeltas=[], deptAcc={}, found=0;
-  keys.forEach(pk => {
-    const pd = REPORT_DB[pk]?.[storeId];
-    if(!pd) return;
-    found++;
-    totF     += pd.forsaljning  || 0;
-    totBvKr  += pd.bvKr        || 0;
-    totAntal += pd.antalSt     || 0;
-    if(pd.forsaljningDelta!=null) forsaljningDeltas.push(pd.forsaljningDelta);
-    if(pd.antalDelta!=null)       antalDeltas.push(pd.antalDelta);
-    (pd.depts||[]).forEach(d => {
-      if(!deptAcc[d.code]) deptAcc[d.code]={code:d.code,name:d.name,forsaljning:0,bvKr:0,antalDeltas:[],forsaljningDeltas:[]};
-      deptAcc[d.code].forsaljning += d.forsaljning||0;
-      deptAcc[d.code].bvKr       += d.bvKr||0;
-      if(d.forsaljningDelta!=null) deptAcc[d.code].forsaljningDeltas.push(d.forsaljningDelta);
-      if(d.antalDelta!=null)       deptAcc[d.code].antalDeltas.push(d.antalDelta);
-    });
-  });
-  if(!found) return null;
-  const bvPct = totF > 0 ? totBvKr/totF : null;
-  const forsaljningDelta = forsaljningDeltas.length ? forsaljningDeltas.reduce((a,b)=>a+b,0)/forsaljningDeltas.length : null;
-  const antalDelta       = antalDeltas.length       ? antalDeltas.reduce((a,b)=>a+b,0)/antalDeltas.length             : null;
-  const depts = Object.values(deptAcc).map(d => ({
-    ...d,
-    bvPct: d.forsaljning>0 ? d.bvKr/d.forsaljning : null,
-    forsaljningDelta: d.forsaljningDeltas.length ? d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length : null,
-    antalDelta: d.antalDeltas.length ? d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length : null,
-  })).sort((a,b)=>(a.code||'').localeCompare(b.code||''));
-  return {forsaljning:totF, bvKr:totBvKr, bvPct, forsaljningDelta, antalDelta, antalSt:totAntal, depts, weeks:found, periodName:period.name};
-}
+      // Validera filtyp
+      const detected = identifyFile(wb);
+      if(detected.type === 'svinn') {
+        wrongFileError(pmsg, detected, 'bib', 'BIB_HEM06 Försäljningsrapport');
+        return;
+      }
+      if(detected.type === 'os20') {
+        wrongFileError(pmsg, detected, 'bib', 'BIB_HEM06 Försäljningsrapport');
+        return;
+      }
 
+      // Hitta alla veckoflikar — format YYYYWW (t.ex. 202618)
+      const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
+      if(!weekSheets.length){
+        // En-flik fil — kolla om det är HGR eller BIB
+        prog.style.display='none';
+        if(detected.type === 'hgr') {
+          // Identifiera butik från filen innan uppladdning
+          const ws0 = wb.Sheets[wb.SheetNames[0]];
+          const rows0 = XLSX.utils.sheet_to_json(ws0,{header:1,defval:null,range:'A1:C10'});
+          let detectedStore = null;
+          for(const r of rows0){
+            if(r[1] && typeof r[1]==='number' && Object.keys(STORES).includes(String(r[1]))){
+              detectedStore = {id:String(r[1]),name:STORES[String(r[1])]||String(r[1])};
+              break;
+            }
+          }
+          if(detectedStore) {
+            pmsg.textContent = `Identifierad butik: ${detectedStore.name}`;
+          }
+          await doHGRUpload(wb, file.name);
+        } else {
+          showBIBWeekPicker(wb, file.name);
+        }
+        return;
+      }
 
+      // Flerfliks-fil — kolla om det är HGR eller BIB
+      if(detected.type === 'hgr') {
+        await doHGRUpload(wb, file.name);
+        return;
+      }
+      const nya=weekSheets.filter(s=>!REPORT_DB[sheetToPK(s)]);
+      const finns=weekSheets.filter(s=>REPORT_DB[sheetToPK(s)]);
 
-// Hämta AO-data för en butik och avdelning i valda veckor
-function getAOData(storeId, deptCode, weeks) {
-  const wks = weeks && weeks.size > 0 ? weeks : new Set(Object.keys(AO_DB).sort().slice(-1));
-  let andel = [], antal = 0, spontan = 0, found = 0;
-  wks.forEach(pk => {
-    const d = AO_DB[pk]?.[storeId]?.[deptCode];
-    if(!d) return;
-    found++;
-    if(d.aoAndel != null) andel.push(d.aoAndel);
-    if(d.aoAntal  != null) antal   += d.aoAntal;
-    if(d.aoSpontan != null) spontan += d.aoSpontan;
-  });
-  if(!found) return null;
-  return {
-    aoAndel:  andel.length ? andel.reduce((a,b)=>a+b,0)/andel.length : null,
-    aoAntal:  antal,
-    aoSpontan:spontan,
+      if(nya.length===0){
+        pmsg.textContent=`Alla ${finns.length} veckor finns redan — inget nytt att ladda upp.`;
+        setTimeout(()=>prog.style.display='none',3000);
+        return;
+      }
+
+      if(pbar)pbar.style.display='block';
+      pmsg.textContent=`Läser ${nya.length} nya veckor (${finns.length} hoppar över)...`;
+
+      let done=0;
+      for(const sheetName of nya){
+        const pk=sheetToPK(sheetName);
+        const ws=wb.Sheets[sheetName];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        await parseBIBSheet(rows,pk);
+        done++;
+        if(bar)bar.style.width=`${Math.round(done/nya.length*100)}%`;
+        pmsg.textContent=`Sparar ${pk}... (${done}/${nya.length})`;
+      }
+
+      prog.style.display='none';
+      const skipMsg=finns.length?` · ${finns.length} redan uppladdade hoppades över`:'';
+      toast(`${nya.length} nya veckor inlästa${skipMsg} ✓`);
+      renderUploadFörsäljning();
+    }catch(err){if(pmsg)pmsg.textContent='Fel: '+err.message;console.error(err);}
   };
+  reader.readAsArrayBuffer(file);
 }
 
+function sheetToPK(sheetName){
+  const yr=sheetName.slice(0,4);
+  const wk=parseInt(sheetName.slice(4));
+  return periodKey(parseInt(yr),wk);
+}
 
-// ── AUTOORDER HELPERS ─────────────────────────────────────────────────
-function getLatestAOData(storeId) {
-  // Hitta senaste veckan med AO-data
-  const keys = Object.keys(AO_DB).sort();
-  for(let i = keys.length-1; i >= 0; i--) {
-    if(AO_DB[keys[i]]?.[storeId]) return { pk: keys[i], ...AO_DB[keys[i]][storeId] };
+// Veckoväljare för BIB-filer utan veckoflikar (en flik per butik)
+let _pendingBIBWorkbook = null;
+
+function showBIBWeekPicker(wb, fileName) {
+  _pendingBIBWorkbook = wb;
+  const cw = getWeekNum(new Date()), cy = new Date().getFullYear();
+  const prog = document.getElementById('fp'), pmsg = document.getElementById('fpm');
+  if(prog) prog.style.display = 'block';
+  if(pmsg) pmsg.innerHTML = `
+    <div style="font-weight:600;margin-bottom:.625rem">📊 ${fileName}</div>
+    <div style="font-size:12px;color:var(--ö-muted);margin-bottom:.875rem">Filen innehåller inte veckoinformation — ange vilken period rapporten avser:</div>
+    <div style="display:flex;gap:.625rem;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--ö-muted);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">År</label>
+        <input type="number" id="bib-yr" value="${cy}" style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:6px;padding:6px 9px;font-family:'SF Mono',monospace;font-size:14px;font-weight:600;outline:none;width:85px;transition:border-color .15s" onfocus="this.style.borderColor='var(--ö-mid)'" onblur="this.style.borderColor='var(--ö-border)'">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--ö-muted);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Vecka</label>
+        <input type="number" id="bib-wk" value="${cw}" min="1" max="53" style="background:var(--ö-card);border:1px solid var(--ö-border);border-radius:6px;padding:6px 9px;font-family:'SF Mono',monospace;font-size:14px;font-weight:600;outline:none;width:72px;transition:border-color .15s" onfocus="this.style.borderColor='var(--ö-mid)'" onblur="this.style.borderColor='var(--ö-border)'" onkeydown="if(event.key==='Enter')confirmBIBUpload()">
+      </div>
+      <button class="btn-g" onclick="confirmBIBUpload()" style="padding:7px 18px">Ladda upp →</button>
+      <button class="btn-sm" onclick="document.getElementById('fp').style.display='none';_pendingBIBWorkbook=null" style="padding:7px 12px">Avbryt</button>
+    </div>
+    <div id="bib-conflict" style="display:none;margin-top:.625rem;padding:.5rem .75rem;background:#fef0dc;border-radius:6px;font-size:12px;color:#944f00"></div>`;
+}
+
+async function confirmBIBUpload() {
+  const yr = parseInt(document.getElementById('bib-yr')?.value);
+  const wk = parseInt(document.getElementById('bib-wk')?.value);
+  if(!yr||!wk||wk<1||wk>53){toast('Ange ett giltigt år och vecka');return;}
+  const pk = periodKey(yr, wk);
+  const conflict = document.getElementById('bib-conflict');
+
+  if(REPORT_DB[pk]) {
+    if(conflict) {
+      conflict.style.display = 'block';
+      conflict.innerHTML = `⚠ ${pk} finns redan. <button class="btn-sm green" onclick="doBIBUpload(true)" style="margin-left:8px">Ersätt med ny data</button> <button class="btn-sm" onclick="document.getElementById('bib-conflict').style.display='none';document.getElementById('fp').style.display='none';_pendingBIBWorkbook=null" style="margin-left:4px">Avbryt</button>`;
+    }
+    return;
+  }
+  await doBIBUpload(false);
+}
+
+async function doBIBUpload(force) {
+  const yr = parseInt(document.getElementById('bib-yr')?.value);
+  const wk = parseInt(document.getElementById('bib-wk')?.value);
+  const pk = periodKey(yr, wk);
+  const pmsg = document.getElementById('fpm');
+  if(pmsg) pmsg.innerHTML = `<span>Läser alla butiksflikar för ${pk}...</span>`;
+
+  const wb = _pendingBIBWorkbook;
+  if(!wb) return;
+
+  // BIB-filen har EN flik med alla butiker efter varandra (rad för rad)
+  const pd = {};
+  let lastStore = null, lastDept = null;
+  let butikCount=0, avdCount=0, artCount=0;
+
+  for(const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+
+    // Debug: logga de 5 första raderna
+    console.log(`[BIB] Flik: "${sheetName}", ${rows.length} rader`);
+    rows.slice(0,5).forEach((r,i)=>{
+      const vals = r.map((v,j)=>v!=null?`[${j}]=${JSON.stringify(v)}`:'').filter(Boolean);
+      console.log(`  rad${i+1}: ${vals.join(', ')}`);
+    });
+
+    for(const row of rows) {
+      const c0=row[0], c1=row[1], c2=row[2], c3=row[3];
+      const c0str = c0!=null ? String(c0).trim() : '';
+      const c2str = c2!=null ? String(c2).trim() : '';
+
+      if(c0!=null && c0str.match(/^\d{4}$/) && c1!=null) {
+        lastStore = c0str; lastDept = null; butikCount++;
+        pd[lastStore] = {name:c1,
+          forsaljning:     row[6]!=null?parseFloat(row[6]):null,
+          forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+          antalSt:         row[8]!=null?parseFloat(row[8]):null,
+          antalDelta:      row[9]!=null?parseFloat(row[9]):null,
+          bvKr:            row[10]!=null?parseFloat(row[10]):null,
+          bvPct:           row[11]!=null?parseFloat(row[11]):null,
+          depts:[]};
+      } else if(lastStore && c0==null && c1==null && c2!=null && c2str.match(/^\d{1,2}$/) && c3!=null) {
+        lastDept = c2str.padStart(2,'0'); avdCount++;
+        {
+          const _dF=row[6]!=null?parseFloat(row[6]):null;
+          const _dFD=row[7]!=null?parseFloat(row[7]):null;
+          const _dBvKr=row[10]!=null?parseFloat(row[10]):null;
+          const _dBvPct=row[11]!=null?parseFloat(row[11]):null;
+          const _dBvPctFgAr=row[12]!=null?parseFloat(row[12]):null;
+          const _dFFgAr=_dF!=null&&_dFD!=null?_dF/(1+_dFD):null;
+          const _dBvKrFgAr=_dFFgAr!=null&&_dBvPctFgAr!=null?_dFFgAr*_dBvPctFgAr:null;
+          const _dBvKrDelta=_dBvKr!=null&&_dBvKrFgAr!=null?_dBvKr-_dBvKrFgAr:null;
+          pd[lastStore].depts.push({code:lastDept, name:c3,
+            forsaljning:_dF, forsaljningDelta:_dFD,
+            antalSt:row[8]!=null?parseFloat(row[8]):null,
+            antalDelta:row[9]!=null?parseFloat(row[9]):null,
+            bvKr:_dBvKr, bvPct:_dBvPct,
+            bvPctFgAr:_dBvPctFgAr, bvKrFgAr:_dBvKrFgAr, bvKrDelta:_dBvKrDelta});
+        }
+      } else if(lastStore && lastDept && c0==null && c1==null && c2==null && c3==null && row[4]!=null && row[5]!=null) {
+        const ean = String(row[5]).trim();
+        if(ean.match(/^\d{6,14}$/)){
+          const _eanData={dept:lastDept, oms:row[6]!=null?parseFloat(row[6]):0, bvKr:row[10]!=null?parseFloat(row[10]):0, namn:row[4]||''};
+          EAN_DEPT_MAP[ean]=_eanData;
+          // Spara per butik
+          if(lastStore){
+            if(!EAN_BY_STORE[lastStore]) EAN_BY_STORE[lastStore]={};
+            EAN_BY_STORE[lastStore][ean]=_eanData;
+          }
+          artCount++;
+        }
+      }
+    }
+  }
+  console.log(`[BIB] Resultat: ${butikCount} butiker, ${avdCount} avdelningar, ${artCount} EAN-koder`);
+
+  REPORT_DB[pk] = pd;
+  Object.entries(pd).forEach(([id,d]) => getSD(id).reportData = d);
+  await saveReportPeriod(pk);
+  if(Object.keys(EAN_DEPT_MAP).length>0){
+    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,updated_at:new Date().toISOString()});
+  }
+  _pendingBIBWorkbook = null;
+  document.getElementById('fp').style.display = 'none';
+  const sc = Object.keys(pd).length;
+  const dc = Object.values(pd).reduce((s,d)=>s+(d.depts?.length||0),0);
+  const eanCount = Object.keys(EAN_DEPT_MAP).length;
+  toast(`${pk} inläst — ${sc} butiker, ${dc} avd, ${eanCount} EAN-koder ✓`);
+  renderUploadFörsäljning();
+}
+
+// EAN → {deptCode, oms} mappning
+let EAN_DEPT_MAP = {}; // ean → {dept, oms}
+
+async function parseBIBSheet(rows,pk){
+  const pd={};let cs=null, curDept=null;
+  for(const row of rows){
+    const c0=row[0],c1=row[1],c2=row[2],c3=row[3];
+    if(c0&&String(c0).trim().match(/^\d{4}$/)&&c1){
+      cs=String(c0).trim();curDept=null;
+      pd[cs]={name:c1,
+        forsaljning:   row[6]!=null?parseFloat(row[6]):null,
+        forsaljningDelta:row[7]!=null?parseFloat(row[7]):null,
+        antalSt:       row[8]!=null?parseFloat(row[8]):null,
+        antalDelta:    row[9]!=null?parseFloat(row[9]):null,
+        bvKr:          row[10]!=null?parseFloat(row[10]):null,
+        bvPct:         row[11]!=null?parseFloat(row[11]):null,
+        depts:[]};
+    } else if(cs&&!c0&&!c1&&c2&&String(c2).trim().match(/^\d{1,2}$/)&&c3){
+      // Avdelningsrad
+      curDept=String(c2).trim().padStart(2,'0');
+      {
+        const dF  = row[6]!=null?parseFloat(row[6]):null;
+        const dFD = row[7]!=null?parseFloat(row[7]):null;
+        const dBvKr = row[10]!=null?parseFloat(row[10]):null;
+        const dBvPct = row[11]!=null?parseFloat(row[11]):null;
+        const dBvPctFgAr = row[12]!=null?parseFloat(row[12]):null;
+        const dFFgAr = dF!=null&&dFD!=null ? dF/(1+dFD) : null;
+        const dBvKrFgAr = dFFgAr!=null&&dBvPctFgAr!=null ? dFFgAr*dBvPctFgAr : null;
+        const dBvKrDelta = dBvKr!=null&&dBvKrFgAr!=null ? dBvKr-dBvKrFgAr : null;
+        pd[cs].depts.push({code:curDept,name:c3,
+          forsaljning:dF, forsaljningDelta:dFD,
+          antalSt:row[8]!=null?parseFloat(row[8]):null,
+          antalDelta:row[9]!=null?parseFloat(row[9]):null,
+          bvKr:dBvKr, bvPct:dBvPct,
+          bvPctFgAr:dBvPctFgAr, bvKrFgAr:dBvKrFgAr, bvKrDelta:dBvKrDelta});
+      }
+    } else if(cs&&curDept&&!c0&&!c1&&!c2&&!c3&&row[4]&&row[5]){
+      // Artikelrad: kol[4]=namn, kol[5]=artnr, kol[6]=oms, kol[10]=bvKr
+      const ean=String(row[5]).trim();
+      if(ean && ean.match(/^\d{6,14}$/)){
+        const _e2={dept:curDept, oms:row[6]!=null?parseFloat(row[6]):0, bvKr:row[10]!=null?parseFloat(row[10]):0, namn:row[4]||''};
+        EAN_DEPT_MAP[ean]=_e2;
+        if(cs){if(!EAN_BY_STORE[cs])EAN_BY_STORE[cs]={};EAN_BY_STORE[cs][ean]=_e2;}
+      }
+    }
+  }
+  REPORT_DB[pk]=pd;
+  Object.entries(pd).forEach(([id,d])=>getSD(id).reportData=d);
+  await saveReportPeriod(pk);
+  // Spara EAN-mappningen så den överlever refresh
+  if(Object.keys(EAN_DEPT_MAP).length>0){
+    await sbUpsert('kpi_config',{id:'global',config:KPI_CONFIG,ean_dept_map:EAN_DEPT_MAP,ean_by_store:EAN_BY_STORE,updated_at:new Date().toISOString()});
+  }
+}
+
+// ── PARSER: 9A ÖS20 (en flik = en vecka) ─────────────
+// Butiksnamnsmapping: OS20 använder långa namn, vi matchar mot butiksId
+const OS20_STORE_MAP={
+  'HEMKÖP BORENSBERG':        '4734',
+  'HEMKÖP LINKÖPING ULLSTÄMM':'4738',
+  'HEMKÖP LKPG FOLKUNGAVALLE':'4757',
+  'HEMKÖP MOTALA VÄSTER':     '4732',
+  'HEMKÖP MOTALA VERKSTAN':   '4730',
+  'HEMKÖP NORRK BJÖRKALUND':  '4756',
+  'HEMKÖP SKÄNNINGE':         '4737',
+  'HEMKÖP VADSTENA MIMA':     '4736',
+  'HEMKÖP VADSTENA STARBY':   '4735',
+};
+
+function matchOS20Store(name){
+  if(!name)return null;
+  const n=String(name).toUpperCase().trim();
+  for(const [key,id] of Object.entries(OS20_STORE_MAP)){
+    if(n.startsWith(key))return id;
   }
   return null;
 }
 
-function getAODeptData(storeId, deptCode) {
-  const ao = getLatestAOData(storeId);
-  return ao?.depts?.[deptCode] || null;
-}
+function hOS20D(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procOS20(e.dataTransfer.files[0]);}
+function hOS20F(e){if(e.target.files[0])procOS20(e.target.files[0]);}
 
-function fmtAOPct(v) {
-  if(v == null) return '—';
-  return (v * 100).toFixed(1) + '%';
-}
+function procOS20(file){
+  const prog=document.getElementById('os20p'),pmsg=document.getElementById('os20pm'),pbar=document.getElementById('os20-progress'),bar=document.getElementById('os20-bar');
+  if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
+  const reader=new FileReader();
+  reader.onload=async function(ev){
+    try{
+      pmsg.textContent='Identifierar veckoflikar...';
+      const wb=XLSX.read(ev.target.result,{type:'array'});
 
-
-// Beräkna BV kr delta mot föregående år
-// bvKrFgAr saknas i datan — räkna ut: forsaljningFgAr × (bvPct - bvDelta)
-function calcBvKrDelta(d) {
-  if(!d) return null;
-  const bvKr = d.bvKr;
-  if(bvKr == null) return null;
-  // Försök direkt om bvKrFgAr finns
-  if(d.bvKrFgAr != null) return bvKr - d.bvKrFgAr;
-  // Räkna fram: forsaljningFgAr × (bvPct - bvDelta)
-  const forsaljningFgAr = d.forsaljningFgAr;
-  const bvPctRaw = d.bvPct;
-  const bvDeltaRaw = d.bvDelta;
-  if(forsaljningFgAr == null || bvPctRaw == null || bvDeltaRaw == null) return bvKr; // visa utfall om vi inte kan beräkna
-  const bvPct    = Math.abs(bvPctRaw)  > 1 ? bvPctRaw/100  : bvPctRaw;
-  const bvDelta  = Math.abs(bvDeltaRaw)> 1 ? bvDeltaRaw/100: bvDeltaRaw;
-  const bvPctFgAr = bvPct - bvDelta;
-  const bvKrFgAr  = forsaljningFgAr * bvPctFgAr;
-  return bvKr - bvKrFgAr;
-}
-
-function getStoreCoords(storeId) {
-  const sd = getSD(storeId);
-  return sd.location || DEFAULT_COORDS[storeId] || null;
-}
-
-// Hämta 10-dygnsprognos från YR/met.no
-async function fetchWeather(storeId) {
-  const coords = getStoreCoords(storeId);
-  if(!coords) return null;
-  try {
-    const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${coords.lat}&lon=${coords.lon}`;
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': 'OstenssonsButiksportal/1.0 gustaf.lindblad@hemkop.se' }
-    });
-    if(!resp.ok) return null;
-    const data = await resp.json();
-    return parseWeatherForecast(data);
-  } catch(e) {
-    console.error('Weather fetch error:', e);
-    return null;
-  }
-}
-
-// Parsa YR-data till 10 dagars prognos
-function parseWeatherForecast(data) {
-  const timeseries = data?.properties?.timeseries || [];
-  const days = {};
-  timeseries.forEach(ts => {
-    const d = ts.time.slice(0, 10);
-    const hour = parseInt(ts.time.slice(11, 13));
-    if(!days[d]) days[d] = { date: d, temps: [], winds: [], symbols: [], precip: 0 };
-    const inst = ts.data.instant.details;
-    days[d].temps.push(inst.air_temperature);
-    days[d].winds.push(inst.wind_speed);
-    // Symbolkod från 6h-prognos (eller 12h om saknas)
-    const sym = ts.data.next_6_hours?.summary?.symbol_code
-             || ts.data.next_12_hours?.summary?.symbol_code
-             || ts.data.next_1_hours?.summary?.symbol_code;
-    if(sym) days[d].symbols.push(sym);
-    const p6 = ts.data.next_6_hours?.details?.precipitation_amount || 0;
-    days[d].precip += p6;
-  });
-  return Object.values(days).slice(0, 10).map(d => ({
-    date: d.date,
-    maxTemp: d.temps.length ? Math.round(Math.max(...d.temps)) : null,
-    minTemp: d.temps.length ? Math.round(Math.min(...d.temps)) : null,
-    windAvg: d.winds.length ? Math.round(d.winds.reduce((a,b)=>a+b,0)/d.winds.length) : null,
-    symbol: d.symbols[Math.floor(d.symbols.length/2)] || d.symbols[0] || 'cloudy',
-    precip: Math.round(d.precip * 10) / 10,
-  }));
-}
-
-// Väderikon som SVG-emoji-fallback baserat på symbol_code
-function weatherIcon(symbol) {
-  if(!symbol) return '🌡';
-  const s = symbol.toLowerCase();
-  if(s.includes('clearsky') || s.includes('fair'))            return '☀️';
-  if(s.includes('partlycloudy') || s.includes('partly'))      return '⛅';
-  if(s.includes('cloudy'))                                     return '☁️';
-  if(s.includes('fog'))                                        return '🌫️';
-  if(s.includes('thunder') || s.includes('storm'))            return '⛈️';
-  if(s.includes('snow') || s.includes('sleet'))               return '🌨️';
-  if(s.includes('rain') || s.includes('shower'))              return '🌧️';
-  return '🌡️';
-}
-
-
-// PDF-säker formattering — jsPDF/Helvetica stöder bara ASCII
-// toLocaleString('sv-SE') ger U+00A0 (non-breaking space) och U+2212 (minus) som inte stöds
-function pdfFmtKr(val) {
-  if(val==null) return '—';
-  const neg = val < 0;
-  const abs = Math.round(Math.abs(val));
-  // Tusenavgränsare med vanligt mellanrum
-  const formatted = abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  return (neg ? '-' : '+') + formatted + ' kr';
-}
-function pdfFmtPct(val) {
-  if(val==null) return '—';
-  return (val>=0?'+':'') + (val*100).toFixed(1) + '%';
-}
-function pdfFmtPctAbs(val) {
-  if(val==null) return '—';
-  return (val*100).toFixed(1) + '%';
-}
-
-// ── MÅL- OCH ACTIONSRAPPORT ──────────────────────────────────────────
-function _buildGoalsPDF(storeId, includeActions) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const sd = getSD(storeId);
-  const storeName = STORES[storeId] || storeId;
-  const W = 210, M = 14;
-  const BLUE = [0,47,109], RED = [226,0,0], DK = [26,26,24], GR = [107,104,96];
-  const BEIGE = [233,229,224], WHITE = [255,255,255], LTGRAY = [245,243,239];
-  const GREEN = [42,110,20], AMBER = [180,90,0], REDD = [180,30,30];
-
-  let y = 0;
-
-  // ── HEADER ──────────────────────────────────────────────────────────
-  doc.setFillColor(...BLUE); doc.rect(0, 0, W, 18, 'F');
-  doc.setFillColor(...RED);  doc.rect(0, 16, W, 2, 'F');
-  doc.setTextColor(...WHITE); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-  doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-  doc.text(storeName, W - M, 8, { align: 'right' });
-  doc.text('Genererad ' + new Date().toLocaleDateString('sv-SE'), W - M, 13.5, { align: 'right' });
-  y = 26;
-
-  // ── BUTIKSTITEL ──────────────────────────────────────────────────────
-  doc.setTextColor(...BLUE); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-  doc.text(storeName, M, y); y += 5;
-  doc.setTextColor(...GR); doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-  doc.text('Mål' + (includeActions ? ' & Actions' : ''), M, y); y += 8;
-
-  // ── BUTIKSMÅL (KPI-tiles, bara mål) ─────────────────────────────────
-  doc.setFillColor(...BLUE); doc.rect(M, y, W - 2*M, 8, 'F');
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...WHITE);
-  doc.text('Butiksmål', M + 4, y + 5.5);
-  y += 10;
-
-  const kpis = KPI_LIBRARY.filter(k => KPI_CONFIG[k.key]?.visible);
-  const cols = 3, tW = (W - 2*M - (cols - 1) * 3) / cols, tH = 16;
-  kpis.forEach((k, i) => {
-    const col = i % cols, row = Math.floor(i / cols);
-    const tx = M + col * (tW + 3), ty = y + row * (tH + 3);
-    const goal = sd.storeGoals[k.key];
-    const goalStr = goal != null
-      ? goal + (k.fmt === 'kr' ? ' kr' : k.fmt === 'num' ? ' st' : '%')
-      : '—';
-    doc.setFillColor(...BEIGE); doc.roundedRect(tx, ty, tW, tH, 2, 2, 'F');
-    doc.setTextColor(...GR); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
-    doc.text(k.label.toUpperCase(), tx + 3, ty + 5);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
-    doc.text(goalStr, tx + 3, ty + 12);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
-    doc.text('Mål', tx + 3, ty + 15.5);
-  });
-  y += Math.ceil(kpis.length / cols) * (tH + 3) + 6;
-
-  // ── AVDELNINGSÖVERSIKT ───────────────────────────────────────────────
-  if (y > 240) { doc.addPage(); y = 20; }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DK);
-  doc.text('Avdelningsmål' + (includeActions ? ' & Actions' : ''), M, y); y += 5;
-
-  const active = DEPTS.filter(d => sd.deptGoals[d.code]?.active);
-
-  active.forEach(d => {
-    const dg = sd.deptGoals[d.code];
-    const acts = (sd.actions[d.code] || []);
-    const hasActs = includeActions && acts.length > 0;
-
-    // Estimera höjd
-    let estH = 7 + 16 + 4; // rubrik + KPI-rad + luft
-    if (hasActs) estH += 5.5 + acts.length * 6.5;
-    if (y + estH > 278) { doc.addPage(); y = 20; }
-
-    // Avdelningsrubrik
-    doc.setFillColor(...BLUE); doc.rect(M, y, W - 2*M, 7, 'F');
-    doc.setTextColor(...WHITE); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text(d.name + '  (avd.' + d.code + ')', M + 3, y + 4.8);
-    y += 7;
-
-    // KPI-mål-boxar (4 st: Oms, Antal, Marginal BV%, Känt svinn)
-    const dKpis = [
-      { label: 'Omsättning',    goal: dg.oms,      unit: '%' },
-      { label: 'Antal sålda',   goal: dg.antal,    unit: '%' },
-      { label: 'Marginal BV%',  goal: dg.marginal, unit: '%' },
-      { label: 'Känt svinn',    goal: dg.svinn,    unit: '%' },
-    ];
-    const bW = (W - 2*M) / dKpis.length, bH = 16;
-    dKpis.forEach((k, i) => {
-      const tx = M + i * bW;
-      doc.setFillColor(...LTGRAY); doc.rect(tx, y, bW, bH, 'F');
-      if (i > 0) {
-        doc.setDrawColor(...BEIGE); doc.setLineWidth(0.3);
-        doc.line(tx, y, tx, y + bH);
+      // Validera filtyp
+      const detectedOS = identifyFile(wb);
+      if(detectedOS.type === 'svinn') {
+        wrongFileError(pmsg, detectedOS, 'os20', '9A ÖS20 Försäljning & driftläckage');
+        return;
       }
-      doc.setTextColor(...GR); doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
-      doc.text(k.label.toUpperCase(), tx + 3, y + 4.5);
-      const goalStr = k.goal != null ? k.goal + k.unit : '—';
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...BLUE);
-      doc.text(goalStr, tx + 3, y + 11);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR);
-      doc.text('Mål', tx + 3, y + 15);
-    });
-    y += bH;
+      if(detectedOS.type === 'bib' || detectedOS.type === 'bib_multi') {
+        wrongFileError(pmsg, detectedOS, 'os20', '9A ÖS20 Försäljning & driftläckage');
+        return;
+      }
 
-    // Actions (om valda)
-    if (hasActs) {
-      doc.setFillColor(...BEIGE); doc.rect(M, y, W - 2*M, 5.5, 'F');
-      doc.setTextColor(...BLUE); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
-      doc.text('ACTIONS', M + 3, y + 3.8);
-      y += 5.5;
-      acts.forEach(a => {
-        const txt = a.text + (a.cond ? '  |  ' + a.cond : '');
-        const lines = doc.splitTextToSize(txt, W - 2*M - 14);
-        const rowH = Math.max(6, lines.length * 4.5 + 3);
-        if (y + rowH > 278) { doc.addPage(); y = 20; }
+      const weekSheets=wb.SheetNames.filter(n=>n.match(/^\d{6}$/));
 
-        doc.setFillColor(a.done ? 245 : 250, a.done ? 250 : 249, a.done ? 245 : 246);
-        doc.rect(M, y, W - 2*M, rowH, 'F');
-        doc.setDrawColor(...BEIGE); doc.setLineWidth(0.2);
-        doc.rect(M, y, W - 2*M, rowH);
+      if(!weekSheets.length){pmsg.textContent='Hittade inga veckoflikar (format YYYYVV)';return;}
 
-        // Checkbox
-        const bx = M + 3, by = y + 1.8, bs = 3.2;
-        doc.setDrawColor(a.done ? GREEN[0] : 100, a.done ? GREEN[1] : 100, a.done ? GREEN[2] : 100);
-        doc.setLineWidth(0.4); doc.rect(bx, by, bs, bs);
-        if (a.done) {
-          doc.setDrawColor(...GREEN); doc.setLineWidth(0.5);
-          doc.line(bx + 0.5, by + 1.6, bx + 1.3, by + 2.6);
-          doc.line(bx + 1.3, by + 2.6, bx + 2.7, by + 0.5);
-        }
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-        doc.setTextColor(...DK); doc.text(lines, M + 9, y + 4.2);
-        y += rowH;
-      });
-    }
-    y += 4;
-  });
+      const nya=weekSheets.filter(s=>!OS20_DB[sheetToPK(s)]);
+      const finns=weekSheets.filter(s=>OS20_DB[sheetToPK(s)]);
 
-  // ── FOOTER ───────────────────────────────────────────────────────────
-  const pages = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i);
-    doc.setFillColor(...BEIGE); doc.rect(0, 287, W, 10, 'F');
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GR);
-    doc.text('Konfidentiell  ·  ' + storeName, M, 293);
-    doc.text('Sida ' + i + ' av ' + pages, W - M, 293, { align: 'right' });
-  }
+      if(nya.length===0){
+        pmsg.textContent=`Alla ${finns.length} veckor finns redan.`;
+        setTimeout(()=>prog.style.display='none',3000);return;
+      }
 
-  return doc;
+      if(pbar)pbar.style.display='block';
+      let done=0;
+      for(const sheetName of nya){
+        const pk=sheetToPK(sheetName);
+        const ws=wb.Sheets[sheetName];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        await parseOS20Sheet(rows,pk);
+        done++;
+        if(bar)bar.style.width=`${Math.round(done/nya.length*100)}%`;
+        pmsg.textContent=`Sparar ${pk}... (${done}/${nya.length})`;
+      }
+
+      prog.style.display='none';
+      const skipMsg=finns.length?` · ${finns.length} hoppades över`:'';
+      toast(`${nya.length} ÖS20-veckor inlästa${skipMsg} ✓`);
+      renderUploadFörsäljning();
+    }catch(err){if(pmsg)pmsg.textContent='Fel: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
 }
 
-function generateGoalsPDF(storeId) {
-  const includeActions = document.getElementById('goals-pdf-actions-' + storeId)?.checked ?? true;
-  const storeName = STORES[storeId] || storeId;
-  const doc = _buildGoalsPDF(storeId, includeActions);
-  if (!doc) return;
-  const date = new Date().toLocaleDateString('sv-SE').replace(/\//g, '-');
-  const suffix = includeActions ? '_Mal_Actions' : '_Mal';
-  doc.save('Rapport_' + storeName.replace(/\s+/g, '_') + suffix + '_' + date + '.pdf');
-  toast('PDF nedladdad ✓');
-}
-
-function _buildPDFDoc(storeId,pdfMode){
-  const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const isTotal = storeId === TOTAL_ID;
-  // For total: use first store's goals as reference, aggregate dept data
-  const sd=isTotal
-    ? {storeGoals:Object.values(DB)[0]?.storeGoals||{oms:7,marginal:26.2,svinn_k:0.7,antal:5,kvitton:5,snittKop:180,driftlackage:3.5,kundkorg:8,medlems:80,emv:20,eko:5},
-       deptGoals:{},actions:{},emails:getSD(TOTAL_ID)?.emails||[]}
-    : getSD(storeId);
-
-  // For total: build aggregated dept summary
-  function getTotalDeptSummary(wks) {
-    const acc = {};
-    const storeIds = Object.keys(STORES);
-    wks.forEach(pk => {
-      storeIds.forEach(sid => {
-        const pd = REPORT_DB[pk]?.[sid];
-        if(!pd) return;
-        (pd.depts||[]).forEach(d => {
-          if(!acc[d.code]) acc[d.code] = {code:d.code, name:d.name, forsaljning:0, bvKr:0, forsaljningDeltas:[], antalDeltas:[]};
-          acc[d.code].forsaljning += d.forsaljning||0;
-          acc[d.code].bvKr       += d.bvKr||0;
-          if(d.forsaljningDelta!=null) acc[d.code].forsaljningDeltas.push(d.forsaljningDelta);
-          if(d.antalDelta!=null)       acc[d.code].antalDeltas.push(d.antalDelta);
-        });
-      });
-    });
-    return Object.values(acc).map(d => ({
-      ...d,
-      bvPct: d.forsaljning>0 ? d.bvKr/d.forsaljning : null,
-      forsaljningDelta: d.forsaljningDeltas.length ? d.forsaljningDeltas.reduce((a,b)=>a+b,0)/d.forsaljningDeltas.length : null,
-      antalDelta: d.antalDeltas.length ? d.antalDeltas.reduce((a,b)=>a+b,0)/d.antalDeltas.length : null,
-    })).sort((a,b) => (a.code||'').localeCompare(b.code||''));
-  }
-  const storeName=isTotal?TOTAL_NAME:(STORES[storeId]||storeId);
-  const wData=isTotal ? getTotalData(new Set(Object.keys(REPORT_DB).sort().slice(-1))) : getLatestWeekData(storeId);
-  const aData=(pdfMode==='period'||pdfMode==='both')?(isTotal?getTotalData(selWeeks):getAccDataFromWeeks(storeId,selWeeks)):null;
-  const wksArr=[...selWeeks].sort();
-  const periodLabel=selWeeks.size===1?wksArr[0].replace('-V',' V'):selWeeks.size>1?`${wksArr[0].replace('-V',' V')}–${wksArr[wksArr.length-1].replace('-V',' V')}`:'—';
-  const W=210,M=14;
-
-  // Toolbox brand colors
-  const BLUE=[0,47,109],RED=[226,0,0],DK=[26,26,24],GR=[107,104,96];
-  const BEIGE=[233,229,224],LBLUE=[179,215,235],PINK=[251,219,217];
-  const WHITE=[255,255,255],LTGRAY=[245,243,239];
-  const GREEN=[42,110,20],AMBER=[180,90,0],REDD=[180,30,30];
-
-  function colorForVal(val,mål,lb){
-    if(val==null||mål==null)return GR;
-    const ratio=val/(mål/100);
-    if(lb) return ratio<=1.0?GREEN:ratio<=1.3?AMBER:REDD;
-    return ratio>=0.95?GREEN:ratio>=0.80?AMBER:REDD;
-  }
-
-  let y=0;
-
-  // ── HEADER ────────────────────────────────────────────
-  doc.setFillColor(...BLUE);doc.rect(0,0,W,18,'F');
-  doc.setFillColor(...RED);doc.rect(0,16,W,2,'F');
-  doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(10);
-  doc.text('ÖSTENSSONS BUTIKSPORTAL',M,8);
-  doc.setFont('helvetica','normal');doc.setFontSize(8);
-  doc.text(`${storeName}  ·  ${pdfMode==='week'?wData?.pk||'—':periodLabel}`,W-M,8,{align:'right'});
-  doc.text(`Genererad ${new Date().toLocaleDateString('sv-SE')}`,W-M,13.5,{align:'right'});
-  y=26;
-
-  // ── BUTIKSTITEL ───────────────────────────────────────
-  doc.setTextColor(...BLUE);doc.setFont('helvetica','bold');doc.setFontSize(16);
-  doc.text(storeName,M,y);y+=5;
-  doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(9);
-  const modeLabel=pdfMode==='week'?`Föregående vecka · ${wData?.pk||'—'}`:pdfMode==='period'?`Ackumulerat · ${periodLabel} · ${aData?.found||0} veckor`:`Vecka & Ackumulerat · ${periodLabel}`;
-  doc.text(modeLabel,M,y);y+=6;
-
-  // ── KPI TILES (matchar dashboardens primära tiles) ────
-  function kpiTiles(label){
-    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...DK);
-    doc.text(label,M,y);y+=4;
-    const kpis=KPI_LIBRARY.filter(k=>KPI_CONFIG[k.key]?.visible);
-    const cols=3,tW=(W-2*M-(cols-1)*3)/cols,tH=18;
-    kpis.forEach((k,i)=>{
-      const col=i%cols,row=Math.floor(i/cols);
-      const tx=M+col*(tW+3),ty=y+row*(tH+3);
-      const val=getKPIVal(k.key,storeId,viewMode==='period'?selWeeks:null);
-      const goal=sd.storeGoals[k.key];
-      const dispVal=fmtKPIVal(k,val);
-      const vColor=val!=null&&goal!=null?colorForVal(val,goal,k.lb):GR;
-      doc.setFillColor(...BEIGE);doc.roundedRect(tx,ty,tW,tH,2,2,'F');
-      doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(6.5);
-      doc.text(k.label.toUpperCase(),tx+3,ty+5);
-      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...vColor);
-      doc.text(dispVal,tx+3,ty+12);
-      doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(...GR);
-      doc.text(goal!=null?`Mål: ${goal}${k.fmt==='kr'?' kr':k.fmt==='num'?' st':'%'}`:'',tx+3,ty+16.5);
-    });
-    const rows=Math.ceil(kpis.length/cols);
-    y+=rows*(tH+3)+5;
-  }
-
-  // Ackumulerat ÖVERST (om tillgängligt och valt)
-  if((pdfMode==='period'||pdfMode==='both')&&aData&&selWeeks.size>0){
-    const wksArr2=[...selWeeks].sort();
-    const accLabel=selWeeks.size===1
-      ?wksArr2[0].replace('-V',' V')
-      :`${wksArr2[0].replace('-V',' V')} – ${wksArr2[wksArr2.length-1].replace('-V',' V')}`;
-    doc.setFillColor(...LBLUE);doc.rect(M,y,W-2*M,9,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...BLUE);
-    doc.text('Ackumulerat — '+accLabel,M+4,y+6.2);
-    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-    doc.text((aData.found||selWeeks.size)+' veckor',W-M-2,y+6.2,{align:'right'});
-    y+=11;
-    kpiTiles('');
-    if(y>220){doc.addPage();y=20;}
-  }
-
-
-  // ── ACKUMULERAT BOKSLUTSÅR ────────────────────────────────────────
-  const activePeriod = PERIODS.length > 0
-    ? PERIODS.reduce((best,p) => {
-        const pKeys = getPeriodKeys(p).filter(k => REPORT_DB[k]);
-        if(!pKeys.length) return best;
-        if(!best) return p;
-        return pKeys.length >= getPeriodKeys(best).filter(k=>REPORT_DB[k]).length ? p : best;
-      }, null)
-    : null;
-
-  const accPeriodData = activePeriod ? getAccForPeriod(isTotal?Object.keys(STORES)[0]:storeId, activePeriod) : null;
-
-  if(accPeriodData && activePeriod) {
-    const weeksN = accPeriodData.weeks;
-    // Rubrikrad bokslutsår
-    doc.setFillColor(183,209,235);doc.rect(M,y,W-2*M,8,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...BLUE);
-    doc.text('Ackumulerat — '+activePeriod.name,M+4,y+5.5);
-    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
-    doc.text(weeksN+' veckor',W-M-2,y+5.5,{align:'right'});
-    y+=10;
-
-    // KPI-tiles med ackumulerad data
-    // Beräkna Förs KR delta och BV KR delta för ackumulerat
-    const _accPks = getPeriodKeys?.(activePeriod) || [];
-    const _accBvKrDelta = (()=>{
-      let totBvKr=0, totBvKrFgAr=0, found=0;
-      _accPks.forEach(pk=>{
-        const d=REPORT_DB[pk]?.[storeId];
-        if(d&&d.bvKr!=null&&d.bvKrFgAr!=null){totBvKr+=d.bvKr;totBvKrFgAr+=d.bvKrFgAr;found++;}
-      });
-      return found>0&&totBvKrFgAr>0?totBvKr-totBvKrFgAr:null;
-    })();
-    const _accForsKrDelta = (()=>{
-      let totFors=0, totForsAr=0, found=0;
-      _accPks.forEach(pk=>{
-        const d=REPORT_DB[pk]?.[storeId];
-        if(d&&d.forsaljning!=null&&d.forsaljningFgAr!=null){totFors+=d.forsaljning;totForsAr+=d.forsaljningFgAr;found++;}
-      });
-      return found>0?{delta:totFors-totForsAr,fors:totFors}:null;
-    })();
-    const accKpis=[
-      {label:'OMSÄTTNING',      val:accPeriodData.forsaljningDelta!=null?(accPeriodData.forsaljningDelta>=0?'+':'')+(accPeriodData.forsaljningDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.oms, lb:false},
-      {label:'MARGINAL BV%',    val:accPeriodData.bvPct!=null?(accPeriodData.bvPct*100).toFixed(1)+'%':null, goal:sd.storeGoals.marginal, lb:false},
-      {label:'MARGINAL BV KR *',val:_accBvKrDelta!=null?pdfFmtKr(_accBvKrDelta):null, goal:null, lb:false},
-      {label:'FÖRS. KR *',      val:_accForsKrDelta?pdfFmtKr(_accForsKrDelta.delta):null, goal:null, lb:false},
-      {label:'ANTAL SÅLDA',     val:accPeriodData.antalDelta!=null?(accPeriodData.antalDelta>=0?'+':'')+(accPeriodData.antalDelta*100).toFixed(1)+'%':null, goal:sd.storeGoals.antal, lb:false},
-    ];
-    const tW2=(W-2*M)/3, tH2=16;
-    accKpis.forEach((k,i)=>{
-      const col=i%3, row=Math.floor(i/3);
-      const tx=M+col*tW2, ty=y+row*tH2;
-      doc.setFillColor(...WHITE);doc.rect(tx,ty,tW2-1,tH2-1,'F');
-      doc.setDrawColor(...BEIGE);doc.setLineWidth(0.3);doc.rect(tx,ty,tW2-1,tH2-1);
-      doc.setFont('helvetica','bold');doc.setFontSize(6);doc.setTextColor(...GR);
-      doc.text(k.label,tx+3,ty+3.5);
-      if(k.val!=null){
-        let col2=DK;
-        if(k.goal!=null){const v=parseFloat(k.val);col2=v>=k.goal?GREEN:v>=k.goal*0.8?AMBER:REDD;}
-        doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...col2);
-        doc.text(k.val,tx+3,ty+11);
-        if(k.goal!=null){
-          doc.setFont('helvetica','normal');doc.setFontSize(6);doc.setTextColor(...GR);
-          doc.text('Mål: '+k.goal+'%',tx+3,ty+14.5);
-        }
-      } else {
-        doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...GR);doc.text('—',tx+3,ty+11);
-      }
-    });
-    y+=Math.ceil(accKpis.length/3)*tH2+4;
-
-    if(y>220){doc.addPage();y=20;}else{y+=4;}
-  }
-
-  // Senaste veckan
-  if(pdfMode==='week'||pdfMode==='both'){
-    const weekLabel=wData?.pk||'Senaste veckan';
-    doc.setFillColor(...BEIGE);doc.rect(M,y,W-2*M,8,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...BLUE);
-    doc.text('Senaste veckan — '+weekLabel,M+4,y+5.5);
-    y+=10;
-    kpiTiles('');
-    if(y>220){doc.addPage();y=20;}
-  }
-
-  if(y>240){doc.addPage();y=20;}
-
-  // ── AVDELNINGSÖVERSIKT ────────────────────────────────
-  // ── HJÄLP: Estimera höjd för en avdelning ────────────
-  function estimateDeptHeight(acts, hasSvinn, hasTB) {
-    let h = 7 + 16; // rubrik + 4 KPI-boxar
-    if(acts.length) h += 5.5 + acts.length * 6; // actions
-    if(hasSvinn || hasTB) h += 5 + Math.max(hasSvinn?5:0, hasTB?5:0) * 5 + 10; // top5 tabeller
-    return h + 6; // marginal
-  }
-
-  // ── HJÄLP: Rita en avdelning ─────────────────────────
-  function drawDept(d, curD, svinnPct, acts, svinnRows, tbRows) {
-    const dg = sd.deptGoals[d.code];
-    const hasSvinn = svinnRows.length > 0, hasTB = tbRows.length > 0;
-
-    // Estimera total höjd och bryt sida om nödvändigt
-    const estH = estimateDeptHeight(acts, hasSvinn, hasTB);
-    if(y + estH > 278) { doc.addPage(); y = 20; }
-
-    // Avdelningsrubrik
-    doc.setFillColor(...BLUE);doc.rect(M,y,W-2*M,7,'F');
-    doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(8);
-    doc.text(d.name+'  (avd.'+d.code+')',M+3,y+4.8);
-    y+=7;
-
-    // KPI-boxar inkl BV KR Δ
-    const dBvKrDelta = calcBvKrDelta(curD);
-    // Normalisera bvPct (kan vara 0.276 eller 27.6)
-    const dBvPctNorm = curD?.bvPct != null ? (curD.bvPct > 1 ? curD.bvPct/100 : curD.bvPct) : null;
-    const dOmsDeltaNorm = curD?.forsaljningDelta != null ? (Math.abs(curD.forsaljningDelta)>1 ? curD.forsaljningDelta/100 : curD.forsaljningDelta) : null;
-    const dAntalDeltaNorm = curD?.antalDelta != null ? (Math.abs(curD.antalDelta)>1 ? curD.antalDelta/100 : curD.antalDelta) : null;
-    const dKpis=[
-      {label:'Omsättning',   val:dOmsDeltaNorm,   mål:dg.oms,      fmt:'delta', lb:false, strict:false},
-      {label:'Antal sålda',  val:dAntalDeltaNorm,  mål:dg.antal,    fmt:'delta', lb:false, strict:false},
-      {label:'Marginal BV%', val:dBvPctNorm,       mål:dg.marginal, fmt:'pct',   lb:false, strict:true},
-      {label:'Känt svinn',   val:svinnPct,         mål:dg.svinn,    fmt:'pct',   lb:true,  strict:false},
-      ...(dBvKrDelta!=null?[{label:'BV KR Δ', val:dBvKrDelta,  mål:null,    fmt:'kr_delta', lb:false, strict:false}]:[]),
-    ];
-    const bW=(W-2*M)/dKpis.length, bH=16;
-    dKpis.forEach((k,i)=>{
-      const tx=M+i*bW;
-      doc.setFillColor(...LTGRAY);doc.rect(tx,y,bW,bH,'F');
-      if(i>0){doc.setDrawColor(...BEIGE);doc.setLineWidth(0.3);doc.line(tx,y,tx,y+bH);}
-      doc.setTextColor(...GR);doc.setFont('helvetica','normal');doc.setFontSize(6);
-      doc.text(k.label.toUpperCase(),tx+3,y+4.5);
-      let disp='—';
-      if(k.val!=null){
-        if(k.fmt==='delta') disp=(k.val>=0?'+':'')+(k.val*100).toFixed(1)+'%';
-        else if(k.fmt==='pct') disp=(k.val*100).toFixed(1)+'%';
-        else if(k.fmt==='kr_delta') disp=pdfFmtKr(k.val);
-        else disp=k.val.toFixed(1);
-      }
-      let vc=GR;
-      if(k.val!=null&&k.mål!=null){
-        if(k.strict){
-          // Strict: grön>=mål, orange inom 2pp, röd under
-          const mDec=k.mål/100;
-          vc=k.val>=mDec?GREEN:k.val>=(mDec-0.02)?AMBER:REDD;
-        } else {
-          vc=colorForVal(k.val,k.mål,k.lb);
-        }
-      } else if(k.val!=null&&k.fmt==='kr_delta'){
-        vc=k.val>=0?GREEN:REDD;
-      }
-      doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...vc);
-      doc.text(disp,tx+3,y+11);
-      doc.setFont('helvetica','normal');doc.setFontSize(6);doc.setTextColor(...GR);
-      doc.text(k.mål!=null?'Mål: '+k.mål+'%':'',tx+3,y+15);
-    });
-    y+=bH;
-
-    const aoD=getAODeptData(isTotal?Object.keys(STORES)[0]:storeId,d.code);
-    // Autoorder
-    if(aoD) {
-      doc.setFillColor(235,245,235);doc.rect(M,y,W-2*M,7,'F');
-      doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);doc.rect(M,y,W-2*M,7);
-      doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(...BLUE);
-      doc.text('AUTOORDER',M+3,y+4.5);
-      const aoParts=[
-        `Andel riktade: ${aoD.aoAndelRiktade!=null?(aoD.aoAndelRiktade*100).toFixed(1)+'%':'—'}`,
-        `Antal saldokontroller: ${aoD.aoAntalSaldo??'—'}`,
-        `Spontana: ${aoD.aoAntalSpontana??'—'}`,
-      ];
-      doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...DK);
-      doc.text(aoParts.join('   ·   '),M+28,y+4.5);
-      y+=8;
-    }
-
-    // Actions
-    if(acts.length>0){
-      doc.setFillColor(...BEIGE);doc.rect(M,y,W-2*M,5.5,'F');
-      doc.setTextColor(...BLUE);doc.setFont('helvetica','bold');doc.setFontSize(7);
-      doc.text('ACTIONS',M+3,y+3.8);
-      y+=5.5;
-      acts.forEach(a=>{
-        // Beräkna texthöjd för radbrytning
-        doc.setFont('helvetica','normal');doc.setFontSize(8);
-        const txt=a.text+(a.cond?'  |  '+a.cond:'');
-        const lines=doc.splitTextToSize(txt,W-2*M-14);
-        const rowH=Math.max(6,lines.length*4.5+3);
-
-        if(a.done){doc.setFillColor(245,250,245);}else{doc.setFillColor(250,249,246);}
-        doc.rect(M,y,W-2*M,rowH,'F');
-        doc.setDrawColor(...BEIGE);doc.setLineWidth(0.2);
-        doc.rect(M,y,W-2*M,rowH);
-
-        // Checkbox-ruta ritad med rect
-        const bx=M+3, by=y+1.8, bs=3.2;
-        doc.setDrawColor(a.done?GREEN[0]:100,a.done?GREEN[1]:100,a.done?GREEN[2]:100);
-        doc.setLineWidth(0.4);
-        doc.rect(bx,by,bs,bs);
-        if(a.done){
-          // Bock med streck
-          doc.setDrawColor(...GREEN);doc.setLineWidth(0.5);
-          doc.line(bx+0.5,by+1.6,bx+1.3,by+2.6);
-          doc.line(bx+1.3,by+2.6,bx+2.7,by+0.5);
-        }
-
-        // Text
-        doc.setFont('helvetica','normal');doc.setFontSize(8);
-        doc.setTextColor(...DK);
-        doc.text(lines,M+9,y+4.2);
-        y+=rowH;
-      });
-    }
-
-    // Top 5 Svinn + TB
-    if(hasSvinn||hasTB){
-      const hStyle={fontStyle:'bold',fontSize:6,textColor:GR,fillColor:LTGRAY,cellPadding:1.5};
-      const bStyle={fontSize:7,textColor:DK,fillColor:WHITE,cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15};
-      const colW=(W-2*M-4)/2;
-
-      if(hasSvinn){
-        doc.setFillColor(...PINK);doc.rect(M,y,hasTB?colW:W-2*M,5,'F');
-        doc.setTextColor(...REDD);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
-        doc.text('TOP 5 SVINN KR',M+3,y+3.5);
-      }
-      if(hasTB){
-        const tx2=hasSvinn?M+colW+4:M, tw2=hasSvinn?colW:W-2*M;
-        doc.setFillColor(214,237,219);doc.rect(tx2,y,tw2,5,'F');
-        doc.setTextColor(...GREEN);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
-        doc.text('TOP 5 TB KR',tx2+3,y+3.5);
-      }
-      y+=5;
-
-      if(hasSvinn&&hasTB){
-        const maxR=Math.max(svinnRows.length,tbRows.length);
-        const tableRows=Array.from({length:maxR+1},(_,ri)=>{
-          if(ri===0) return [
-            {content:'#',styles:{...hStyle,cellWidth:5}},{content:'Artikel',styles:{...hStyle}},
-            {content:'Oms',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'Svinn kr',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'%',styles:{...hStyle,halign:'right',cellWidth:10}},
-            {content:'',styles:{...hStyle,cellWidth:3,fillColor:WHITE}},
-            {content:'#',styles:{...hStyle,cellWidth:5}},{content:'Artikel',styles:{...hStyle}},
-            {content:'Oms',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'TB kr',styles:{...hStyle,halign:'right',cellWidth:14}},{content:'%',styles:{...hStyle,halign:'right',cellWidth:10}},
-          ];
-          const s=svinnRows[ri-1],t=tbRows[ri-1];
-          const sc=s?.svinnPct!=null?(s.svinnPct>0.02?REDD:s.svinnPct>0.01?AMBER:GREEN):GR;
-          const tc=t?.bvPct!=null?(t.bvPct>=0.28?GREEN:t.bvPct>=0.20?AMBER:REDD):GR;
-          return [
-            {content:s?ri:'',styles:{...bStyle,cellWidth:5,textColor:GR}},
-            {content:s?.artName||'',styles:{...bStyle}},
-            {content:s&&s.artOms>0?Math.round(s.artOms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:14,textColor:GR}},
-            {content:s?Math.round(s.svinnKr).toLocaleString('sv-SE'):'',styles:{...bStyle,halign:'right',cellWidth:14,textColor:s?REDD:DK,fontStyle:s?'bold':'normal'}},
-            {content:s?.svinnPct!=null?(s.svinnPct*100).toFixed(1)+'%':'',styles:{...bStyle,halign:'right',cellWidth:10,textColor:sc,fontStyle:'bold'}},
-            {content:'',styles:{...bStyle,cellWidth:3,lineWidth:0,fillColor:[245,243,239]}},
-            {content:t?ri:'',styles:{...bStyle,cellWidth:5,textColor:GR}},
-            {content:t?.artName||'',styles:{...bStyle}},
-            {content:t&&t.oms>0?Math.round(t.oms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:14,textColor:GR}},
-            {content:t?Math.round(t.bvKr).toLocaleString('sv-SE'):'',styles:{...bStyle,halign:'right',cellWidth:14,textColor:t?GREEN:DK,fontStyle:t?'bold':'normal'}},
-            {content:t?.bvPct!=null?(t.bvPct*100).toFixed(1)+'%':'',styles:{...bStyle,halign:'right',cellWidth:10,textColor:tc,fontStyle:'bold'}},
-          ];
-        });
-        doc.autoTable({startY:y,margin:{left:M,right:M},body:tableRows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
-      } else if(hasSvinn){
-        const rows=[[{content:'#',styles:{...hStyle,cellWidth:6}},{content:'Artikel',styles:hStyle},{content:'Oms kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'Svinn kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'Svinn %',styles:{...hStyle,halign:'right',cellWidth:18}}],
-          ...svinnRows.map((a,i)=>{const sc=a.svinnPct!=null?(a.svinnPct>0.02?REDD:a.svinnPct>0.01?AMBER:GREEN):GR;return[{content:i+1,styles:{...bStyle,cellWidth:6,textColor:GR}},{content:a.artName,styles:bStyle},{content:a.artOms>0?Math.round(a.artOms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:22,textColor:GR}},{content:Math.round(a.svinnKr).toLocaleString('sv-SE'),styles:{...bStyle,halign:'right',cellWidth:22,textColor:REDD,fontStyle:'bold'}},{content:a.svinnPct!=null?(a.svinnPct*100).toFixed(1)+'%':'—',styles:{...bStyle,halign:'right',cellWidth:18,textColor:sc,fontStyle:'bold'}}];})];
-        doc.autoTable({startY:y,margin:{left:M,right:M},body:rows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
-      } else {
-        const rows=[[{content:'#',styles:{...hStyle,cellWidth:6}},{content:'Artikel',styles:hStyle},{content:'Oms kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'TB kr',styles:{...hStyle,halign:'right',cellWidth:22}},{content:'TB %',styles:{...hStyle,halign:'right',cellWidth:18}}],
-          ...tbRows.map((a,i)=>{const tc=a.bvPct!=null?(a.bvPct>=0.28?GREEN:a.bvPct>=0.20?AMBER:REDD):GR;return[{content:i+1,styles:{...bStyle,cellWidth:6,textColor:GR}},{content:a.artName,styles:bStyle},{content:a.oms>0?Math.round(a.oms).toLocaleString('sv-SE'):'—',styles:{...bStyle,halign:'right',cellWidth:22,textColor:GR}},{content:Math.round(a.bvKr).toLocaleString('sv-SE'),styles:{...bStyle,halign:'right',cellWidth:22,textColor:GREEN,fontStyle:'bold'}},{content:a.bvPct!=null?(a.bvPct*100).toFixed(1)+'%':'—',styles:{...bStyle,halign:'right',cellWidth:18,textColor:tc,fontStyle:'bold'}}];})];
-        doc.autoTable({startY:y,margin:{left:M,right:M},body:rows,styles:{cellPadding:1.5,lineColor:BEIGE,lineWidth:0.15,fontSize:7},bodyStyles:{fillColor:WHITE,textColor:DK}});
-      }
-      y=doc.lastAutoTable.finalY+4;
-    } else {
-      y+=4;
-    }
-  }
-
-  // ── AVDELNINGSSEKTION ─────────────────────────────────
-  if(isTotal) {
-    // Total PDF: kompakt avdelningstabell (oms kr, oms Δ%, bv%, bv kr)
-    const wks2 = selWeeks.size>0 ? selWeeks : new Set(Object.keys(REPORT_DB).sort().slice(-1));
-    const depts = getTotalDeptSummary(wks2).filter(d => d.forsaljning > 0);
-    if(depts.length > 0) {
-      if(y > 240) { doc.addPage(); y = 20; }
-      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...DK);
-      doc.text('Avdelningsöversikt — alla butiker', M, y); y += 5;
-
-      const deptGoalOms = 5, deptGoalMarginal = 28;
-      const hS = {fontStyle:'bold', fontSize:7, textColor:GR, fillColor:LTGRAY, cellPadding:2};
-      const bS = {fontSize:8, textColor:DK, fillColor:WHITE, cellPadding:2, lineColor:BEIGE, lineWidth:0.15};
-
-      const tableRows = [
-        [{content:'Avdelning',styles:{...hS}},{content:'Oms kr',styles:{...hS,halign:'right'}},
-         {content:'Oms Δ%',styles:{...hS,halign:'center'}},{content:'BV%',styles:{...hS,halign:'center'}},{content:'BV kr',styles:{...hS,halign:'right'}}],
-        ...depts.map(d => {
-          const omsColor = d.forsaljningDelta!=null ? (d.forsaljningDelta*100 >= deptGoalOms ? GREEN : d.forsaljningDelta*100 >= deptGoalOms*0.8 ? AMBER : REDD) : GR;
-          const bvColor  = d.bvPct!=null           ? (d.bvPct*100 >= deptGoalMarginal ? GREEN : d.bvPct*100 >= deptGoalMarginal*0.8 ? AMBER : REDD) : GR;
-          return [
-            {content: d.name||d.code, styles:{...bS}},
-            {content: d.forsaljning>0 ? Math.round(d.forsaljning).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g,' ')+' kr' : '—', styles:{...bS,halign:'right'}},
-            {content: d.forsaljningDelta!=null ? (d.forsaljningDelta>=0?'+':'')+(d.forsaljningDelta*100).toFixed(1)+'%' : '—', styles:{...bS,halign:'center',textColor:omsColor}},
-            {content: d.bvPct!=null ? (d.bvPct*100).toFixed(1)+'%' : '—', styles:{...bS,halign:'center',textColor:bvColor}},
-            {content: d.bvKr>0 ? Math.round(d.bvKr).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g,' ')+' kr' : '—', styles:{...bS,halign:'right'}},
-          ];
-        })
-      ];
-      doc.autoTable({startY:y, margin:{left:M,right:M}, body:tableRows,
-        styles:{cellPadding:2, lineColor:BEIGE, lineWidth:0.15},
-        didParseCell: data => { if(data.row.index===0) data.cell.styles.fillColor=LTGRAY; }
-      });
-      y = doc.lastAutoTable.finalY + 6;
-    }
-  } else {
-  // Per-butik: djupare avdelningsvy med KPI-boxar och top5
-  let active;
-  if(false){
-    // Alla avdelningar som är aktiva i minst en butik
-    const activeCodes = new Set();
-    Object.values(DB).forEach(s=>{
-      Object.entries(s.deptGoals||{}).forEach(([code,dg])=>{if(dg.active)activeCodes.add(code);});
-    });
-    active = DEPTS.filter(d=>activeCodes.has(d.code));
-  } else {
-    active = DEPTS.filter(d=>sd.deptGoals[d.code]?.active);
-  }
-  if(active.length>0){
-    if(y>240){doc.addPage();y=20;}
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...DK);
-    doc.text('Avdelningsöversikt',M,y);y+=5;
-
-    active.forEach(d=>{
-      // Deptgoals: för total, ta snitt av alla butiker som har avdelningen aktiv
-      let dg;
-      if(isTotal){
-        const vals={oms:[],marginal:[],svinn:[],antal:[]};
-        Object.values(DB).forEach(s=>{
-          const g=s.deptGoals?.[d.code];
-          if(g?.active){Object.keys(vals).forEach(k=>{if(g[k]!=null)vals[k].push(g[k]);});}
-        });
-        dg={oms:vals.oms.length?vals.oms.reduce((a,b)=>a+b,0)/vals.oms.length:null,
-            marginal:vals.marginal.length?vals.marginal.reduce((a,b)=>a+b,0)/vals.marginal.length:null,
-            svinn:vals.svinn.length?vals.svinn.reduce((a,b)=>a+b,0)/vals.svinn.length:null,
-            antal:vals.antal.length?vals.antal.reduce((a,b)=>a+b,0)/vals.antal.length:null};
-      } else {
-        dg=sd.deptGoals[d.code];
-      }
-      const rdW=wData?.depts?.find(x=>x.code===d.code);
-      const rdA=aData?.depts?.find(x=>x.code===d.code);
-      const curD=(pdfMode==='week')?rdW:(rdA||rdW);
-      // Actions: för total, samla actions från alla butiker för denna avdelning
-      const acts=isTotal
-        ? Object.values(DB).flatMap(s=>s.actions?.[d.code]||[]).filter((a,i,arr)=>arr.findIndex(b=>b.text===a.text)===i)
-        : (sd.actions[d.code]||[]);
-
-      const wks=selWeeks.size>0?selWeeks:new Set(Object.keys(REPORT_DB).sort().slice(-1));
-          // HGR-svinn: direkt från avdelningsdata
-      let _hS2=0,_hN2=0;
-      wks.forEach(pk=>{[storeId].forEach(sid=>{const dept=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);if(dept?.svinnPct!=null){_hS2+=dept.svinnPct;_hN2++;}});});
-      let totS=0,totF=0;
-      if(_hN2===0){wks.forEach(pk=>{[storeId].forEach(sid=>{
-        (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{const _dc3=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;if(_dc3===d.code)totS+=r.svinnKr||0;});
-        const rd=REPORT_DB[pk]?.[sid]?.depts?.find(x=>x.code===d.code);
-        if(rd)totF+=rd.forsaljning||0;
-      });});}
-      const svinnPct=_hN2>0?_hS2/_hN2:(totF>0?totS/totF:null);
-
-      const svinnMap={};
-      wks.forEach(pk=>{
-        [storeId].forEach(sid=>{
-        (SVINN_DB[pk]?.[sid]||[]).forEach(r=>{
-          const _dc=r.deptCode||(EAN_DEPT_MAP[r.artNr||r.ean]?.dept)||null;
-          if(_dc!==d.code)return;
-          const k=r.artNr||r.artName||r.ean;
-          if(!svinnMap[k])svinnMap[k]={artName:r.artName||r.ean,svinnKr:0,artOms:0};
-          svinnMap[k].svinnKr+=r.svinnKr||0;
-          const bi=EAN_DEPT_MAP[r.artNr||r.ean];
-          if(bi?.oms>svinnMap[k].artOms)svinnMap[k].artOms=bi.oms*wks.size;
-        });
-        }); // [storeId]
-      });
-      const svinnRows=Object.values(svinnMap).filter(a=>a.svinnKr>0).sort((a,b)=>b.svinnKr-a.svinnKr).slice(0,5)
-        .map(a=>({...a,svinnPct:a.artOms>0?a.svinnKr/a.artOms:null}));
-      const tbMap={};
-      Object.entries(EAN_DEPT_MAP).forEach(([artnr,info])=>{
-        if(info.dept!==d.code||!info.bvKr||info.bvKr<=0)return;
-        tbMap[artnr]={artName:info.namn||artnr,bvKr:info.bvKr*wks.size,oms:info.oms*wks.size,bvPct:info.oms>0?info.bvKr/info.oms:null};
-      });
-      const tbRows=Object.values(tbMap).sort((a,b)=>b.bvKr-a.bvKr).slice(0,5);
-
-      drawDept(d, curD, svinnPct, acts, svinnRows, tbRows);
-    });
-  }
-  } // end else (per-butik avdelningar)
-
-  // ── FOOTER per sida ───────────────────────────────────
-  const pages=doc.internal.getNumberOfPages();
-  for(let i=1;i<=pages;i++){
-    doc.setPage(i);
-    doc.setFillColor(...BEIGE);doc.rect(0,287,W,10,'F');
-    doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...GR);
-    doc.text(`Konfidentiell · ${storeName} · ${periodLabel}`,M,293);
-    doc.text(`Sida ${i} av ${pages}`,W-M,293,{align:'right'});
-  }
-
-  return doc;
-}
-
-// Offentlig funktion — laddar ner PDF
-
-// ── LÄGG TILL TRENDSIDA I BUTIKS-PDF ─────────────────────────────────
-async function _appendStoreTrendPage(doc, storeId) {
-  try {
-    const data = await loadRatData();
-    if(!data || !Object.keys(data).length) return;
-
-    const allPeriods = Object.keys(data).sort();
-    const currentYear = new Date().getFullYear();
-    const prevYear = currentYear - 1;
-    const showYears = [prevYear, currentYear].filter(yr =>
-      allPeriods.some(k => data[k].year === yr && data[k].stores[storeId])
-    );
-    if(!showYears.length) return;
-
-    // Rita dolda canvaser och snapshotta
-    const offscreen = document.createElement('div');
-    offscreen.style.cssText = 'position:fixed;left:-9999px;top:0;width:560px;height:180px;background:#fff';
-    document.body.appendChild(offscreen);
-
-    const chartConfigs = [
-      {id:`pdf-s-oms-${storeId}`,     metric:'oms',     label:'Omsättning (Mkr årstakt)',    unit:'Mkr', dec:1, scale:v=>Math.round(v/1000000*10)/10},
-      {id:`pdf-s-antal-${storeId}`,   metric:'antal',   label:'Antal sålda (st årstakt)',     unit:'st',  dec:0, scale:v=>Math.round(v)},
-      {id:`pdf-s-bv-${storeId}`,      metric:'bvpct',   label:'Bruttovinst % (viktat medel)', unit:'%',   dec:1, scale:v=>Math.round(v*10)/10},
-      {id:`pdf-s-kvitton-${storeId}`, metric:'kvitton', label:'Antal kvitton (årstakt)',      unit:'st',  dec:0, scale:v=>Math.round(v)},
-    ];
-
-    const chartImages = {};
-    for(const cfg of chartConfigs) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 540; canvas.height = 170;
-      offscreen.appendChild(canvas);
-
-      const datasets = showYears.map(yr => {
-        const col = RAT_YEAR_COLORS[yr] || '#888';
-        const pts = allPeriods
-          .filter(k => data[k].year === yr)
-          .map(key => {
-            const idx = allPeriods.indexOf(key);
-            const val = getRolling8(allPeriods, data, idx, [storeId], cfg.metric);
-            if(val === null) return null;
-            return {x: data[key].week, y: cfg.scale(val)};
-          }).filter(Boolean);
-
-        return {
-          label: String(yr), data: pts,
-          borderColor: col, backgroundColor: 'transparent',
-          borderWidth: yr===currentYear ? 2.5 : 1.5,
-          borderDash: yr===prevYear ? [5,3] : [],
-          pointRadius: 0, tension: 0.35, parsing: false
-        };
-      });
-
-      await new Promise(resolve => {
-        const ch = new Chart(canvas, {
-          type: 'line', data: {datasets},
-          options: {
-            responsive: false,
-            animation: {onComplete: resolve},
-            plugins: {legend:{display:false}},
-            scales: {
-              x: {type:'linear', min:1, max:52, ticks:{stepSize:8,font:{size:9}}, grid:{color:'rgba(0,0,0,.05)'}},
-              y: {ticks:{font:{size:9}, callback:v=>v.toFixed(cfg.dec)}, grid:{color:'rgba(0,0,0,.05)'}}
-            }
-          }
-        });
-        setTimeout(resolve, 700);
-      });
-
-      chartImages[cfg.id] = canvas.toDataURL('image/png');
-      Chart.getChart(canvas)?.destroy();
-    }
-    document.body.removeChild(offscreen);
-
-    // Lägg till ny sida i PDF
-    const W=210, M=14;
-    const BLUE=[0,47,109], RED=[226,0,0], GR=[107,104,96], DK=[26,26,24], BEIGE=[233,229,224], WHITE=[255,255,255];
-    // ── OMSÄTTNING PER VECKA (ny sida) ──────────────────────────────
-    doc.addPage();
-    let yOms = 0;
-    doc.setFillColor(...BLUE); doc.rect(0,0,W,18,'F');
-    doc.setFillColor(...RED);  doc.rect(0,16,W,2,'F');
-    doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
-    doc.setFont('helvetica','normal'); doc.setFontSize(8);
-    doc.text(STORES[storeId]||storeId, W-M, 8, {align:'right'});
-    doc.text(`Genererad ${new Date().toLocaleDateString('sv-SE')}`, W-M, 13.5, {align:'right'});
-    yOms = 26;
-
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
-    doc.text('Omsättning per vecka', M, yOms); yOms += 5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
-    doc.text('Veckovis omsättning och BV kr baserat på ÖS20-data', M, yOms); yOms += 8;
-
-    try {
-      // Rita diagram med Chart.js-canvas om möjligt, annars enkel stapelgraf
-      const omsCanvas = document.createElement('canvas');
-      omsCanvas.width = 800; omsCanvas.height = 300;
-      const omsCtx = omsCanvas.getContext('2d');
-
-      const omsPks = [...new Set([...Object.keys(OS20_DB),...Object.keys(REPORT_DB)])].sort().slice(-24);
-      const omsLabels = omsPks.map(pk=>pk.replace(/^\d{4}-/,''));
-      const omsFors = omsPks.map(pk=>Math.round((_getOmsFors ? _getOmsFors(pk,storeId) : (OS20_DB[pk]?.[storeId]?.forsaljning||REPORT_DB[pk]?.[storeId]?.forsaljning||0))/1000));
-      const omsBv   = omsPks.map(pk=>Math.round((_getOmsBvKr  ? _getOmsBvKr(pk,storeId)  : (OS20_DB[pk]?.[storeId]?.bvKr||REPORT_DB[pk]?.[storeId]?.bvKr||0))/1000));
-
-      const omsChart = new Chart(omsCtx, {
-        type:'line',
-        data:{
-          labels: omsLabels,
-          datasets:[
-            {label:'Omsättning (tkr)',data:omsFors,borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.07)',borderWidth:2,fill:true,tension:0.3,pointRadius:2},
-            {label:'BV kr (tkr)',data:omsBv,borderColor:'#16A34A',backgroundColor:'transparent',borderWidth:2,borderDash:[4,3],tension:0.3,pointRadius:2},
-          ]
-        },
-        options:{
-          responsive:false,animation:false,
-          plugins:{legend:{position:'top',labels:{font:{size:9},boxWidth:10}}},
-          scales:{
-            x:{ticks:{font:{size:8},maxTicksLimit:12}},
-            y:{ticks:{font:{size:8},callback:v=>v.toLocaleString('sv-SE')+' tkr'}}
-          }
-        }
-      });
-      const omsImgData = omsCanvas.toDataURL('image/png');
-      omsChart.destroy();
-      doc.addImage(omsImgData,'PNG',M,yOms,W-2*M,70);
-      yOms += 76;
-    } catch(e) {
-      console.error('Omsättningsdiagram PDF-fel:', e);
-    }
-
-    doc.addPage();
-    let y = 0;
-
-    // Sidhuvud (matchar övriga sidor)
-    doc.setFillColor(...BLUE); doc.rect(0,0,W,18,'F');
-    doc.setFillColor(...RED);  doc.rect(0,16,W,2,'F');
-    doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
-    doc.setFont('helvetica','normal'); doc.setFontSize(8);
-    doc.text(STORES[storeId]||storeId, W-M, 8, {align:'right'});
-    doc.text(`Genererad ${new Date().toLocaleDateString('sv-SE')}`, W-M, 13.5, {align:'right'});
-    y = 26;
-
-    // Sektion-titel
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
-    doc.text('Omsättningstrender', M, y); y += 5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
-    doc.text(`Rullande 8-veckors medel × 52 · ${currentYear} vs ${prevYear}`, M, y); y += 5;
-
-    // Legend
-    showYears.forEach((yr, i) => {
-      const col = RAT_YEAR_COLORS[yr] || '#888';
-      const rgb = col.match(/[0-9a-f]{2}/gi).map(h=>parseInt(h,16));
-      doc.setFillColor(...rgb); doc.rect(M + i*35, y, 10, 2.5, 'F');
-      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...rgb);
-      doc.text(String(yr), M+12+i*35, y+2);
-    });
-    y += 8;
-
-    // Tre diagram
-    chartConfigs.forEach(cfg => {
-      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...DK);
-      doc.text(cfg.label, M, y); y += 3;
-      doc.setFillColor(250,249,246); doc.rect(M, y, W-2*M, 52, 'F');
-      doc.setDrawColor(...BEIGE); doc.setLineWidth(0.3); doc.rect(M, y, W-2*M, 52);
-      if(chartImages[cfg.id]) {
-        doc.addImage(chartImages[cfg.id], 'PNG', M+1, y+1, W-2*M-2, 50);
-      }
-      y += 57;
-    });
-
-  } catch(e) {
-    console.error('Trend page error:', e);
-    // Fortsätt utan trendsida om något går fel
-  }
-}
-
-
-// ── TOTAL PDF MED TRENDDIAGRAM ───────────────────────────────────────
-async function _generateTotalPDF(pdfMode) {
-  pdfMode = pdfMode || 'week';
-
-  // Steg 1: Se till att trenddata är laddad och rita charts i ett dolt element
-  const data = await loadRatData();
-  const allPeriods = Object.keys(data).sort();
-  const currentYear = new Date().getFullYear();
-  const prevYear = currentYear - 1;
-  const showYears = [prevYear, currentYear].filter(yr => allPeriods.some(k => data[k].year===yr));
-  const allStoreIds = Object.keys(RAT_STORES);
-
-  // Skapa dolda canvaser för snapshot
-  const offscreen = document.createElement('div');
-  offscreen.style.cssText = 'position:fixed;left:-9999px;top:0;width:600px;height:200px;background:#fff';
-  document.body.appendChild(offscreen);
-
-  const chartConfigs = [
-    {id:'pdf-oms',   metric:'oms',   label:'Omsättning (Mkr årstakt)',    unit:'Mkr', dec:1, scale:v=>Math.round(v/1000000*10)/10},
-    {id:'pdf-antal', metric:'antal', label:'Antal sålda (st årstakt)',     unit:'st',  dec:0, scale:v=>Math.round(v)},
-    {id:'pdf-bv',    metric:'bvpct', label:'Bruttovinst % (viktat medel)', unit:'%',   dec:1, scale:v=>Math.round(v*10)/10},
-  ];
-
-  const chartImages = {};
-  for(const cfg of chartConfigs) {
-    const canvas = document.createElement('canvas');
-    canvas.id = cfg.id;
-    canvas.width = 560; canvas.height = 180;
-    offscreen.appendChild(canvas);
-
-    const datasets = showYears.map(yr => {
-      const col = RAT_YEAR_COLORS[yr]||'#888';
-      const pts = allPeriods.filter(k=>data[k].year===yr).map(key=>{
-        const idx=allPeriods.indexOf(key);
-        const val=getRolling8(allPeriods,data,idx,allStoreIds,cfg.metric);
-        if(val===null) return null;
-        return {x:data[key].week, y:cfg.scale(val)};
-      }).filter(Boolean);
-      return {label:String(yr),data:pts,borderColor:col,backgroundColor:'transparent',
-        borderWidth:yr===currentYear?2.5:1.5,borderDash:yr===prevYear?[5,3]:[],
-        pointRadius:0,tension:0.35,parsing:false};
-    });
-
-    await new Promise(resolve => {
-      const ch = new Chart(canvas, {
-        type:'line', data:{datasets},
-        options:{
-          responsive:false, animation:{onComplete:resolve},
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{type:'linear',min:1,max:52,ticks:{stepSize:8,font:{size:9}},grid:{color:'rgba(0,0,0,.05)'}},
-            y:{ticks:{font:{size:9},callback:v=>v.toFixed(cfg.dec)},grid:{color:'rgba(0,0,0,.05)'}}
-          }
-        }
-      });
-      // Fallback if animation never fires
-      setTimeout(resolve, 800);
-    });
-
-    chartImages[cfg.id] = canvas.toDataURL('image/png');
-    Chart.getChart(canvas)?.destroy();
-  }
-  document.body.removeChild(offscreen);
-
-  // Steg 2: Bygg PDF
-  const doc = _buildPDFDoc(TOTAL_ID, pdfMode);
-  if(!doc) return;
-
-  // Steg 3: Lägg till trendsida
-  const W=210, M=14;
-  const BLUE=[0,47,109], GR=[107,104,96], DK=[26,26,24], BEIGE=[233,229,224];
-  doc.addPage();
-  let y = 20;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...BLUE);
-  doc.text('Omsättningstrender — rullande 8-veckors medel × 52', M, y); y += 4;
-  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
-  doc.text(`Aktuellt år (${currentYear}) vs föregående år (${prevYear}) · Alla butiker`, M, y); y += 6;
-
-  // Lägg in legend
-  showYears.forEach((yr,i) => {
-    const col = RAT_YEAR_COLORS[yr]||'#888';
-    const rgb = col.match(/\w\w/g).map(h=>parseInt(h,16));
-    doc.setFillColor(...rgb); doc.rect(M+i*35, y, 8, 2, 'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...rgb);
-    doc.text(String(yr), M+10+i*35, y+1.5);
-  });
-  y += 8;
-
-  // Rita de tre diagrammen
-  chartConfigs.forEach(cfg => {
-    if(y + 62 > 280) { doc.addPage(); y = 20; }
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...DK);
-    doc.text(cfg.label, M, y); y += 3;
-    doc.setFillColor(250,249,246); doc.rect(M, y, W-2*M, 55, 'F');
-    doc.setDrawColor(...BEIGE); doc.setLineWidth(0.3); doc.rect(M, y, W-2*M, 55);
-    if(chartImages[cfg.id]) {
-      doc.addImage(chartImages[cfg.id], 'PNG', M+1, y+1, W-2*M-2, 53);
-    }
-    y += 60;
-  });
-
-  // Spara
-  const date = new Date().toLocaleDateString('sv-SE').replace(/\//g,'-');
-  doc.save(`Totalrapport_Ostenssons_${date}.pdf`);
-  toast('PDF nedladdad ✓');
-}
-
-
-// ── VÄDERPROGNOS-SIDA I PDF ──────────────────────────────────────────
-
-// ── VÄDERIKONER SOM SVG → PNG FÖR PDF ───────────────────────────────
-const WEATHER_SVGS = {
-  sun: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <circle cx="20" cy="20" r="8" fill="#FFA000"/>
-    <g stroke="#FFA000" stroke-width="2" stroke-linecap="round">
-      <line x1="20" y1="2" x2="20" y2="7"/>
-      <line x1="20" y1="33" x2="20" y2="38"/>
-      <line x1="2" y1="20" x2="7" y2="20"/>
-      <line x1="33" y1="20" x2="38" y2="20"/>
-      <line x1="6" y1="6" x2="10" y2="10"/>
-      <line x1="30" y1="30" x2="34" y2="34"/>
-      <line x1="34" y1="6" x2="30" y2="10"/>
-      <line x1="10" y1="30" x2="6" y2="34"/>
-    </g>
-  </svg>`,
-  partly: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <circle cx="16" cy="16" r="7" fill="#FFA000"/>
-    <g stroke="#FFA000" stroke-width="1.5" stroke-linecap="round">
-      <line x1="16" y1="2" x2="16" y2="6"/>
-      <line x1="2" y1="16" x2="6" y2="16"/>
-      <line x1="5" y1="5" x2="8" y2="8"/>
-      <line x1="27" y1="5" x2="24" y2="8"/>
-    </g>
-    <rect x="14" y="22" width="20" height="11" rx="5.5" fill="#90A4AE"/>
-    <rect x="18" y="18" width="14" height="10" rx="5" fill="#B0BEC5"/>
-  </svg>`,
-  cloudy: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <rect x="4" y="20" width="32" height="14" rx="7" fill="#90A4AE"/>
-    <rect x="10" y="13" width="22" height="13" rx="6.5" fill="#B0BEC5"/>
-  </svg>`,
-  fog: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <rect x="4" y="14" width="32" height="3" rx="1.5" fill="#B0BEC5" opacity=".7"/>
-    <rect x="4" y="21" width="28" height="3" rx="1.5" fill="#B0BEC5" opacity=".7"/>
-    <rect x="4" y="28" width="24" height="3" rx="1.5" fill="#B0BEC5" opacity=".7"/>
-  </svg>`,
-  rain: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <rect x="6" y="8" width="28" height="14" rx="7" fill="#78909C"/>
-    <g stroke="#1565C0" stroke-width="2" stroke-linecap="round">
-      <line x1="14" y1="27" x2="12" y2="34"/>
-      <line x1="20" y1="27" x2="18" y2="34"/>
-      <line x1="26" y1="27" x2="24" y2="34"/>
-    </g>
-  </svg>`,
-  sleet: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <rect x="6" y="8" width="28" height="14" rx="7" fill="#78909C"/>
-    <g stroke="#1565C0" stroke-width="2" stroke-linecap="round">
-      <line x1="14" y1="27" x2="12" y2="32"/>
-      <line x1="26" y1="27" x2="24" y2="32"/>
-    </g>
-    <circle cx="20" cy="33" r="2" fill="#90CAF9"/>
-  </svg>`,
-  snow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <rect x="6" y="8" width="28" height="14" rx="7" fill="#90A4AE"/>
-    <g fill="#90CAF9">
-      <circle cx="14" cy="31" r="2.5"/>
-      <circle cx="20" cy="33" r="2.5"/>
-      <circle cx="26" cy="31" r="2.5"/>
-    </g>
-  </svg>`,
-  thunder: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-    <rect x="4" y="6" width="32" height="14" rx="7" fill="#546E7A"/>
-    <polygon points="22,22 16,32 20,32 18,40 26,28 22,28" fill="#FFD600"/>
-  </svg>`,
-};
-
-function getWeatherSVG(symbol) {
-  if(!symbol) return WEATHER_SVGS.cloudy;
-  const s = symbol.toLowerCase();
-  if(s.includes('clearsky') || s.includes('fair')) return WEATHER_SVGS.sun;
-  if(s.includes('partlycloudy') || s.includes('partly')) return WEATHER_SVGS.partly;
-  if(s.includes('fog')) return WEATHER_SVGS.fog;
-  if(s.includes('thunder') || s.includes('storm')) return WEATHER_SVGS.thunder;
-  if(s.includes('snow')) return WEATHER_SVGS.snow;
-  if(s.includes('sleet')) return WEATHER_SVGS.sleet;
-  if(s.includes('rain') || s.includes('shower') || s.includes('drizzle')) return WEATHER_SVGS.rain;
-  if(s.includes('cloudy')) return WEATHER_SVGS.cloudy;
-  return WEATHER_SVGS.partly;
-}
-
-// Konvertera SVG-sträng till PNG base64 via Canvas (för PDF-inbäddning)
-async function svgToPngBase64(svgStr, size=40) {
-  return new Promise((resolve) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    const blob = new Blob([svgStr], {type:'image/svg+xml'});
-    const url = URL.createObjectURL(blob);
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, size, size);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/png').split(',')[1]);
+async function parseOS20Sheet(rows,pk){
+  const pd={};
+  // Rad 6 (index 5) = rubrikrad, rad 7+ = data
+  // Kolumner (0-indexed): 3=Butik, 4=Förs kr, 6=Förs tot ΔFÅ%,
+  // 10=Antal sålda, 11=Antal tot ΔFÅ%, 12=Antal jmf ΔFÅ%,
+  // 13=BV kr, 14=BV kr tot ΔFÅ, 15=BV kr tot ΔFÅ%, 16=BV kr jmf ΔFÅ, 17=BV kr jmf ΔFÅ%,
+  // 19=Lokal AP%, 20=Artikelrabatt%, 21=Känt svinn%,
+  // 22=Driftläckage%, 23=Driftläckage ΔFÅ,
+  // 25=BV%, 26=BV% ΔFÅ, 27=Central AP%,
+  // 28=Antal kvitton, 29=Kvitton tot ΔFÅ%, 30=Kvitton jmf ΔFÅ%,
+  // 31=Snittköp, 32=Snittköp tot ΔFÅ, 33=Snittköp jmf ΔFÅ,
+  // 34=Kundkorg, 35=Kundkorg ΔFÅ%, 36=Medlemsandel%, 37=EMV%, 39=EKO%
+  for(const row of rows){
+    const storeName=row[3];
+    const storeId=matchOS20Store(storeName);
+    if(!storeId)continue;
+    pd[storeId]={
+      forsaljning:         row[4]!=null?parseFloat(row[4]):null,
+      forsaljningDelta:    row[6]!=null?parseFloat(row[6]):null,
+      antalSt:             row[10]!=null?parseFloat(row[10]):null,
+      antalDelta:          row[11]!=null?parseFloat(row[11]):null,
+      antalDeltaJmf:       row[12]!=null?parseFloat(row[12]):null,
+      bvKr:                row[13]!=null?parseFloat(row[13]):null,
+      bvKrDelta:           row[14]!=null?parseFloat(row[14]):null,
+      bvKrDeltaPct:        row[15]!=null?parseFloat(row[15]):null,
+      bvKrDeltaJmf:        row[16]!=null?parseFloat(row[16]):null,
+      bvKrDeltaPctJmf:     row[17]!=null?parseFloat(row[17]):null,
+      bvPct:               row[25]!=null?parseFloat(row[25]):null,
+      bvPctDelta:          row[26]!=null?parseFloat(row[26]):null,
+      lokalAP:             row[19]!=null?parseFloat(row[19]):null,
+      artikelRabatt:       row[20]!=null?parseFloat(row[20]):null,
+      svinnPct:            row[21]!=null?parseFloat(row[21]):null,
+      driftlackagePct:     row[22]!=null?parseFloat(row[22]):null,
+      driftlackageDelta:   row[23]!=null?parseFloat(row[23]):null,
+      centralAP:           row[27]!=null?parseFloat(row[27]):null,
+      kvitton:             row[28]!=null?parseFloat(row[28]):null,
+      kvittonDelta:        row[29]!=null?parseFloat(row[29]):null,
+      kvittonDeltaJmf:     row[30]!=null?parseFloat(row[30]):null,
+      snittKop:            row[31]!=null?parseFloat(row[31]):null,
+      snittKopDelta:       row[32]!=null?parseFloat(row[32]):null,
+      snittKopDeltaJmf:    row[33]!=null?parseFloat(row[33]):null,
+      kundkorg:            row[34]!=null?parseFloat(row[34]):null,
+      kundkorgDelta:       row[35]!=null?parseFloat(row[35]):null,
+      medlemsandel:        row[36]!=null?parseFloat(row[36]):null,
+      emvAndel:            row[37]!=null?parseFloat(row[37]):null,
+      ekoAndel:            row[39]!=null?parseFloat(row[39]):null,
     };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-    img.src = url;
-  });
-}
-
-// Pre-rendera alla ikoner som används i en prognos
-async function preRenderWeatherIcons(forecast) {
-  const icons = {};
-  const symbolsNeeded = [...new Set(forecast.map(d => {
-    const s = (d.symbol||'').toLowerCase();
-    if(s.includes('clearsky')||s.includes('fair')) return 'sun';
-    if(s.includes('partlycloudy')||s.includes('partly')) return 'partly';
-    if(s.includes('fog')) return 'fog';
-    if(s.includes('thunder')||s.includes('storm')) return 'thunder';
-    if(s.includes('snow')) return 'snow';
-    if(s.includes('sleet')) return 'sleet';
-    if(s.includes('rain')||s.includes('shower')||s.includes('drizzle')) return 'rain';
-    return 'cloudy';
-  }))];
-  for(const sym of symbolsNeeded) {
-    icons[sym] = await svgToPngBase64(WEATHER_SVGS[sym] || WEATHER_SVGS.cloudy, 48);
   }
-  return icons;
+  OS20_DB[pk]=pd;
+  await sbUpsert('os20_data',{period_key:pk,data:pd,uploaded_at:new Date().toISOString()});
 }
 
-async function _appendWeatherPage(doc, storeId) {
-  console.log('[PDF] Hämtar väder för', storeId);
-  const weatherData = await fetchWeather(storeId);
-  if(!weatherData || !weatherData.length) { console.warn('[PDF] Ingen väderdata för', storeId); return; }
-  console.log('[PDF] Väderdata hämtad:', weatherData.length, 'dagar');
+// ── UPLOAD SVINN ──────────────────────────────────────
+function renderUploadSvinn(){
+  const periods=Object.keys(SVINN_DB).sort().reverse();
+  const cw=getWeekNum(new Date()),cy=new Date().getFullYear();
+  document.getElementById('panel-upload-svinn').innerHTML=`
+    <div class="ph"><div><div class="pt">Svinndata</div><div class="ps">Känt svinn — artikelnivå per butik och vecka</div></div></div>
+    <div class="card"><div class="card-head"><div class="ct">Ladda upp svinnrapport</div><div class="cs">9A_ÖS09b format</div></div>
+      <div style="padding:1rem">
+        <div style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:.875rem;flex-wrap:wrap">
+          <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">ÅR</label><input type="number" id="sy" value="${cy}" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:7px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:14px;outline:none;width:88px"></div>
+          <div><label style="display:block;font-size:11px;color:#888;margin-bottom:4px">VECKA</label><input type="number" id="sw" value="${cw}" min="1" max="53" style="background:#f8f8f6;border:0.5px solid #d5d5d0;border-radius:7px;padding:7px 9px;font-family:'SF Mono',monospace;font-size:14px;outline:none;width:72px"></div>
+          <button class="btn-g" onclick="document.getElementById('sf').click()" style="padding:7px 16px;align-self:flex-end">Välj fil →</button>
+        </div>
+        <div class="uzone" onclick="document.getElementById('sf').click()" ondragover="event.preventDefault();this.classList.add('udrag')" ondragleave="this.classList.remove('udrag')" ondrop="hSD(event)">
+          <div style="font-size:22px;margin-bottom:.375rem">🗑</div>
+          <div style="font-size:14px;font-weight:500;margin-bottom:4px">Dra och släpp svinnrapport</div>
+          <div style="font-size:12px;color:#888">9A_ÖS09b · .xlsx · Alla butiker med artikelnivå</div>
+        </div>
+        <input type="file" id="sf" style="display:none" accept=".xlsx,.xls,.csv" onchange="hSF(event)">
+        <div id="sp" style="display:none;padding:.75rem;background:#f8f8f6;border-radius:8px;font-size:13px;color:#555"><span id="spm"></span></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-head"><div class="ct">Uppladdade perioder</div><div class="cs">${periods.length} veckor</div></div>
+      ${periods.length?`<table class="dtbl"><thead><tr><th>Period</th><th class="num">Butiker</th><th class="num">Artikelrader</th><th class="num">Svinn kr</th><th></th></tr></thead><tbody>
+        ${periods.map(pk=>{const pd=SVINN_DB[pk];const sc=Object.keys(pd).length,ac=Object.values(pd).reduce((s,r)=>s+r.length,0),sk=Object.values(pd).reduce((s,r)=>s+r.reduce((t,a)=>t+(a.svinnKr||0),0),0);
+          return`<tr><td><div class="dept-name">${pk}</div></td><td class="num">${sc}/9</td><td class="num">${ac.toLocaleString('sv-SE')}</td><td class="num">${Math.round(sk).toLocaleString('sv-SE')} kr</td>
+          <td style="text-align:right;padding-right:1rem"><button class="btn-sm red" onclick="delPK('svinn','${pk}')">Ta bort</button></td></tr>`;}).join('')}
+        </tbody></table>`:'<div style="padding:1.25rem;text-align:center;font-size:13px;color:#aaa">Inga svinnrapporter uppladdade</div>'}
+    </div>`;
+}
+function hSD(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procS(e.dataTransfer.files[0]);}
+function hSF(e){if(e.target.files[0])procS(e.target.files[0]);}
+function procS(file){
+  const yr=parseInt(document.getElementById('sy')?.value)||new Date().getFullYear();
+  const wk=parseInt(document.getElementById('sw')?.value)||getWeekNum(new Date());
+  const pk=periodKey(yr,wk);
+  const prog=document.getElementById('sp'),pmsg=document.getElementById('spm');
+  if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
+  const reader=new FileReader();
+  reader.onload=async function(ev){
+    try{
+      pmsg.textContent='Identifierar fil...';
+      const wbS=XLSX.read(ev.target.result,{type:'array'});
+      const detectedS = identifyFile(wbS);
+      if(detectedS.type === 'bib' || detectedS.type === 'bib_multi') {
+        wrongFileError(pmsg, detectedS, 'svinn', '9A ÖS09b Svinnrapport');
+        return;
+      }
+      if(detectedS.type === 'os20') {
+        wrongFileError(pmsg, detectedS, 'svinn', '9A ÖS09b Svinnrapport');
+        return;
+      }
+      pmsg.textContent='Tolkar svinndata...';
+      const ws=wbS.Sheets[wbS.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+      if(SVINN_DB[pk]&&!confirm(`Svinndata för ${pk} finns. Ersätta?`)){prog.style.display='none';return;}
+      const pd={};
+      let mappedCount=0, unmappedCount=0;
 
-  // Pre-rendera SVG-ikoner till PNG
-  const iconPNGs = await preRenderWeatherIcons(weatherData);
+      // Hitta headerraden (innehåller 'Butik' i kol 0)
+      let headerRow=1, dataStart=2;
+      for(let i=0;i<Math.min(rows.length,10);i++){
+        if(rows[i]&&rows[i][0]&&String(rows[i][0]).trim()==='Butik'){headerRow=i;dataStart=i+1;break;}
+      }
 
-  // Hjälpfunktion: hämta ikon-key från symbol
-  function getIconKey(symbol) {
-    if(!symbol) return 'cloudy';
-    const s = symbol.toLowerCase();
-    if(s.includes('clearsky')||s.includes('fair')) return 'sun';
-    if(s.includes('partlycloudy')||s.includes('partly')) return 'partly';
-    if(s.includes('fog')) return 'fog';
-    if(s.includes('thunder')||s.includes('storm')) return 'thunder';
-    if(s.includes('snow')) return 'snow';
-    if(s.includes('sleet')) return 'sleet';
-    if(s.includes('rain')||s.includes('shower')||s.includes('drizzle')) return 'rain';
-    return 'cloudy';
+      // Avgör filformat: ny fil har kol[3]=ArtNr, kol[4]=EAN, kol[5]=namn, kol[13]=svinnKr
+      // Gammal fil: kol[3]=EAN, kol[4]=namn, kol[12]=svinnKr
+      const hdr = rows[headerRow]||[];
+      const isNew = hdr[3]&&String(hdr[3]).toLowerCase().includes('artikel')&&!String(hdr[3]).toLowerCase().includes('ean');
+      pmsg.textContent=`Tolkar svinndata (${isNew?'nytt':'gammalt'} format, ${rows.length-dataStart} rader)...`;
+
+      for(let i=dataStart;i<rows.length;i++){
+        const row=rows[i];
+        if(!row||!row[0])continue;
+        const c0=String(row[0]).trim();
+        if(!c0.match(/^\d{4}$/))continue;
+        if(!pd[c0])pd[c0]=[];
+
+        let artNr, ean, artName, svinnKod, antal, svinnKr;
+        if(isNew){
+          artNr   = row[3]!=null?String(row[3]).trim():null;
+          ean     = row[4]!=null?String(row[4]).trim():null;
+          artName = row[5]||'';
+          svinnKod= row[9]||'';
+          antal   = parseFloat(row[12])||0;
+          svinnKr = parseFloat(row[13])||0;
+        } else {
+          artNr   = null;
+          ean     = row[3]!=null?String(row[3]).trim():null;
+          artName = row[4]||'';
+          svinnKod= row[8]||'';
+          antal   = parseFloat(row[11])||0;
+          svinnKr = parseFloat(row[12])||0;
+        }
+
+        // Slå upp avdelning: prioritera artikelnummer, sedan EAN
+        let deptCode=null, artOms=0;
+        const bibByArt = artNr?EAN_DEPT_MAP[artNr]:null;
+        const bibByEan = ean?EAN_DEPT_MAP[ean]:null;
+        const bib = bibByArt || bibByEan;
+        if(bib){deptCode=bib.dept;artOms=bib.oms||0;mappedCount++;}
+        else unmappedCount++;
+
+        pd[c0].push({storeId:c0, artNr, ean, artName, deptCode, artOms, svinnKod, antal, svinnKr});
+      }
+      SVINN_DB[pk]=pd;
+      const sc=Object.keys(pd).length,ac=Object.values(pd).reduce((s,r)=>s+r.length,0);
+      const sk=Object.values(pd).reduce((s,r)=>s+r.reduce((t,a)=>t+(a.svinnKr||0),0),0);
+      const mappingRate=ac>0?Math.round(mappedCount/ac*100):0;
+      await saveSvinnPeriod(pk);
+      prog.style.display='none';
+      toast(`${pk} inläst — ${sc} butiker, ${ac} rader · ${mappingRate}% kopplade till avdelning ✓`);
+      renderUploadSvinn();
+    }catch(err){pmsg.textContent='Fel: '+err.message;}
+  };reader.readAsArrayBuffer(file);
+}
+async function delPK(type,pk){
+  if(!confirm(`Ta bort ${type==='fors'?'försäljnings':type==='svinn'?'svinn':'ÖS20'}-data för ${pk}?`))return;
+  if(type==='fors'){delete REPORT_DB[pk];await deleteReportPeriod(pk);renderUploadFörsäljning();}
+  else if(type==='svinn'){delete SVINN_DB[pk];await deleteSvinnPeriod(pk);renderUploadSvinn();}
+  else if(type==='os20'){delete OS20_DB[pk];await sbDelete('os20_data',{period_key:pk});renderUploadFörsäljning();}
+  toast(`${pk} borttagen`);
+}
+
+
+
+// ══════════════════════════════════════════════════════════════════
+// HGR PARSER — Östenssons Butiksportal
+// Hanterar två format:
+//   A) Veckovis (en flik, outlineLevel 1/2/3) — mail varje vecka
+//   B) Historisk (flerfliks YYYYVV, outlineLevel 1/2) — engångsladdning
+// ══════════════════════════════════════════════════════════════════
+
+// ── Kolumnkonstanter ─────────────────────────────────────────────
+// Format A (veckovis, colShift=1): extra Vecka-kolumn i kol[0]
+// Format B (historisk, colShift=0): ingen extra kolumn
+//
+// Rad-identifiering (gemensam):
+//   Butikrad:     c1=butikId(nummer), c0=tom
+//   Avdelningsrad:c3=avdKod, c1=tom, c5=tom      (Format A)
+//                 c2=avdKod, c0=butikId, c4=artNr (Format B: c0 tom, c2 finns, c4 tom)
+//   Artikelrad:   c5=artNr, c3=tom                (Format A)
+
+// _hgrCols ersatt av dynamisk kolumndetektion i _parseSheet
+
+// ── Gemensam rad-parser ───────────────────────────────────────────
+function _parseSheet(rows, periodKey, isVeckovis) {
+  // Dynamisk kolumndetektion från headerraden
+  // Headerraden finns på rad 2 (veckovis) eller rad 8 (historisk)
+  const headerRowIdx = isVeckovis ? 2 : 8;
+  const headerRow = (rows[headerRowIdx] || []).map(v => String(v||'').toLowerCase());
+  function colIdx(name) {
+    const idx = headerRow.findIndex(v => v.includes(name.toLowerCase()));
+    return idx >= 0 ? idx : -1;
   }
-  const W=210, M=14;
-  const BLUE=[0,47,109], RED=[226,0,0], GR=[107,104,96], DK=[26,26,24];
-  const BEIGE=[233,229,224], WHITE=[255,255,255], LTGRAY=[240,237,232];
-  const storeName = storeId===TOTAL_ID ? TOTAL_NAME : (STORES[storeId]||storeId);
 
-  doc.addPage();
-  let yw = 0;
+  // Hitta kolumner dynamiskt — faller tillbaka på shift-baserade värden
+  const shift = isVeckovis ? 1 : 0;
+  const COL = {
+    fors:     colIdx('förs belopp exkl moms') >= 0 && headerRow.filter(v=>v.includes('förs belopp exkl moms'))[0] ? (() => { const i=headerRow.findIndex(v=>v.includes('förs belopp exkl moms')&&!v.includes('fg')); return i>=0?i:10+shift; })() : 10+shift,
+    forsAr:   (() => { const i=headerRow.findIndex(v=>v.includes('förs belopp exkl moms')&&v.includes('fg')); return i>=0?i:11+shift; })(),
+    antal:    (() => { const i=headerRow.findIndex(v=>v==='antal sålda'); return i>=0?i:12+shift; })(),
+    bvKr:     (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst kr')&&!v.includes('fg')&&!v.includes('%')); return i>=0?i:13+shift; })(),
+    antalAr:  (() => { const i=headerRow.findIndex(v=>v.includes('antal sålda fg')); return i>=0?i:14+shift; })(),
+    bvKrAr:   (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst kr fg')); return i>=0?i:15+shift; })(),
+    bvPct:    (() => { const i=headerRow.findIndex(v=>v==='bruttovinst %'); return i>=0?i:16+shift; })(),
+    bvPctAr:  (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst % fg')); return i>=0?i:17+shift; })(),
+    svinn:    (() => { const i=headerRow.findIndex(v=>v.includes('känt svinn %')&&!v.includes('fg')); return i>=0?i:18+shift; })(),
+    svinnAr:  (() => { const i=headerRow.findIndex(v=>v.includes('känt svinn % fg')); return i>=0?i:19+shift; })(),
+    driftlck: (() => { const i=headerRow.findIndex(v=>v.includes('driftläckage %')&&!v.includes('fg')); return i>=0?i:20+shift; })(),
+    bvEft:    (() => { const i=headerRow.findIndex(v=>v.includes('bruttovinst efter')&&!v.includes('fg')); return i>=0?i:22+shift; })(),
+  };
+  const STORE_IDS = Object.keys(STORES);
+  const storeData = {}, eanByStore = {};
+  let curStore = null, curHGR = null, artCount = 0;
+  const p = (row, idx) => row[idx] != null ? parseFloat(row[idx]) : null;
 
-  // Sidhuvud
-  doc.setFillColor(...BLUE); doc.rect(0,0,W,18,'F');
-  doc.setFillColor(...RED);  doc.rect(0,16,W,2,'F');
-  doc.setTextColor(...WHITE); doc.setFont('helvetica','bold'); doc.setFontSize(10);
-  doc.text('ÖSTENSSONS BUTIKSPORTAL', M, 8);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
-  doc.text(storeName, W-M, 8, {align:'right'});
-  doc.text('Genererad '+new Date().toLocaleDateString('sv-SE'), W-M, 13.5, {align:'right'});
-  yw = 26;
+  const startRow = isVeckovis ? 3 : 8;
 
-  // Rubrik
-  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...BLUE);
-  doc.text('10-dygnsprognos', M, yw); yw += 4;
-  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GR);
-  const coords = getStoreCoords(storeId);
-  doc.text('Källa: YR / Met.no' + (coords ? ` · Lat ${coords.lat}, Lon ${coords.lon}` : ''), M, yw);
-  yw += 8;
+  for(let i = startRow; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const c0=row[0], c1=row[1], c2=row[2], c3=row[3], c4=row[4], c5=row[5], c6=row[6];
 
-  // Kolumner
-  const days = weatherData.slice(0, 10);
-  const colW = (W - 2*M) / days.length;
-  const DAYS_SV = ['Sön','Mån','Tis','Ons','Tor','Fre','Lör'];
-  const MONTHS_SV = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+    // Butikrad:
+    //   Veckovis (isVeckovis=true):  c0=tom, c1=butikId
+    //   Historisk (isVeckovis=false): c0=butikId, c1=butikNamn
+    const butikId = isVeckovis
+      ? (c1 && typeof c1==='number' && STORE_IDS.includes(String(c1)) && !c0 ? String(c1) : null)
+      : (c0 && typeof c0==='number' && STORE_IDS.includes(String(c0)) ? String(c0) : null);
+    if(butikId) {
+      curStore = butikId; curHGR = null;
+      if(!storeData[curStore]) { storeData[curStore]={depts:[]}; eanByStore[curStore]={}; }
+      continue;
+    }
+    if(!curStore) continue;
 
+    // Avdelningsrad
+    // Format A: c3=avdKod, c1=tom, c5=tom
+    // Format B: c2=avdKod, c0=tom, c1=tom, c4=tom
+    const avdKod = isVeckovis
+      ? (c3 && !c1 && !c5 ? String(c3).trim() : null)
+      : (c2 && !c0 && !c1 && !c4 ? String(c2).trim() : null);
+    const avdNamn = isVeckovis ? (c4 || '') : (c3 || '');
 
-
-  // Rubrikrad dagar
-  days.forEach((d, i) => {
-    const x = M + i * colW;
-    const date = new Date(d.date + 'T12:00:00');
-    const dayName = DAYS_SV[date.getDay()];
-    const dayNum = date.getDate();
-    const mon = MONTHS_SV[date.getMonth()];
-
-    // Bakgrund
-    if(i % 2 === 0) { doc.setFillColor(...LTGRAY); doc.rect(x, yw, colW, 46, 'F'); }
-    else             { doc.setFillColor(...WHITE);   doc.rect(x, yw, colW, 46, 'F'); }
-    doc.setDrawColor(...BEIGE); doc.setLineWidth(0.2); doc.rect(x, yw, colW, 46);
-
-    // Dag
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...BLUE);
-    doc.text(dayName, x + colW/2, yw + 6, {align:'center'});
-
-    // Datum
-    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
-    doc.text(`${dayNum} ${mon}`, x + colW/2, yw + 11, {align:'center'});
-
-    // Väderikon (PNG inbäddad)
-    const iconKey = getIconKey(d.symbol);
-    const iconPng = iconPNGs[iconKey];
-    if(iconPng) {
-      const iconSize = Math.min(colW - 4, 12);
-      doc.addImage(iconPng, 'PNG', x + (colW-iconSize)/2, yw + 12, iconSize, iconSize);
+    if(avdKod) {
+      curHGR = avdKod.padStart(2, '0');
+      const fors=p(row,COL.fors), forsAr=p(row,COL.forsAr);
+      const antal=p(row,COL.antal), antalAr=p(row,COL.antalAr);
+      const bvKr=p(row,COL.bvKr), bvKrAr=p(row,COL.bvKrAr);
+      storeData[curStore].depts.push({
+        code: curHGR, name: String(avdNamn),
+        forsaljning: fors, forsaljningFgAr: forsAr,
+        forsaljningDelta: (fors&&forsAr&&forsAr>0) ? (fors-forsAr)/forsAr : null,
+        antalSt: antal, antalFgAr: antalAr,
+        antalDelta: (antal&&antalAr&&antalAr>0) ? (antal-antalAr)/antalAr : null,
+        bvKr, bvKrFgAr: bvKrAr,
+        bvKrDelta: (bvKr!=null && bvKrAr!=null) ? bvKr-bvKrAr : null,
+        bvPct: p(row,COL.bvPct), bvPctFgAr: p(row,COL.bvPctAr),
+        svinnPct: p(row,COL.svinn), svinnPctFgAr: p(row,COL.svinnAr),
+        driftlckPct: p(row,COL.driftlck),
+        bvEftSvinnPct: p(row,COL.bvEft),
+        articles: [],
+      });
+      continue;
     }
 
-    // Max temp
-    if(d.maxTemp != null) {
-      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(198, 40, 40);
-      doc.text(`${d.maxTemp}°`, x + colW/2, yw + 27, {align:'center'});
+    // Artikelrad:
+    //   Format A (veckovis):   c5=artNr, c6=namn, c3=tom
+    //   Format B (historisk):  c4=artNr, c5=namn, c2=tom, c0=tom
+    const artNr = isVeckovis
+      ? (c5 && !c3 ? String(c5).trim() : null)
+      : (c4 && !c2 && !c0 ? String(c4).trim() : null);
+    const artNamn = isVeckovis ? String(c6||'') : String(c5||'');
+
+    if(artNr && curHGR) {
+      const oms=p(row,COL.fors)||0, bvKr=p(row,COL.bvKr)||0;
+      const bvPct=p(row,COL.bvPct)||0, svinn=p(row,COL.svinn)||0;
+      if(oms > 0 || bvKr > 0) {
+        const art = { artNr, namn: artNamn, dept: curHGR, oms, bvKr, bvPct, svinnPct: svinn };
+        eanByStore[curStore][artNr] = art;
+        EAN_DEPT_MAP[artNr] = { dept: curHGR, namn: artNamn, bvKr, oms };
+        const lastDept = storeData[curStore].depts.slice(-1)[0];
+        if(lastDept && lastDept.code === curHGR) lastDept.articles.push(art);
+      }
+      artCount++;
     }
+  }
 
-    // Min temp
-    if(d.minTemp != null) {
-      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...GR);
-      doc.text(`${d.minTemp}°`, x + colW/2, yw + 34, {align:'center'});
-    }
-
-    // Vind
-    if(d.windAvg != null) {
-      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...GR);
-      doc.text(`${d.windAvg} m/s`, x + colW/2, yw + 40, {align:'center'});
-    }
-
-    // Nederbörd
-    if(d.precip > 0) {
-      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(21, 101, 192);
-      doc.text(`${d.precip} mm`, x + colW/2, yw + 45, {align:'center'});
-    }
-  });
-
-  yw += 50;
-
-
-  doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
-  doc.text('Väderdata: Met.no / YR · Licensierad under Creative Commons 4.0', M, yw);
+  return { storeData, eanByStore, artCount };
 }
 
+// ── Spara en period till Supabase (mergar per butik) ─────────────
+async function _saveHGRPeriod(storeData, eanByStore, periodKey, pmsg) {
+  for(const [sid, sd] of Object.entries(storeData)) {
+    let totF=0, totBvKr=0, totAntal=0, totFAr=0, totBvKrAr=0, totAntalAr=0;
+    sd.depts.forEach(d => {
+      totF    += d.forsaljning    || 0; totFAr    += d.forsaljningFgAr || 0;
+      totBvKr += d.bvKr          || 0; totBvKrAr += d.bvKrFgAr       || 0;
+      totAntal+= d.antalSt       || 0; totAntalAr+= d.antalFgAr      || 0;
+    });
+    const payload = {
+      forsaljning: totF, forsaljningFgAr: totFAr,
+      forsaljningDelta: totFAr > 0 ? (totF-totFAr)/totFAr : null,
+      antalSt: totAntal, antalDelta: totAntalAr > 0 ? (totAntal-totAntalAr)/totAntalAr : null,
+      bvKr: totBvKr, bvKrFgAr: totBvKrAr, bvKrDelta: totBvKr - totBvKrAr,
+      bvPct: totF > 0 ? totBvKr/totF : null,
+      depts: sd.depts,
+    };
+    // Hämta befintlig Supabase-data och merga per butik
+    const { data: ex } = await sb.from('report_data').select('data').eq('period_key', periodKey).limit(1);
+    const merged = { ...(ex?.[0]?.data || {}), [sid]: payload };
+    if(!REPORT_DB[periodKey]) REPORT_DB[periodKey] = {};
+    Object.assign(REPORT_DB[periodKey], { [sid]: payload });
+    await sb.from('report_data').upsert(
+      { period_key: periodKey, data: merged, uploaded_at: new Date().toISOString() },
+      { onConflict: 'period_key' }
+    );
+  }
+  // Spara EAN
+  for(const [sid, eans] of Object.entries(eanByStore)) {
+    if(!EAN_BY_STORE[sid]) EAN_BY_STORE[sid] = {};
+    Object.assign(EAN_BY_STORE[sid], eans);
+  }
+}
 
+// ── Huvud-uppladdningsfunktion ─────────────────────────────────────
+async function doHGRUpload(wb, fileName) {
+  const pmsg = document.getElementById('fpm');
+  const fp   = document.getElementById('fp');
+  if(fp)   fp.style.display = 'block';
+  if(pmsg) pmsg.textContent = 'Analyserar fil...';
+  try {
+    const weekSheets = wb.SheetNames.filter(n => /^\d{6}$/.test(n));
+    const isVeckovis = weekSheets.length === 0;
+
+    if(isVeckovis) {
+      // ── Format A: veckovis, en flik ──────────────────────────
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+
+      // Veckonummer från rad 4 (kol 0)
+      let periodKey = null;
+      for(const row of rows) {
+        const c0 = row[0];
+        if(c0 && typeof c0 === 'number' && c0 > 200000) {
+          const yr = Math.floor(c0/100), wk = c0%100;
+          periodKey = `${yr}-V${String(wk).padStart(2,'0')}`;
+          break;
+        }
+      }
+      if(!periodKey) throw new Error('Kunde inte hitta veckonummer i filen');
+
+      const { storeData, eanByStore, artCount } = _parseSheet(rows, periodKey, true);
+      const storeCount = Object.keys(storeData).length;
+      if(!storeCount) throw new Error('Inga butiker hittades');
+
+      const storeName = Object.keys(storeData).map(s => STORES[s]||s).join(', ');
+      if(pmsg) pmsg.textContent = `Sparar ${storeName} · ${periodKey}...`;
+
+      await _saveHGRPeriod(storeData, eanByStore, periodKey, pmsg);
+      await sbUpsert('kpi_config', {
+        id:'global', config:KPI_CONFIG,
+        ean_dept_map:EAN_DEPT_MAP, ean_by_store:EAN_BY_STORE,
+        updated_at: new Date().toISOString()
+      });
+
+      const { data: after } = await sb.from('report_data').select('data').eq('period_key', periodKey).limit(1);
+      const tot = Object.keys(after?.[0]?.data || {}).length;
+      if(pmsg) pmsg.textContent = `✓ ${storeName} · ${periodKey} (${tot}/9 butiker)`;
+      toast(`✓ ${storeName} · ${periodKey}`);
+
+    } else {
+      // ── Format B: historisk, flikar YYYYVV ───────────────────
+      if(pmsg) pmsg.textContent = `Historisk fil — ${weekSheets.length} veckor...`;
+      let totalWeeks = 0, allEan = {};
+
+      for(const sheetName of weekSheets.sort()) {
+        const yr = parseInt(sheetName.slice(0,4));
+        const wk = parseInt(sheetName.slice(4));
+        const periodKey = `${yr}-V${String(wk).padStart(2,'0')}`;
+        if(pmsg) pmsg.textContent = `Importerar ${periodKey}...`;
+
+        const ws   = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+        const { storeData, eanByStore } = _parseSheet(rows, periodKey, false);
+        if(!Object.keys(storeData).length) continue;
+
+        await _saveHGRPeriod(storeData, eanByStore, periodKey, pmsg);
+        for(const [sid,eans] of Object.entries(eanByStore)) {
+          if(!allEan[sid]) allEan[sid]={};
+          Object.assign(allEan[sid], eans);
+        }
+        totalWeeks++;
+      }
+
+      // Spara EAN en gång för alla veckor
+      for(const [sid,eans] of Object.entries(allEan)) {
+        if(!EAN_BY_STORE[sid]) EAN_BY_STORE[sid]={};
+        Object.assign(EAN_BY_STORE[sid], eans);
+      }
+      await sbUpsert('kpi_config', {
+        id:'global', config:KPI_CONFIG,
+        ean_dept_map:EAN_DEPT_MAP, ean_by_store:EAN_BY_STORE,
+        updated_at: new Date().toISOString()
+      });
+      if(pmsg) pmsg.textContent = `✓ ${totalWeeks} veckor importerade`;
+      toast(`✓ ${totalWeeks} veckor importerade`);
+    }
+
+    renderUploadFörsäljning();
+  } catch(e) {
+    if(pmsg) pmsg.textContent = '⚠ ' + e.message;
+    toast('⚠ ' + e.message);
+    console.error('HGR upload error:', e);
+  }
+}
+
+// ── Fil-hanterare ─────────────────────────────────────────────────
+function procF(file) {
+  const prog=document.getElementById('fp'), pmsg=document.getElementById('fpm');
+  if(prog) { prog.style.display='block'; pmsg.textContent=`Läser ${file.name}...`; }
+  const reader = new FileReader();
+  reader.onload = async function(ev) {
+    try {
+      const wb = XLSX.read(ev.target.result, { type:'array' });
+      await doHGRUpload(wb, file.name);
+    } catch(e) {
+      if(pmsg) pmsg.textContent = '⚠ ' + e.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function hFF(e) { if(e.target.files[0]) procF(e.target.files[0]); }
+function hFD(e) {
+  e.preventDefault();
+  document.querySelector('.uzone')?.classList.remove('udrag');
+  if(e.dataTransfer.files[0]) procF(e.dataTransfer.files[0]);
+}
+// ── PARSER: MÅNADSEKONOMI — Resultat per butik ─────────
+
+const num = v => v!=null && v!=='' ? parseFloat(v) : null;
+
+function pkFromYYMM(yymm){ // 2606 -> '2026-06'
+  const s=String(yymm).padStart(4,'0');
+  return `20${s.slice(0,2)}-${s.slice(2,4)}`;
+}
+
+async function saveManadsekonomiField(pk, storeId, field, obj){
+  if(!MANADSEKONOMI_DB[pk]) MANADSEKONOMI_DB[pk]={};
+  if(!MANADSEKONOMI_DB[pk][storeId]) MANADSEKONOMI_DB[pk][storeId]={};
+  MANADSEKONOMI_DB[pk][storeId][field]=obj;
+}
+async function persistManadsekonomiPeriod(pk){
+  await sbUpsert('manadsekonomi_data',{period_key:pk,data:MANADSEKONOMI_DB[pk],uploaded_at:new Date().toISOString()});
+}
+
+const RESULTAT_STORE_COLS={3:'4737',4:'4735',5:'4757',6:'4732',7:'4736',8:'4730',9:'4734',10:'4738',11:'4756',12:TOTAL_ID,18:KOK_ID,19:HK_ID};
+// [radnummer(1-indexerad), nyckel]
+const RESULTAT_ROW_MAP=[
+  [4,'omsattning'],[5,'externaInkop'],[6,'internaInkop'],[7,'summaVaruinkop'],
+  [8,'tb1Kr'],[9,'lagerforandring'],[10,'tb1InklLagerforandring'],[11,'tb1InklLagerforandringPct'],
+  [12,'lamnadeRabatter'],[13,'tb1InklRabatter'],[14,'tb1InklRabatterPct'],
+  [15,'inkopsbonusOvr'],[16,'inkopsbonusHemkop'],[17,'tb2InklBidrag'],[18,'tb2InklBidragPct'],
+  [19,'ombudsforsaljning'],[20,'ombudsforsaljningPct'],[21,'tb3InklOmbud'],
+  [22,'ovrigaIntakter'],[23,'resultatInklOvrigaIntakter'],
+  [24,'lonerSocialaAvgifter'],[25,'inhyrdPersonal'],[26,'ovrigaPersonalkostnader'],
+  [27,'personalkostnader'],[28,'personalkostnaderPct'],[29,'tb4'],[30,'tb4Pct'],
+  [31,'lokalhyra'],[32,'elUppvarmning'],[33,'stadInneUte'],[34,'vattenRenh'],
+  [35,'sophantering'],[36,'ovrigaLokalkostnader'],[37,'summaLokalkostnader'],[38,'summaLokalkostnaderPct'],
+  [39,'forbrukningsmaterial'],[40,'returemballage'],[41,'serverTelefoni'],[42,'repUnderhMaskiner'],
+  [43,'resekostnader'],[44,'transportkostnader'],[45,'reklamPr'],[46,'kreditforsaljningskostnader'],
+  [47,'bevakningskost'],[48,'ovrAdmKostnader'],[49,'itTjansterKonsulter'],[50,'ovrigaExternaTjanster'],
+  [51,'tillsynsavgifter'],[52,'ovrigaExternaKostnader'],[53,'summaOmkostnader'],[54,'summaOmkostnaderPct'],
+  [55,'centralaKostnader'],[56,'kundklubbskostnader'],[57,'konceptavgift'],
+  [58,'resultatForeAvskrivningar'],[59,'resultatForeAvskrivningarPct'],
+  [60,'avskrivningar'],[61,'avskrivningarPct'],[62,'leasingHyraInventarier'],[63,'leasingHyraOvrigtPct'],
+  [64,'hyraAxfoodIt'],[65,'resultatEfterAvskrivningar'],[66,'ovrigaRorelsekostnader'],
+  [67,'resultatForeFinPoster'],[68,'resultatForeFinPosterPct'],
+];
+
+// Tvingar SheetJS att indexera arrayen från kolumn A (index 0), oavsett var
+// flikens "använda område" råkar börja — annars kan kolumnerna hamna fel.
+function sheetRowsFromA(ws){
+  if(!ws['!ref']) return [];
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  range.s.r=0; range.s.c=0;
+  return XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:XLSX.utils.encode_range(range)});
+}
+
+function parseResultatSheetRows(rows){
+  const perStore={};
+  Object.values(RESULTAT_STORE_COLS).forEach(id=>perStore[id]={});
+  RESULTAT_ROW_MAP.forEach(([rowNum,key])=>{
+    const row=rows[rowNum-1]; if(!row)return;
+    Object.entries(RESULTAT_STORE_COLS).forEach(([col,storeId])=>{
+      perStore[storeId][key]=num(row[+col]);
+    });
+  });
+  return perStore;
+}
+
+function hResD(e){e.preventDefault();document.querySelector('.uzone')?.classList.remove('udrag');if(e.dataTransfer.files[0])procRes(e.dataTransfer.files[0]);}
+function hResF(e){if(e.target.files[0])procRes(e.target.files[0]);}
+
+function procRes(file){
+  const prog=document.getElementById('resp'),pmsg=document.getElementById('respm');
+  if(prog){prog.style.display='block';pmsg.textContent=`Läser ${file.name}...`;}
+  const reader=new FileReader();
+  reader.onload=async function(ev){
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      if(!wb.SheetNames.includes('MÅN')||!wb.SheetNames.includes('YTD')){
+        pmsg.textContent='Hittade inte flikarna "MÅN" och "YTD" — fel fil?';return;
+      }
+      const manRows=sheetRowsFromA(wb.Sheets['MÅN']);
+      const ytdRows=sheetRowsFromA(wb.Sheets['YTD']);
+      const m=String(manRows[2]?.[3]||'').match(/(\d{4})\s*$/);
+      if(!m){pmsg.textContent='Kunde inte läsa av månad från filen (cell D3).';return;}
+      const pk=pkFromYYMM(m[1]);
+      const manData=parseResultatSheetRows(manRows);
+      const ytdData=parseResultatSheetRows(ytdRows);
+      for(const [id,d] of Object.entries(manData)) await saveManadsekonomiField(pk,id,'resultat',d);
+      for(const [id,d] of Object.entries(ytdData)) await saveManadsekonomiField(pk,id,'resultatAck',d);
+      await persistManadsekonomiPeriod(pk);
+      pmsg.textContent=`✓ Resultatrapport sparad för ${pk}`;
+      toast(`Resultatrapport ${pk} inläst ✓`);
+      renderUploadEkonomi();
+    }catch(err){pmsg.textContent='Fel: '+err.message;console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
