@@ -575,7 +575,7 @@ function renderEkonomiPanel(storeId){
   if(!selected.length) return '';
   const r = selected.length===1 ? MANADSEKONOMI_DB[selected[0]][storeId].resultat : sumEkonomiPeriods(storeId, selected);
   if(!r) return '';
-  const label = selected.length===1 ? selected[0] : `${selected.length} månader (${selected.slice().sort()[0]}–${selected.slice().sort().pop()})`;
+  const label = formatSelectedLabel(selected);
   const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
   const resColor=(r.resultatForeFinPoster||0)>=0?'var(--ö-green)':'#c62828';
 
@@ -1730,6 +1730,21 @@ async function deleteEkonomiKunskap(id){
 let ekonomiAnalysCache = {}; // { label: analystext }
 
 // Ungefärlig veckoöversättning: given ett ISO-år+veckonummer, returnera måndagens datum
+// Ärlig etikett: 'X–Y' bara om månaderna faktiskt är i följd, annars listas de explicit
+function formatSelectedLabel(monthKeys){
+  const sorted = monthKeys.slice().sort();
+  if(sorted.length<=1) return sorted[0]||'';
+  const isConsecutive = sorted.every((pk,i)=>{
+    if(i===0) return true;
+    const [py,pm] = sorted[i-1].split('-').map(Number);
+    const [cy,cm] = pk.split('-').map(Number);
+    return (cy*12+cm) === (py*12+pm)+1;
+  });
+  return isConsecutive
+    ? `${sorted.length} månader (${sorted[0]}–${sorted[sorted.length-1]})`
+    : `${sorted.length} månader (${sorted.join(', ')})`;
+}
+
 function isoWeekToMonday(year, week){
   const simple = new Date(Date.UTC(year, 0, 1 + (week-1)*7));
   const dow = simple.getUTCDay() || 7;
@@ -1776,45 +1791,111 @@ function getEkonomiData(storeId, monthKeys){
 function buildStoreFactboxes(monthKeys){
   const weekKeys = weekKeysInMonths(monthKeys);
   const weekLabel = weekKeys.length ? `${weekKeys[0]}–${weekKeys[weekKeys.length-1]}` : null;
-  const boxes = Object.entries(STORES).map(([id,name])=>{
+
+  // Föregående års motsvarande månader, för omsättnings-ΔFÅ%
+  const yoyKeys = monthKeys.map(mk=>{ const [y,m]=mk.split('-'); return `${parseInt(y)-1}-${m}`; });
+  const yoyAvailable = yoyKeys.every(k=>MANADSEKONOMI_DB[k]);
+
+  const computeRow = (id, name) => {
     const r = getEkonomiData(id, monthKeys);
     if(!r) return null;
-    let svinnSum=0, svinnCount=0, kvittonSum=0, snittkopSum=0, snittkopCount=0;
+
+    // Omsättning ΔFÅ%: mot faktisk föregående års P&L om den finns
+    let omsPct = null;
+    if(yoyAvailable){
+      const yr = getEkonomiData(id, yoyKeys);
+      if(yr?.omsattning) omsPct = (r.omsattning-yr.omsattning)/Math.abs(yr.omsattning);
+    }
+
+    // Svinn: enkelt snitt över veckorna. Kvitton ΔFÅ%: härledd från veckornas
+    // egna ΔFÅ% (kvitton/(1+delta) ≈ fg års kvitton den veckan), summerat och
+    // jämfört mot summan av aktuella kvitton. Snittköp ΔFÅ: snitt av veckornas
+    // egna kr-delta (redan jämförda mot fg år av Axfood).
+    let svinnSum=0, svinnCount=0;
+    let kvittonCurSum=0, kvittonPriorEstSum=0;
+    let skDeltaSum=0, skDeltaCount=0;
     weekKeys.forEach(wk=>{
       const d = OS20_DB[wk]?.[id];
       if(!d) return;
       if(d.svinnPct!=null){ svinnSum+=d.svinnPct; svinnCount++; }
-      if(d.kvitton!=null) kvittonSum+=d.kvitton;
-      if(d.snittKop!=null){ snittkopSum+=d.snittKop; snittkopCount++; }
+      if(d.kvitton!=null){
+        kvittonCurSum += d.kvitton;
+        if(d.kvittonDelta!=null && (1+d.kvittonDelta)!==0) kvittonPriorEstSum += d.kvitton/(1+d.kvittonDelta);
+      }
+      if(d.snittKopDelta!=null){ skDeltaSum+=d.snittKopDelta; skDeltaCount++; }
     });
+
     return {
-      name: name.replace('Hemköp ',''),
-      omsattning:r.omsattning, bvPct:r.tb1InklRabatterPct, personalPct:r.personalkostnaderPct,
-      resultat:r.resultatForeFinPoster, resultatPct:r.resultatForeFinPosterPct,
+      id, name,
+      omsattning:r.omsattning, omsPct,
+      tb1Pct:r.tb1InklRabatterPct, tb2Pct:r.tb2InklBidragPct, personalPct:r.personalkostnaderPct,
+      resultatPct:r.resultatForeFinPosterPct,
       svinnPct: svinnCount?svinnSum/svinnCount:null,
-      kvitton: kvittonSum||null,
-      snittkop: snittkopCount?snittkopSum/snittkopCount:null,
+      kvittonCurSum, kvittonPriorEstSum,
+      kvittonPct: kvittonPriorEstSum ? (kvittonCurSum-kvittonPriorEstSum)/kvittonPriorEstSum : null,
+      skDelta: skDeltaCount?skDeltaSum/skDeltaCount:null,
     };
-  }).filter(Boolean);
-  return {weekLabel, boxes};
+  };
+
+  const rows = Object.entries(STORES).map(([id,name])=>computeRow(id, name.replace('Hemköp ',''))).filter(Boolean);
+
+  // Totalt-raden: P&L-fälten hämtas direkt från "TOTALT BUTIKER"-kolumnen,
+  // kvitton/snittköp aggregeras korrekt från butiksradernas underliggande summor.
+  let totalRow = null;
+  const totalPL = getEkonomiData(TOTAL_ID, monthKeys);
+  if(totalPL){
+    let omsPct = null;
+    if(yoyAvailable){
+      const yr = getEkonomiData(TOTAL_ID, yoyKeys);
+      if(yr?.omsattning) omsPct = (totalPL.omsattning-yr.omsattning)/Math.abs(yr.omsattning);
+    }
+    const svinnVals = rows.filter(b=>b.svinnPct!=null);
+    const svinnAvg = svinnVals.length ? svinnVals.reduce((s,b)=>s+b.svinnPct,0)/svinnVals.length : null;
+    const kvittonCurSum = rows.reduce((s,b)=>s+(b.kvittonCurSum||0),0);
+    const kvittonPriorEstSum = rows.reduce((s,b)=>s+(b.kvittonPriorEstSum||0),0);
+    const skVals = rows.filter(b=>b.skDelta!=null && b.kvittonCurSum);
+    const skWeighted = skVals.length
+      ? skVals.reduce((s,b)=>s+b.skDelta*b.kvittonCurSum,0) / skVals.reduce((s,b)=>s+b.kvittonCurSum,0)
+      : null;
+    totalRow = {
+      id:TOTAL_ID, name:'Östenssons Totalt',
+      omsattning:totalPL.omsattning, omsPct,
+      tb1Pct:totalPL.tb1InklRabatterPct, tb2Pct:totalPL.tb2InklBidragPct, personalPct:totalPL.personalkostnaderPct,
+      resultatPct:totalPL.resultatForeFinPosterPct,
+      svinnPct: svinnAvg,
+      kvittonPct: kvittonPriorEstSum ? (kvittonCurSum-kvittonPriorEstSum)/kvittonPriorEstSum : null,
+      skDelta: skWeighted,
+    };
+  }
+
+  return {weekLabel, rows, totalRow};
 }
 
 function renderStoreFactboxes(monthKeys){
-  const {weekLabel, boxes} = buildStoreFactboxes(monthKeys);
-  if(!boxes.length) return '';
+  const {weekLabel, rows, totalRow} = buildStoreFactboxes(monthKeys);
+  if(!rows.length) return '';
   const p=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+  const pDelta=v=>v!=null?(v>=0?'+':'')+(v*100).toFixed(1)+'%':'—';
+  const krDelta=v=>v!=null?(v>=0?'+':'')+v.toFixed(1)+' kr':'—';
+  const tr = (b,bold) => `<tr${bold?' style="font-weight:700;background:var(--ö-bg)"':''}>
+        <td>${b.name}</td>
+        <td class="num">${fmtKr(b.omsattning)} (${pDelta(b.omsPct)})</td>
+        <td class="num">${p(b.tb1Pct)}</td>
+        <td class="num">${p(b.tb2Pct)}</td>
+        <td class="num">${p(b.personalPct)}</td>
+        <td class="num">${p(b.resultatPct)}</td>
+        <td class="num">${p(b.svinnPct)}</td>
+        <td class="num">${pDelta(b.kvittonPct)}</td>
+        <td class="num">${krDelta(b.skDelta)}</td>
+      </tr>`;
   return `<div style="margin-bottom:1.25rem">
     <div style="font-size:11px;color:var(--ö-muted);margin-bottom:.5rem;font-weight:600">NYCKELTAL PER BUTIK${weekLabel?` · svinn/kvitton/snittköp ≈ vecka ${weekLabel} (veckodata, ungefärlig period)`:''}</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.5rem">
-      ${boxes.map(b=>`<div style="background:var(--ö-bg);border-radius:8px;padding:.75rem;font-size:12px;line-height:1.5">
-        <div style="font-weight:700;color:var(--ö-blue);margin-bottom:.25rem">${b.name}</div>
-        <div>Omsättning: ${fmtKr(b.omsattning)}</div>
-        <div>BV%: ${p(b.bvPct)} · Personalkost%: ${p(b.personalPct)}</div>
-        <div>Resultat: ${fmtKr(b.resultat)} (${p(b.resultatPct)})</div>
-        <div>Känt svinn%: ${p(b.svinnPct)}</div>
-        <div>Kvitton: ${b.kvitton!=null?Math.round(b.kvitton).toLocaleString('sv-SE'):'—'} · Snittköp: ${b.snittkop!=null?b.snittkop.toFixed(1)+' kr':'—'}</div>
-      </div>`).join('')}
-    </div>
+    <div style="overflow-x:auto"><table class="dtbl"><thead><tr>
+      <th>Butik</th><th class="num">Omsättning (ΔFÅ%)</th><th class="num">TB1%</th><th class="num">TB2%</th><th class="num">Personalkost%</th><th class="num">Resultat%</th><th class="num">Känt svinn%</th><th class="num">Kvitton ΔFÅ%</th><th class="num">Snittköp ΔFÅ</th>
+    </tr></thead><tbody>
+      ${rows.map(b=>tr(b,false)).join('')}
+      ${totalRow?tr(totalRow,true):''}
+    </tbody></table></div>
   </div>`;
 }
 
@@ -1899,7 +1980,7 @@ async function genEkonomiAnalys(){
   const selected = selEkonomiCmpMonths.size>0 ? [...selEkonomiCmpMonths].sort() : (allPerioder.length?[allPerioder[allPerioder.length-1]]:[]);
   if(!selected.length){ toast('⚠ Ingen data att analysera'); return; }
 
-  const label = selected.length===1 ? selected[0] : `${selected[0]}–${selected[selected.length-1]}`;
+  const label = formatSelectedLabel(selected);
   const targetKey = selected[selected.length-1];
   const idx = allPerioder.indexOf(targetKey);
   const storeIds = [...Object.keys(STORES), TOTAL_ID];
@@ -2043,7 +2124,7 @@ function renderUploadEkonomi(){
   const latest=allPerioder[0];
   const selected = selEkonomiCmpMonths.size>0 ? allPerioder.filter(pk=>selEkonomiCmpMonths.has(pk)).sort() : (latest?[latest]:[]);
   const pct=v=>v!=null?(v*100).toFixed(1)+'%':'—';
-  const label = selected.length===1 ? selected[0] : (selected.length ? `${selected.length} månader (${selected[0]}–${selected[selected.length-1]}) · summerat` : '');
+  const label = selected.length ? formatSelectedLabel(selected) : '';
 
   const getData = storeId => selected.length===1 ? MANADSEKONOMI_DB[selected[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, selected);
 
