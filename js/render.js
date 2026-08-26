@@ -1729,6 +1729,95 @@ async function deleteEkonomiKunskap(id){
 
 let ekonomiAnalysCache = {}; // { label: analystext }
 
+// Ungefärlig veckoöversättning: given ett ISO-år+veckonummer, returnera måndagens datum
+function isoWeekToMonday(year, week){
+  const simple = new Date(Date.UTC(year, 0, 1 + (week-1)*7));
+  const dow = simple.getUTCDay() || 7;
+  simple.setUTCDate(simple.getUTCDate() + (1 - dow));
+  return simple;
+}
+
+// Vilka OS20_DB-veckonycklar (format 'YYYY-Vww') som ungefär motsvarar de valda
+// kalendermånaderna — P&L redovisas per månad, ÖS20 per vecka, veckor följer inte
+// exakt månadsgränser så det här är en approximation.
+function weekKeysInMonths(monthKeys){
+  const months = monthKeys.map(mk=>{ const [y,m]=mk.split('-').map(Number); return {y,m}; });
+  const startY=months[0].y, startM=months[0].m;
+  const endY=months[months.length-1].y, endM=months[months.length-1].m;
+  const start = new Date(Date.UTC(startY, startM-1, 1));
+  const end = new Date(Date.UTC(endY, endM, 0));
+  return Object.keys(OS20_DB).filter(pk=>{
+    const m = pk.match(/^(\d{4})-V(\d{2})$/);
+    if(!m) return false;
+    const monday = isoWeekToMonday(+m[1], +m[2]);
+    return monday>=start && monday<=end;
+  }).sort();
+}
+
+// Bygger om en 'label' (t.ex. '2026-06' eller '2026-04–2026-06') till en
+// array av månadsnycklar, för historiska analyser där urvalet inte längre är aktivt.
+function monthKeysFromLabel(label){
+  if(!label) return [];
+  if(label.includes('–')){
+    const [a,b] = label.split('–');
+    return [a.trim(), b.trim()];
+  }
+  return [label.trim()];
+}
+
+function getEkonomiData(storeId, monthKeys){
+  if(!monthKeys || !monthKeys.length) return null;
+  return monthKeys.length===1 ? MANADSEKONOMI_DB[monthKeys[0]]?.[storeId]?.resultat : sumEkonomiPeriods(storeId, monthKeys);
+}
+
+// Bygger faktaruta-data per butik: P&L-nyckeltal för hela perioden + ÖS20-snitt
+// (känt svinn, kvitton, snittköp) summerat/snittat över de veckor som ungefär
+// motsvarar samma period.
+function buildStoreFactboxes(monthKeys){
+  const weekKeys = weekKeysInMonths(monthKeys);
+  const weekLabel = weekKeys.length ? `${weekKeys[0]}–${weekKeys[weekKeys.length-1]}` : null;
+  const boxes = Object.entries(STORES).map(([id,name])=>{
+    const r = getEkonomiData(id, monthKeys);
+    if(!r) return null;
+    let svinnSum=0, svinnCount=0, kvittonSum=0, snittkopSum=0, snittkopCount=0;
+    weekKeys.forEach(wk=>{
+      const d = OS20_DB[wk]?.[id];
+      if(!d) return;
+      if(d.svinnPct!=null){ svinnSum+=d.svinnPct; svinnCount++; }
+      if(d.kvitton!=null) kvittonSum+=d.kvitton;
+      if(d.snittKop!=null){ snittkopSum+=d.snittKop; snittkopCount++; }
+    });
+    return {
+      name: name.replace('Hemköp ',''),
+      omsattning:r.omsattning, bvPct:r.tb1InklRabatterPct, personalPct:r.personalkostnaderPct,
+      resultat:r.resultatForeFinPoster, resultatPct:r.resultatForeFinPosterPct,
+      svinnPct: svinnCount?svinnSum/svinnCount:null,
+      kvitton: kvittonSum||null,
+      snittkop: snittkopCount?snittkopSum/snittkopCount:null,
+    };
+  }).filter(Boolean);
+  return {weekLabel, boxes};
+}
+
+function renderStoreFactboxes(monthKeys){
+  const {weekLabel, boxes} = buildStoreFactboxes(monthKeys);
+  if(!boxes.length) return '';
+  const p=v=>v!=null?(v*100).toFixed(1)+'%':'—';
+  return `<div style="margin-bottom:1.25rem">
+    <div style="font-size:11px;color:var(--ö-muted);margin-bottom:.5rem;font-weight:600">NYCKELTAL PER BUTIK${weekLabel?` · svinn/kvitton/snittköp ≈ vecka ${weekLabel} (veckodata, ungefärlig period)`:''}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.5rem">
+      ${boxes.map(b=>`<div style="background:var(--ö-bg);border-radius:8px;padding:.75rem;font-size:12px;line-height:1.5">
+        <div style="font-weight:700;color:var(--ö-blue);margin-bottom:.25rem">${b.name}</div>
+        <div>Omsättning: ${fmtKr(b.omsattning)}</div>
+        <div>BV%: ${p(b.bvPct)} · Personalkost%: ${p(b.personalPct)}</div>
+        <div>Resultat: ${fmtKr(b.resultat)} (${p(b.resultatPct)})</div>
+        <div>Känt svinn%: ${p(b.svinnPct)}</div>
+        <div>Kvitton: ${b.kvitton!=null?Math.round(b.kvitton).toLocaleString('sv-SE'):'—'} · Snittköp: ${b.snittkop!=null?b.snittkop.toFixed(1)+' kr':'—'}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
 function ekonomiEntityName(id){
   if(id===TOTAL_ID) return 'Östenssons Totalt';
   if(id===KOK_ID) return 'Kök';
@@ -1934,7 +2023,7 @@ function renderEkonomiAnalysHistory(){
             </div>
             <button class="btn-sm red" onclick="deleteEkonomiAnalys('${row.id}')" style="font-size:11px;padding:3px 8px;flex-shrink:0">Ta bort</button>
           </div>
-          <div id="analys-hist-${i}" style="display:none;white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);margin-top:.5rem">${formatAnalysText(row.analys)}</div>
+          <div id="analys-hist-${i}" style="display:none;margin-top:.5rem">${renderStoreFactboxes(monthKeysFromLabel(row.period_key))}<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text)">${formatAnalysText(row.analys)}</div></div>
         </div>`;
       }).join('')}
     </div>
@@ -1992,7 +2081,7 @@ ${Object.entries(STORES).map(([id,name])=>{
       </tbody></table></div>
       <div style="padding:0 1rem 1.25rem">
         <button id="ekonomi-analys-btn" class="btn-sm blue" onclick="genEkonomiAnalys()" style="font-size:12px;padding:6px 14px">${ekonomiAnalysCache[label]?'🔄 Uppdatera analys':'🤖 Generera AI-analys'}</button>
-        <div id="ekonomi-analys-out">${ekonomiAnalysCache[label]?`<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text);padding-top:.75rem">${formatAnalysText(ekonomiAnalysCache[label])}</div>`:''}</div>
+        <div id="ekonomi-analys-out">${ekonomiAnalysCache[label]?`<div style="padding-top:.75rem">${renderStoreFactboxes(selected)}<div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ö-text)">${formatAnalysText(ekonomiAnalysCache[label])}</div></div>`:''}</div>
       </div>
     </div>` : '';
 
